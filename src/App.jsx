@@ -1208,6 +1208,8 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
   }, [financeiro, anos]);
   const anoSel = ano ?? anoPadrao;
   const [editId, setEditId] = useState(null);
+  const [cmpA, setCmpA] = useState("");
+  const [cmpB, setCmpB] = useState("");
 
   const fatVendasMes = useMemo(() => {
     const arr = Array(12).fill(0);
@@ -1244,6 +1246,49 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
   };
   const editLinha = linhas.find((l) => l.id === editId) || null;
   const chart = linhas.map((l) => ({ mes: l.mes.slice(0, 3), Faturamento: l.faturamento, Lucro: l.lucro }));
+
+  // ---- movimentações: entradas = pagamentos recebidos (vendas); saídas = custos do financeiro ----
+  const movimentacoes = useMemo(() => {
+    const ent = vendas.filter((v) => v.data && (v.valor || 0) > 0).map((v) => ({
+      data: v.data, quando: fmtData(v.data), tipo: "entrada",
+      label: "Pagamento recebido" + (v.nome ? ` · ${v.nome}` : (v.tema ? ` · ${v.tema}` : "")),
+      valor: v.valor || 0,
+    }));
+    const said = [];
+    financeiro.forEach((f) => {
+      const dataMes = `${f.ano}-${String((f.ordem ?? 0) + 1).padStart(2, "0")}-15`;
+      const quando = `${f.mes}/${f.ano}`;
+      if ((f.taxaPublicacao || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Taxa de publicação", valor: f.taxaPublicacao });
+      if ((f.custoAds || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Anúncios (Ads)", valor: f.custoAds });
+      if ((f.custoFixo || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Custo fixo", valor: f.custoFixo });
+      if ((f.custoExtra || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Custo extra" + (f.custoExtraDesc ? ` · ${f.custoExtraDesc}` : ""), valor: f.custoExtra });
+    });
+    return [...ent, ...said].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+  }, [vendas, financeiro]);
+  const LIM_MOV = 60;
+
+  // ---- comparar meses (usa o fechamento mensal) ----
+  const mesesComp = useMemo(() => financeiro
+    .map((f) => ({ key: `${f.ano}-${f.ordem}`, rot: `${f.mes}/${f.ano}` }))
+    .sort((a, b) => b.key.localeCompare(a.key, undefined, { numeric: true })), [financeiro]);
+  const resumoDe = (key) => {
+    if (!key) return null;
+    const [a, o] = key.split("-").map(Number);
+    const f = financeiro.find((x) => x.ano === a && x.ordem === o);
+    if (!f) return null;
+    const entrou = f.faturamento || 0;
+    const saiu = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0);
+    return { rot: `${f.mes}/${f.ano}`, entrou, saiu, saldo: entrou - saiu };
+  };
+  const rA = resumoDe(cmpA), rB = resumoDe(cmpB);
+  const difCell = (a, b, higherIsBetter = true) => {
+    const d = b - a;
+    if (d === 0) return <span className="muted">—</span>;
+    const bom = higherIsBetter ? d > 0 : d < 0;
+    const sinal = d > 0 ? "+" : "−";
+    const pct = a !== 0 ? ` (${sinal}${Math.abs(Math.round((d / a) * 100))}%)` : "";
+    return <span className={bom ? "pos" : "negv"}>{sinal}{brl(Math.abs(d))}{pct}</span>;
+  };
 
   return (
     <>
@@ -1324,6 +1369,56 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <div className="card">
+            <div className="card-head"><h3>Comparar meses</h3><span className="hint">escolha dois meses (de qualquer ano)</span></div>
+            <div className="cmp-pick">
+              <select className="inp" value={cmpA} onChange={(e) => setCmpA(e.target.value)}>
+                <option value="">Mês A…</option>
+                {mesesComp.map((m) => <option key={m.key} value={m.key}>{m.rot}</option>)}
+              </select>
+              <span className="cmp-vs">vs</span>
+              <select className="inp" value={cmpB} onChange={(e) => setCmpB(e.target.value)}>
+                <option value="">Mês B…</option>
+                {mesesComp.map((m) => <option key={m.key} value={m.key}>{m.rot}</option>)}
+              </select>
+            </div>
+            {rA && rB ? (
+              <div className="scroll-x">
+                <table className="tab cmp">
+                  <thead><tr><th></th><th className="r">{rA.rot}</th><th className="r">{rB.rot}</th><th className="r">Diferença</th></tr></thead>
+                  <tbody>
+                    <tr><td>Entrou (faturamento)</td><td className="r">{brl(rA.entrou)}</td><td className="r">{brl(rB.entrou)}</td><td className="r">{difCell(rA.entrou, rB.entrou, true)}</td></tr>
+                    <tr><td>Saiu (custos)</td><td className="r neg">{brl(rA.saiu)}</td><td className="r neg">{brl(rB.saiu)}</td><td className="r">{difCell(rA.saiu, rB.saiu, false)}</td></tr>
+                    <tr className="row-total"><td>Saldo (lucro)</td><td className="r"><b className={rA.saldo >= 0 ? "pos" : "negv"}>{brl(rA.saldo)}</b></td><td className="r"><b className={rB.saldo >= 0 ? "pos" : "negv"}>{brl(rB.saldo)}</b></td><td className="r">{difCell(rA.saldo, rB.saldo, true)}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : <div className="vazio pad">Escolha dois meses para comparar.</div>}
+          </div>
+
+          <div className="card no-pad">
+            <div className="card-head pad">
+              <h3>Movimentações recentes</h3>
+              <span className="hint">pagamentos recebidos (+) e custos (−) · {movimentacoes.length} no total</span>
+            </div>
+            <div className="scroll-x">
+              <table className="tab mov">
+                <thead><tr><th>Quando</th><th>Movimentação</th><th className="r">Valor</th></tr></thead>
+                <tbody>
+                  {movimentacoes.slice(0, LIM_MOV).map((m, i) => (
+                    <tr key={i}>
+                      <td className="nowrap muted">{m.quando}</td>
+                      <td><span className={`mov-dot ${m.tipo}`}>{m.tipo === "entrada" ? "↑" : "↓"}</span>{m.label}</td>
+                      <td className={`r mov-val ${m.tipo}`}>{m.tipo === "entrada" ? "+" : "−"}{brl(m.valor)}</td>
+                    </tr>
+                  ))}
+                  {movimentacoes.length === 0 && <tr><td colSpan={3} className="vazio">Sem movimentações ainda.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {movimentacoes.length > LIM_MOV && <div className="mov-mais">Mostrando as {LIM_MOV} mais recentes de {movimentacoes.length}.</div>}
           </div>
         </>
       )}
@@ -1871,6 +1966,17 @@ select.inp{ cursor:pointer; }
 .dp-taxa-ok{ font-size:12.5px; color:#1F8F66; font-weight:600; }
 .dp-taxa .btn.sm{ margin-left:auto; }
 .p-acoes{ display:flex; gap:6px; align-items:center; flex-shrink:0; }
+.mov-dot{ display:inline-block; width:20px; font-weight:800; }
+.mov-dot.entrada{ color:#2E9E7B; }
+.mov-dot.saida{ color:#C2477A; }
+.mov-val{ font-weight:700; font-variant-numeric:tabular-nums; }
+.mov-val.entrada{ color:#2E9E7B; }
+.mov-val.saida{ color:#C2477A; }
+.mov-mais{ padding:11px 16px; font-size:12px; color:var(--muted); border-top:1px solid var(--border); }
+.cmp-pick{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:4px; }
+.cmp-pick .inp{ max-width:170px; }
+.cmp-vs{ color:var(--muted); font-weight:700; }
+.vazio.pad{ padding:18px 4px; }
 
 /* FORM PARTICIPANTE (com venda) */
 .form-part{ margin-top:14px; padding-top:14px; border-top:1px dashed var(--border); }
