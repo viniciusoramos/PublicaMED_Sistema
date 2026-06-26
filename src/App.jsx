@@ -369,6 +369,21 @@ export default function App() {
   /* ---------- métricas ---------- */
   const m = useMemo(() => calcMetricas(vendas), [vendas]);
 
+  if (!db.ENV_OK) {
+    return (
+      <div className="loading">
+        <div style={{ maxWidth: 440, textAlign: "center", padding: 24 }}>
+          <h2 style={{ color: "#1D3557", marginBottom: 10 }}>Configuração ausente</h2>
+          <p style={{ color: "#54657A", fontSize: 14, lineHeight: 1.6 }}>
+            Defina <b>VITE_SUPABASE_URL</b> e <b>VITE_SUPABASE_ANON_KEY</b> nas
+            variáveis de ambiente do Netlify (Site configuration → Environment variables)
+            e publique novamente.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (sessao === undefined) {
     return (
       <div className="loading">

@@ -1,5 +1,8 @@
 import { supabase } from './supabase.js';
 
+// false quando faltam as variáveis VITE_ no build (evita tela branca)
+export const ENV_OK = !!supabase;
+
 /* ============================================================
  *  Camada de dados · Supabase
  *  Converte entre as linhas do banco (snake_case) e os formatos
@@ -199,10 +202,12 @@ export async function removerParticipante(id) {
 
 /* ---------- auth ---------- */
 export async function sessaoAtual() {
+  if (!supabase) return null;
   const { data } = await supabase.auth.getSession();
   return data.session;
 }
 export function aoMudarAuth(cb) {
+  if (!supabase) return () => {};
   const { data } = supabase.auth.onAuthStateChange((_e, session) => cb(session));
   return () => data.subscription.unsubscribe();
 }
