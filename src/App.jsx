@@ -1196,7 +1196,17 @@ function FormTrabalho({ onSalvar, onClose }) {
 function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
   const anos = useMemo(() => [...new Set(financeiro.map((f) => f.ano))].sort((a, b) => b - a), [financeiro]);
   const [ano, setAno] = useState(null);
-  const anoSel = ano ?? (anos[0] ?? null);
+  // abre no ano que tem dados (evita cair num ano recém-criado e vazio)
+  const anoPadrao = useMemo(() => {
+    let best = anos[0] ?? null, bestTot = -1;
+    for (const a of anos) {
+      const tot = financeiro.filter((f) => f.ano === a)
+        .reduce((s, f) => s + (f.faturamento || 0) + (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0), 0);
+      if (tot > bestTot) { bestTot = tot; best = a; }
+    }
+    return best;
+  }, [financeiro, anos]);
+  const anoSel = ano ?? anoPadrao;
   const [editId, setEditId] = useState(null);
 
   const fatVendasMes = useMemo(() => {
