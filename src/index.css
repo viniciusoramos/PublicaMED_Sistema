@@ -1,9 +1,9 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --ink: #0F2330;
-  --brand: #0D7D8A;
-  --bg: #F4F7F8;
+  --ink: #1D3557;
+  --brand: #2C7DA0;
+  --bg: #F5F7FA;
 }
 
 html, body, #root { height: 100%; }

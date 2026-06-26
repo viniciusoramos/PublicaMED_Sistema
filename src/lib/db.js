@@ -19,9 +19,11 @@ const vendaDe = (r) => ({
   valor: Number(r.valor) || 0,
   tema: r.tema || '',
   faculdade_id: r.faculdade_id || null,
+  participanteId: r.participante_id || null,
 });
 const finDe = (r) => ({
   id: r.id,
+  ano: r.ano ?? 2025, // fallback se a migração de 'ano' ainda não rodou
   mes: r.mes,
   ordem: r.ordem,
   faturamento: Number(r.faturamento) || 0,
@@ -29,6 +31,7 @@ const finDe = (r) => ({
   custoAds: Number(r.custo_ads) || 0,
   custoFixo: Number(r.custo_fixo) || 0,
   custoExtra: Number(r.custo_extra) || 0,
+  custoExtraDesc: r.custo_extra_desc || '',
 });
 const partDe = (x) => ({
   id: x.id,
@@ -40,6 +43,7 @@ const partDe = (x) => ({
 });
 const pubDe = (p) => ({
   id: p.id,
+  criadoEm: p.criado_em,
   nome: p.tema,
   area: p.area || '',
   maxVagas: p.vagas,
@@ -53,8 +57,8 @@ export async function carregarTudo() {
   const [v, t, f, p, fac] = await Promise.all([
     supabase.from('vendas').select('*, faculdades(nome)'),
     supabase.from('trabalhos').select('*').order('criado_em', { ascending: true }),
-    supabase.from('financeiro').select('*').order('ordem', { ascending: true }),
-    supabase.from('publicacoes').select('*, participantes(*)'),
+    supabase.from('financeiro').select('*'),
+    supabase.from('publicacoes').select('*, participantes(*)').order('criado_em', { ascending: false }),
     supabase.from('faculdades').select('id, nome, uf').order('nome', { ascending: true }),
   ]);
   const erro = v.error || t.error || f.error || p.error || fac.error;
@@ -62,8 +66,8 @@ export async function carregarTudo() {
   return {
     vendas: v.data.map(vendaDe),
     trabalhos: t.data.map((x) => ({ id: x.id, titulo: x.titulo, tipo: x.tipo, status: x.status })),
-    financeiro: f.data.map(finDe),
-    temas: p.data.map(pubDe).sort((a, b) => b.participantes.length - a.participantes.length),
+    financeiro: f.data.map(finDe).sort((a, b) => (a.ano - b.ano) || (a.ordem - b.ordem)),
+    temas: p.data.map(pubDe).sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || '')),
     faculdades: fac.data,
   };
 }
@@ -93,7 +97,9 @@ const vendaLinha = async (d) => ({
 
 /* ---------- vendas ---------- */
 export async function criarVenda(d) {
-  const { data, error } = await supabase.from('vendas').insert(await vendaLinha(d)).select('*, faculdades(nome)').single();
+  const row = await vendaLinha(d);
+  if (d.participanteId) row.participante_id = d.participanteId;
+  const { data, error } = await supabase.from('vendas').insert(row).select('*, faculdades(nome)').single();
   if (error) throw error;
   return vendaDe(data);
 }
@@ -125,7 +131,15 @@ export async function removerTrabalho(id) {
   if (error) throw error;
 }
 
-/* ---------- financeiro (só atualização; 12 linhas fixas) ---------- */
+const MESES_DB = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+/* ---------- financeiro (por ano) ---------- */
+export async function criarAnoFinanceiro(ano) {
+  const linhas = MESES_DB.map((mes, i) => ({ ano, mes, ordem: i, faturamento: 0, taxa_publicacao: 0, custo_ads: 0, custo_fixo: 0, custo_extra: 0 }));
+  const { data, error } = await supabase.from('financeiro').insert(linhas).select();
+  if (error) throw error;
+  return data.map(finDe).sort((a, b) => a.ordem - b.ordem);
+}
 export async function atualizarFinanceiro(id, d) {
   const { data, error } = await supabase.from('financeiro').update({
     faturamento: d.faturamento || 0,
@@ -133,6 +147,7 @@ export async function atualizarFinanceiro(id, d) {
     custo_ads: d.custoAds || 0,
     custo_fixo: d.custoFixo || 0,
     custo_extra: d.custoExtra || 0,
+    custo_extra_desc: d.custoExtraDesc || '',
   }).eq('id', id).select().single();
   if (error) throw error;
   return finDe(data);

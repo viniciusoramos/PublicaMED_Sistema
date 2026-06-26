@@ -5,6 +5,7 @@ import {
 } from "recharts";
 import * as db from "./lib/db.js";
 import Login from "./components/Login.jsx";
+import Logo from "./components/Logo.jsx";
 
 /* ============================================================
    DADOS SEMENTE (extraídos das suas planilhas e do docx)
@@ -42,7 +43,7 @@ const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Ag
 
 const TIPOS = ["Artigo","Capítulo","Apresentação","Combo","Artigo PSU","Outro"];
 const TIPO_COR = {
-  "Artigo":"#0D7D8A","Capítulo":"#6366A8","Apresentação":"#E8833A",
+  "Artigo":"#2C7DA0","Capítulo":"#6366A8","Apresentação":"#E8833A",
   "Combo":"#C2477A","Artigo PSU":"#2E9E7B","Outro":"#8B97A0",
 };
 const STATUS = ["A fazer","Aguardando certificado","Concluído","Certificado emitido"];
@@ -61,6 +62,8 @@ const fmtData = (iso) => {
   return d && m && y ? `${d}/${m}/${y}` : iso;
 };
 const mesDeIso = (iso) => (iso ? parseInt(iso.split("-")[1], 10) - 1 : null);
+const anoDeIso = (iso) => (iso ? parseInt(iso.split("-")[0], 10) : null);
+const hojeIso = () => new Date().toISOString().slice(0, 10);
 const dddDe = (tel) => {
   if (!tel) return null;
   const mt = String(tel).match(/\((\d{2})\)/);
@@ -235,38 +238,9 @@ const vendaMudou = (a, b) =>
 const trabalhoMudou = (a, b) => a.titulo !== b.titulo || a.tipo !== b.tipo || a.status !== b.status;
 const finMudou = (a, b) =>
   (a.faturamento || 0) !== (b.faturamento || 0) || (a.taxaPublicacao || 0) !== (b.taxaPublicacao || 0) ||
-  (a.custoAds || 0) !== (b.custoAds || 0) || (a.custoFixo || 0) !== (b.custoFixo || 0) || (a.custoExtra || 0) !== (b.custoExtra || 0);
-const publicacaoMudou = (a, b) =>
-  a.nome !== b.nome || a.tipo !== b.tipo || (a.maxVagas || 0) !== (b.maxVagas || 0) ||
-  !!a.requiresGrad !== !!b.requiresGrad || (a.area || "") !== (b.area || "");
-async function syncTemas(prev, next) {
-  const nextIds = new Set(next.map((t) => t.id));
-  for (const p of prev) if (!nextIds.has(p.id)) await db.removerPublicacao(p.id);
-  const prevById = new Map(prev.map((t) => [t.id, t]));
-  const out = [];
-  for (const t of next) {
-    const old = prevById.get(t.id);
-    if (!old) {
-      const criada = await db.criarPublicacao(t);
-      const parts = [];
-      for (const p of (t.participantes || [])) parts.push(await db.adicionarParticipante(criada.id, p));
-      out.push({ ...criada, participantes: parts });
-      continue;
-    }
-    if (publicacaoMudou(old, t)) {
-      await db.atualizarPublicacao(t.id, { maxVagas: t.maxVagas, tipo: t.tipo, requiresGrad: t.requiresGrad, area: t.area, nome: t.nome });
-    }
-    const oldP = old.participantes || [];
-    const newP = t.participantes || [];
-    const newIds = new Set(newP.map((x) => x.id));
-    for (const p of oldP) if (!newIds.has(p.id)) await db.removerParticipante(p.id);
-    const oldIds = new Set(oldP.map((x) => x.id));
-    const parts = [];
-    for (const p of newP) parts.push(oldIds.has(p.id) ? p : await db.adicionarParticipante(t.id, p));
-    out.push({ ...t, participantes: parts });
-  }
-  return out;
-}
+  (a.custoAds || 0) !== (b.custoAds || 0) || (a.custoFixo || 0) !== (b.custoFixo || 0) ||
+  (a.custoExtra || 0) !== (b.custoExtra || 0) || (a.custoExtraDesc || "") !== (b.custoExtraDesc || "");
+// (CRUD de publicações é incremental via db.*; ver os handlers granulares no App)
 
 export default function App() {
   const [tab, setTab] = useState("overview");
@@ -322,10 +296,74 @@ export default function App() {
     try { for (const f of nf) { const old = antes.find((x) => x.id === f.id); if (old && finMudou(old, f)) await db.atualizarFinanceiro(f.id, f); } }
     catch (e) { aviso("Erro ao salvar: " + e.message); setFinanceiro(antes); }
   };
-  const salvarTemas = async (nt) => {
-    const antes = temas; setTemas(nt);
-    try { setTemas(await syncTemas(antes, nt)); }
-    catch (e) { aviso("Erro ao salvar: " + e.message); setTemas(antes); }
+  /* ---------- publicacoes / participantes (granular, com venda junto) ---------- */
+  const addPublicacao = async (dados) => {
+    try {
+      const nova = await db.criarPublicacao(dados);
+      setTemas((ts) => [nova, ...ts]);
+      // espelha na aba Trabalhos (evita cadastrar o mesmo trabalho duas vezes)
+      const trab = await db.criarTrabalho({ titulo: nova.nome, tipo: nova.tipo, status: "A fazer" });
+      setTrabalhos((ts) => [trab, ...ts]);
+      aviso("Publicação criada e enviada para Trabalhos");
+      return nova;
+    } catch (e) { aviso("Erro: " + e.message); }
+  };
+  const remPublicacao = async (id) => {
+    const antes = temas; setTemas((ts) => ts.filter((t) => t.id !== id));
+    try { await db.removerPublicacao(id); aviso("Publicação removida"); }
+    catch (e) { aviso("Erro: " + e.message); setTemas(antes); }
+  };
+  const editPublicacao = async (id, campos) => {
+    const antes = temas; setTemas((ts) => ts.map((t) => (t.id === id ? { ...t, ...campos } : t)));
+    try { await db.atualizarPublicacao(id, campos); }
+    catch (e) { aviso("Erro: " + e.message); setTemas(antes); }
+  };
+  // soma a taxa de publicação no mês correspondente do Financeiro (cria o ano se faltar)
+  const lancarTaxaFinanceiro = async (dataIso, taxa) => {
+    const ano = anoDeIso(dataIso), mesIdx = mesDeIso(dataIso);
+    if (ano == null || mesIdx == null) return;
+    let linha = financeiro.find((f) => f.ano === ano && f.ordem === mesIdx);
+    if (!linha) {
+      const novas = await db.criarAnoFinanceiro(ano);
+      setFinanceiro((fs) => [...fs, ...novas]);
+      linha = novas.find((f) => f.ordem === mesIdx);
+    }
+    if (!linha) return;
+    const salva = await db.atualizarFinanceiro(linha.id, { ...linha, taxaPublicacao: (linha.taxaPublicacao || 0) + taxa });
+    setFinanceiro((fs) => fs.map((f) => (f.id === salva.id ? salva : f)));
+  };
+  const addParticipante = async (tema, dados) => {
+    try {
+      const part = await db.adicionarParticipante(tema.id, dados);
+      setTemas((ts) => ts.map((t) => (t.id === tema.id ? { ...t, participantes: [...t.participantes, part] } : t)));
+      const acoes = ["Participante adicionado"];
+      if (dados.lancarVenda && (dados.valor || 0) > 0) {
+        const uf = FAC_BASE.ufMap[dados.faculdade] || "N/I";
+        const venda = await db.criarVenda({
+          data: dados.data || hojeIso(), nome: dados.nome, email: dados.email,
+          faculdade: dados.faculdade, uf, tipo: tema.tipo, valor: dados.valor, tema: tema.nome,
+          participanteId: part.id,
+        });
+        setVendas((vs) => [venda, ...vs]);
+        acoes.push("venda lançada");
+      }
+      if ((dados.taxa || 0) > 0) {
+        await lancarTaxaFinanceiro(dados.data || hojeIso(), dados.taxa);
+        acoes.push("taxa no financeiro");
+      }
+      aviso(acoes.join(" · "));
+    } catch (e) { aviso("Erro: " + e.message); }
+  };
+  const remParticipante = async (temaId, partId) => {
+    const antesT = temas, antesV = vendas;
+    setTemas((ts) => ts.map((t) => (t.id === temaId ? { ...t, participantes: t.participantes.filter((p) => p.id !== partId) } : t)));
+    setVendas((vs) => vs.filter((v) => v.participanteId !== partId)); // a venda atrelada some junto
+    try { await db.removerParticipante(partId); }
+    catch (e) { aviso("Erro: " + e.message); setTemas(antesT); setVendas(antesV); }
+  };
+  const criarAnoFin = async (ano) => {
+    try { const linhas = await db.criarAnoFinanceiro(ano); setFinanceiro((f) => [...f, ...linhas]); aviso(`Ano ${ano} criado`); }
+    catch (e) { aviso("Erro: " + e.message); }
   };
 
   /* ---------- métricas ---------- */
@@ -365,11 +403,8 @@ export default function App() {
       {/* SIDEBAR */}
       <aside className="side">
         <div className="brand">
-          <div className="brand-mark">P</div>
-          <div>
-            <div className="brand-nome">PublicaMED</div>
-            <div className="brand-sub">Painel de gestão</div>
-          </div>
+          <Logo style={{ height: 26, color: "#fff" }} />
+          <div className="brand-sub">Painel de gestão</div>
         </div>
         <nav>
           {navItens.map(([id, lab, ic]) => (
@@ -392,7 +427,7 @@ export default function App() {
 
       {/* CONTEÚDO */}
       <main className="main">
-        {tab === "overview" && <Overview m={m} financeiro={financeiro} trabalhos={trabalhos} />}
+        {tab === "overview" && <Overview vendas={vendas} financeiro={financeiro} trabalhos={trabalhos} />}
         {tab === "vendas" && (
           <Vendas vendas={vendas} salvar={salvarVendas} aviso={aviso} temasExist={temas} />
         )}
@@ -401,10 +436,11 @@ export default function App() {
           <Trabalhos trabalhos={trabalhos} salvar={salvarTrabalhos} aviso={aviso} />
         )}
         {tab === "financeiro" && (
-          <Financeiro financeiro={financeiro} salvar={salvarFinanceiro} vendas={vendas} aviso={aviso} />
+          <Financeiro financeiro={financeiro} salvar={salvarFinanceiro} vendas={vendas} aviso={aviso} onCriarAno={criarAnoFin} />
         )}
         {tab === "temas" && (
-          <Temas temas={temas} salvar={salvarTemas} aviso={aviso} />
+          <Temas temas={temas} onAdd={addPublicacao} onRem={remPublicacao} onEdit={editPublicacao}
+            onAddPart={addParticipante} onRemPart={remParticipante} aviso={aviso} />
         )}
       </main>
 
@@ -503,13 +539,35 @@ function construirTemas(vendas) {
 /* ============================================================
    VISÃO GERAL
    ============================================================ */
-function Overview({ m, financeiro, trabalhos }) {
-  const lucroTotal = financeiro.reduce((s, f) => {
-    const ct = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0);
-    return s + ((f.faturamento || 0) - ct);
-  }, 0);
-  const custoTotal = financeiro.reduce((s, f) => s + (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0), 0);
-  const margemMedia = m.totalFat ? (lucroTotal / financeiro.reduce((s, f) => s + (f.faturamento || 0), 0 || 1)) : 0;
+function Overview({ vendas, financeiro, trabalhos }) {
+  const anos = useMemo(() => {
+    const set = new Set();
+    vendas.forEach((v) => { const a = anoDeIso(v.data); if (a) set.add(a); });
+    (financeiro || []).forEach((f) => { if (f.ano) set.add(f.ano); });
+    return [...set].sort((a, b) => b - a);
+  }, [vendas, financeiro]);
+
+  const [ano, setAno] = useState("");
+  const [mes, setMes] = useState("");
+  const anoSel = ano || (anos[0] != null ? String(anos[0]) : "todos");
+
+  const vendasFiltradas = useMemo(() => vendas.filter((v) => {
+    if (anoSel !== "todos" && anoDeIso(v.data) !== Number(anoSel)) return false;
+    if (mes !== "" && mesDeIso(v.data) !== Number(mes)) return false;
+    return true;
+  }), [vendas, anoSel, mes]);
+
+  const m = useMemo(() => calcMetricas(vendasFiltradas), [vendasFiltradas]);
+
+  const finFiltrado = useMemo(() => {
+    let f = financeiro || [];
+    if (anoSel !== "todos") f = f.filter((x) => x.ano === Number(anoSel));
+    if (mes !== "") f = f.filter((x) => x.ordem === Number(mes));
+    return f;
+  }, [financeiro, anoSel, mes]);
+
+  const lucroTotal = finFiltrado.reduce((s, f) => s + ((f.faturamento || 0) - (f.taxaPublicacao || 0) - (f.custoAds || 0) - (f.custoFixo || 0) - (f.custoExtra || 0)), 0);
+  const custoTotal = finFiltrado.reduce((s, f) => s + (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0), 0);
 
   const tipoTop = m.porTipo[0];
   const ufTop = m.porUF.filter((u) => u.uf !== "N/I")[0];
@@ -519,21 +577,35 @@ function Overview({ m, financeiro, trabalhos }) {
   const donut = m.porTipo.map((t) => ({ name: t.tipo, value: t.total, cor: TIPO_COR[t.tipo] }));
   const maxUF = Math.max(...m.porUF.filter((u) => u.uf !== "N/I").map((u) => u.qtd), 1);
   const ufData = m.porUF.filter((u) => u.uf !== "N/I").slice(0, 8)
-    .map((u) => ({ label: `${u.uf} · ${UF_NOME[u.uf]}`, value: u.qtd, cor: "#0D7D8A" }));
-  const maxFat = Math.max(...m.porMes.map((x) => x.total), 1);
+    .map((u) => ({ label: `${u.uf} · ${UF_NOME[u.uf]}`, value: u.qtd, cor: "#2C7DA0" }));
 
   const certEmitido = trabalhos.filter((t) => t.status === "Certificado emitido").length;
   const pendentes = trabalhos.filter((t) => t.status !== "Certificado emitido").length;
 
+  const rotuloPeriodo = (anoSel === "todos" ? "todos os anos" : anoSel) + (mes !== "" ? " · " + MESES[Number(mes)] : "");
+
   return (
     <>
-      <Header titulo="Visão geral" sub="Resumo de tudo que acontece na PublicaMED" />
+      <Header titulo="Visão geral" sub={`Período: ${rotuloPeriodo}`} />
+
+      <div className="periodo-bar">
+        <span className="periodo-lab">Período</span>
+        <select className="inp" value={anoSel} onChange={(e) => setAno(e.target.value)}>
+          <option value="todos">Todos os anos</option>
+          {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select className="inp" value={mes} onChange={(e) => setMes(e.target.value)}>
+          <option value="">Ano inteiro</option>
+          {MESES.map((nm, i) => <option key={i} value={i}>{nm}</option>)}
+        </select>
+        <span className="periodo-info">{num(m.nVendas)} vendas · {brl(m.totalFat)}</span>
+      </div>
 
       <div className="kpis">
-        <KPI label="Faturamento (vendas)" valor={brl(m.totalFat)} sub={`${num(m.nVendas)} vendas registradas`} cor="#0D7D8A" />
-        <KPI label="Lucro líquido (fechamento)" valor={brl(lucroTotal)} sub={`Custos: ${brl(custoTotal)}`} cor="#2E9E7B" />
+        <KPI label="Faturamento (vendas)" valor={brl(m.totalFat)} sub={`${num(m.nVendas)} vendas no período`} cor="#2C7DA0" />
+        <KPI label="Lucro líquido" valor={brl(lucroTotal)} sub={`Custos: ${brl(custoTotal)}`} cor="#2E9E7B" />
         <KPI label="Clientes únicos" valor={num(m.clientes.length)} sub={`Ticket médio ${brl(m.ticket)}`} cor="#6366A8" />
-        <KPI label="Certificados emitidos" valor={num(certEmitido)} sub={`${num(pendentes)} em andamento`} cor="#E8833A" />
+        <KPI label="Certificados emitidos" valor={num(certEmitido)} sub={`${num(pendentes)} no total`} cor="#E8833A" />
       </div>
 
       <div className="grid-2">
@@ -546,7 +618,7 @@ function Overview({ m, financeiro, trabalhos }) {
               <YAxis tick={{ fontSize: 11, fill: "#5B6B73" }} axisLine={false} tickLine={false}
                 tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
               <Tooltip formatter={(v) => brl(v)} cursor={{ fill: "#F0F4F5" }} />
-              <Bar dataKey="total" fill="#0D7D8A" radius={[5, 5, 0, 0]} maxBarSize={46} />
+              <Bar dataKey="total" fill="#2C7DA0" radius={[5, 5, 0, 0]} maxBarSize={46} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -573,7 +645,7 @@ function Overview({ m, financeiro, trabalhos }) {
             <Destaque rotulo="Produto campeão" principal={tipoTop?.tipo || "—"}
               detalhe={tipoTop ? `${brl(tipoTop.total)} · ${tipoTop.qtd} vendas` : ""} cor={TIPO_COR[tipoTop?.tipo]} />
             <Destaque rotulo="Estado líder" principal={ufTop ? UF_NOME[ufTop.uf] : "—"}
-              detalhe={ufTop ? `${ufTop.qtd} compras · ${brl(ufTop.total)}` : ""} cor="#0D7D8A" />
+              detalhe={ufTop ? `${ufTop.qtd} compras · ${brl(ufTop.total)}` : ""} cor="#2C7DA0" />
             <Destaque rotulo="Faculdade líder" principal={facTop?.faculdade || "—"}
               detalhe={facTop ? `${facTop.qtd} compras` : ""} cor="#6366A8" />
             <Destaque rotulo="Melhor cliente" principal={cliTop?.nome || "—"}
@@ -605,7 +677,7 @@ function Overview({ m, financeiro, trabalhos }) {
 function Destaque({ rotulo, principal, detalhe, cor }) {
   return (
     <div className="destaque">
-      <div className="dq-bar" style={{ background: cor || "#0D7D8A" }} />
+      <div className="dq-bar" style={{ background: cor || "#2C7DA0" }} />
       <div>
         <div className="dq-rot">{rotulo}</div>
         <div className="dq-pri">{principal}</div>
@@ -831,7 +903,7 @@ function Clientes({ m, vendas }) {
 
       <div className="kpis kpis-3">
         <KPI label="Clientes únicos" valor={num(m.clientes.length)} cor="#6366A8" />
-        <KPI label="Recorrentes (2+ compras)" valor={num(recorrentes)} sub={`${m.clientes.length ? Math.round((recorrentes / m.clientes.length) * 100) : 0}% da base`} cor="#0D7D8A" />
+        <KPI label="Recorrentes (2+ compras)" valor={num(recorrentes)} sub={`${m.clientes.length ? Math.round((recorrentes / m.clientes.length) * 100) : 0}% da base`} cor="#2C7DA0" />
         <KPI label="Gasto médio por cliente" valor={brl(m.clientes.length ? m.totalFat / m.clientes.length : 0)} cor="#E8833A" />
       </div>
 
@@ -988,19 +1060,25 @@ function FormTrabalho({ onSalvar, onClose }) {
 /* ============================================================
    FINANCEIRO
    ============================================================ */
-function Financeiro({ financeiro, salvar, vendas, aviso }) {
-  const [edit, setEdit] = useState(null); // mes em edição
+function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
+  const anos = useMemo(() => [...new Set(financeiro.map((f) => f.ano))].sort((a, b) => b - a), [financeiro]);
+  const [ano, setAno] = useState(null);
+  const anoSel = ano ?? (anos[0] ?? null);
+  const [editId, setEditId] = useState(null);
+
   const fatVendasMes = useMemo(() => {
     const arr = Array(12).fill(0);
-    vendas.forEach((v) => { const mi = mesDeIso(v.data); if (mi != null) arr[mi] += v.valor; });
+    vendas.forEach((v) => { if (anoDeIso(v.data) === anoSel) { const mi = mesDeIso(v.data); if (mi != null) arr[mi] += v.valor; } });
     return arr;
-  }, [vendas]);
+  }, [vendas, anoSel]);
 
-  const linhas = financeiro.map((f, i) => {
-    const custoTotal = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0);
-    const lucro = (f.faturamento || 0) - custoTotal;
-    return { ...f, idx: i, custoTotal, lucro };
-  });
+  const linhas = financeiro
+    .filter((f) => f.ano === anoSel)
+    .sort((a, b) => a.ordem - b.ordem)
+    .map((f) => {
+      const custoTotal = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0);
+      return { ...f, custoTotal, lucro: (f.faturamento || 0) - custoTotal };
+    });
   const tot = linhas.reduce((a, l) => ({
     faturamento: a.faturamento + (l.faturamento || 0),
     taxaPublicacao: a.taxaPublicacao + (l.taxaPublicacao || 0),
@@ -1011,82 +1089,104 @@ function Financeiro({ financeiro, salvar, vendas, aviso }) {
     lucro: a.lucro + l.lucro,
   }), { faturamento: 0, taxaPublicacao: 0, custoAds: 0, custoFixo: 0, custoExtra: 0, custoTotal: 0, lucro: 0 });
 
-  const salvarLinha = (idx, dados) => {
-    const nf = financeiro.map((f, i) => (i === idx ? { ...f, ...dados } : f));
-    salvar(nf); setEdit(null); aviso("Mês atualizado");
+  const salvarLinha = (id, dados) => {
+    const nf = financeiro.map((f) => (f.id === id ? { ...f, ...dados } : f));
+    salvar(nf); setEditId(null); aviso("Mês atualizado");
   };
-
+  const novoAno = async () => {
+    const a = parseInt(window.prompt("Criar fechamento para qual ano? (ex.: 2026)") || "", 10);
+    if (!a || a < 2000 || a > 2100) return;
+    if (anos.includes(a)) { setAno(a); aviso("Esse ano já existe"); return; }
+    await onCriarAno(a); setAno(a);
+  };
+  const editLinha = linhas.find((l) => l.id === editId) || null;
   const chart = linhas.map((l) => ({ mes: l.mes.slice(0, 3), Faturamento: l.faturamento, Lucro: l.lucro }));
 
   return (
     <>
-      <Header titulo="Financeiro" sub="Fechamento mensal: faturamento, custos e lucro" />
+      <Header titulo="Financeiro" sub="Fechamento mensal por ano: faturamento, custos e lucro"
+        acao={<button className="btn-ghost" onClick={novoAno}>+ Novo ano</button>} />
 
-      <div className="kpis kpis-3">
-        <KPI label="Faturamento no ano" valor={brl(tot.faturamento)} cor="#0D7D8A" />
-        <KPI label="Custo total no ano" valor={brl(tot.custoTotal)} sub={`Publicação ${brl(tot.taxaPublicacao)} · Ads ${brl(tot.custoAds)}`} cor="#C2477A" />
-        <KPI label="Lucro líquido no ano" valor={brl(tot.lucro)} sub={tot.faturamento ? `Margem ${Math.round((tot.lucro / tot.faturamento) * 100)}%` : ""} cor="#2E9E7B" />
+      <div className="periodo-bar">
+        <span className="periodo-lab">Ano</span>
+        <select className="inp" value={anoSel ?? ""} onChange={(e) => setAno(Number(e.target.value))}>
+          {anos.length === 0 && <option value="">—</option>}
+          {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+        {anoSel != null && <span className="periodo-info">{brl(tot.faturamento)} faturados · lucro {brl(tot.lucro)}</span>}
       </div>
 
-      <div className="card">
-        <div className="card-head"><h3>Faturamento × lucro por mês</h3></div>
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={chart} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EAEFF1" />
-            <XAxis dataKey="mes" tick={{ fontSize: 12, fill: "#5B6B73" }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: "#5B6B73" }} axisLine={false} tickLine={false} tickFormatter={(v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
-            <Tooltip formatter={(v) => brl(v)} cursor={{ fill: "#F0F4F5" }} />
-            <Bar dataKey="Faturamento" fill="#0D7D8A" radius={[4, 4, 0, 0]} maxBarSize={26} />
-            <Bar dataKey="Lucro" fill="#2E9E7B" radius={[4, 4, 0, 0]} maxBarSize={26} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {anoSel == null ? (
+        <div className="card"><div className="vazio">Nenhum fechamento cadastrado. Clique em “+ Novo ano” para começar.</div></div>
+      ) : (
+        <>
+          <div className="kpis kpis-3">
+            <KPI label="Faturamento no ano" valor={brl(tot.faturamento)} cor="#2C7DA0" />
+            <KPI label="Custo total no ano" valor={brl(tot.custoTotal)} sub={`Publicação ${brl(tot.taxaPublicacao)} · Ads ${brl(tot.custoAds)}`} cor="#C2477A" />
+            <KPI label="Lucro líquido no ano" valor={brl(tot.lucro)} sub={tot.faturamento ? `Margem ${Math.round((tot.lucro / tot.faturamento) * 100)}%` : ""} cor="#2E9E7B" />
+          </div>
 
-      <div className="card no-pad">
-        <div className="card-head pad"><h3>Fechamento mensal</h3><span className="hint">clique em “editar” para ajustar custos</span></div>
-        <div className="scroll-x">
-          <table className="tab fin">
-            <thead>
-              <tr>
-                <th>Mês</th><th className="r">Faturamento</th><th className="r">Taxa public.</th>
-                <th className="r">Ads</th><th className="r">Custo fixo</th><th className="r">Extra</th>
-                <th className="r">Custo total</th><th className="r">Lucro</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {linhas.map((l) => (
-                <tr key={l.idx} className={l.faturamento === 0 && l.custoTotal === 0 ? "row-zero" : ""}>
-                  <td><b>{l.mes}</b>{fatVendasMes[l.idx] > 0 && Math.abs(fatVendasMes[l.idx] - l.faturamento) > 1 && (
-                    <div className="fat-real" title="Soma real das vendas deste mês">vendas: {brl(fatVendasMes[l.idx])}</div>
-                  )}</td>
-                  <td className="r">{brl(l.faturamento)}</td>
-                  <td className="r neg">{brl(l.taxaPublicacao)}</td>
-                  <td className="r neg">{brl(l.custoAds)}</td>
-                  <td className="r neg">{brl(l.custoFixo)}</td>
-                  <td className="r neg">{brl(l.custoExtra)}</td>
-                  <td className="r neg"><b>{brl(l.custoTotal)}</b></td>
-                  <td className="r"><b className={l.lucro >= 0 ? "pos" : "negv"}>{brl(l.lucro)}</b></td>
-                  <td className="acoes"><button className="mini" onClick={() => setEdit(l.idx)}>editar</button></td>
-                </tr>
-              ))}
-              <tr className="row-total">
-                <td>TOTAL</td>
-                <td className="r">{brl(tot.faturamento)}</td>
-                <td className="r">{brl(tot.taxaPublicacao)}</td>
-                <td className="r">{brl(tot.custoAds)}</td>
-                <td className="r">{brl(tot.custoFixo)}</td>
-                <td className="r">{brl(tot.custoExtra)}</td>
-                <td className="r">{brl(tot.custoTotal)}</td>
-                <td className="r"><b className="pos">{brl(tot.lucro)}</b></td>
-                <td></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+          <div className="card">
+            <div className="card-head"><h3>Faturamento × lucro por mês · {anoSel}</h3></div>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={chart} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EAEFF1" />
+                <XAxis dataKey="mes" tick={{ fontSize: 12, fill: "#5B6B73" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "#5B6B73" }} axisLine={false} tickLine={false} tickFormatter={(v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
+                <Tooltip formatter={(v) => brl(v)} cursor={{ fill: "#F0F4F5" }} />
+                <Bar dataKey="Faturamento" fill="#2C7DA0" radius={[4, 4, 0, 0]} maxBarSize={26} />
+                <Bar dataKey="Lucro" fill="#2E9E7B" radius={[4, 4, 0, 0]} maxBarSize={26} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
 
-      {edit != null && (
-        <FormMes linha={linhas[edit]} fatVendas={fatVendasMes[edit]} onSalvar={(d) => salvarLinha(edit, d)} onClose={() => setEdit(null)} />
+          <div className="card no-pad">
+            <div className="card-head pad"><h3>Fechamento mensal · {anoSel}</h3><span className="hint">clique em “editar” para ajustar custos</span></div>
+            <div className="scroll-x">
+              <table className="tab fin">
+                <thead>
+                  <tr>
+                    <th>Mês</th><th className="r">Faturamento</th><th className="r">Taxa public.</th>
+                    <th className="r">Ads</th><th className="r">Custo fixo</th><th className="r">Extra</th>
+                    <th className="r">Custo total</th><th className="r">Lucro</th><th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {linhas.map((l) => (
+                    <tr key={l.id} className={l.faturamento === 0 && l.custoTotal === 0 ? "row-zero" : ""}>
+                      <td><b>{l.mes}</b>{fatVendasMes[l.ordem] > 0 && Math.abs(fatVendasMes[l.ordem] - l.faturamento) > 1 && (
+                        <div className="fat-real" title="Soma real das vendas deste mês">vendas: {brl(fatVendasMes[l.ordem])}</div>
+                      )}</td>
+                      <td className="r">{brl(l.faturamento)}</td>
+                      <td className="r neg">{brl(l.taxaPublicacao)}</td>
+                      <td className="r neg">{brl(l.custoAds)}</td>
+                      <td className="r neg">{brl(l.custoFixo)}</td>
+                      <td className="r neg">{brl(l.custoExtra)}{l.custoExtraDesc ? <div className="extra-desc" title={l.custoExtraDesc}>{l.custoExtraDesc}</div> : null}</td>
+                      <td className="r neg"><b>{brl(l.custoTotal)}</b></td>
+                      <td className="r"><b className={l.lucro >= 0 ? "pos" : "negv"}>{brl(l.lucro)}</b></td>
+                      <td className="acoes"><button className="mini" onClick={() => setEditId(l.id)}>editar</button></td>
+                    </tr>
+                  ))}
+                  <tr className="row-total">
+                    <td>TOTAL</td>
+                    <td className="r">{brl(tot.faturamento)}</td>
+                    <td className="r">{brl(tot.taxaPublicacao)}</td>
+                    <td className="r">{brl(tot.custoAds)}</td>
+                    <td className="r">{brl(tot.custoFixo)}</td>
+                    <td className="r">{brl(tot.custoExtra)}</td>
+                    <td className="r">{brl(tot.custoTotal)}</td>
+                    <td className="r"><b className="pos">{brl(tot.lucro)}</b></td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {editLinha && (
+        <FormMes linha={editLinha} fatVendas={fatVendasMes[editLinha.ordem]} onSalvar={(d) => salvarLinha(editLinha.id, d)} onClose={() => setEditId(null)} />
       )}
     </>
   );
@@ -1096,8 +1196,10 @@ function FormMes({ linha, fatVendas, onSalvar, onClose }) {
   const [f, setF] = useState({
     faturamento: linha.faturamento || 0, taxaPublicacao: linha.taxaPublicacao || 0,
     custoAds: linha.custoAds || 0, custoFixo: linha.custoFixo || 0, custoExtra: linha.custoExtra || 0,
+    custoExtraDesc: linha.custoExtraDesc || "",
   });
   const setn = (k, v) => setF((p) => ({ ...p, [k]: parseFloat(String(v).replace(",", ".")) || 0 }));
+  const setTxt = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const ct = f.taxaPublicacao + f.custoAds + f.custoFixo + f.custoExtra;
   return (
     <Modal titulo={`Fechamento · ${linha.mes}`} onClose={onClose}>
@@ -1111,6 +1213,9 @@ function FormMes({ linha, fatVendas, onSalvar, onClose }) {
         <Campo label="Custo fixo"><input className="inp" defaultValue={f.custoFixo} onChange={(e) => setn("custoFixo", e.target.value)} /></Campo>
         <Campo label="Custo extra / variável"><input className="inp" defaultValue={f.custoExtra} onChange={(e) => setn("custoExtra", e.target.value)} /></Campo>
       </div>
+      <Campo label="Descrição do custo extra (opcional)">
+        <input className="inp" placeholder="Ex.: Compra de celular" value={f.custoExtraDesc} onChange={(e) => setTxt("custoExtraDesc", e.target.value)} />
+      </Campo>
       <div className="resumo-mes">
         <div><span>Custo total</span><b className="negv">{brl(ct)}</b></div>
         <div><span>Lucro</span><b className={f.faturamento - ct >= 0 ? "pos" : "negv"}>{brl(f.faturamento - ct)}</b></div>
@@ -1126,35 +1231,26 @@ function FormMes({ linha, fatVendas, onSalvar, onClose }) {
 /* ============================================================
    TEMAS E VAGAS
    ============================================================ */
-function Temas({ temas, salvar, aviso }) {
+function Temas({ temas, onAdd, onRem, onEdit, onAddPart, onRemPart, aviso }) {
   const [busca, setBusca] = useState("");
-  const [aberto, setAberto] = useState(null);
-  const [modalTema, setModalTema] = useState(false);
   const [soComVaga, setSoComVaga] = useState(false);
+  const [selId, setSelId] = useState(null);
+  const [modalTema, setModalTema] = useState(false);
 
   const lista = useMemo(() => {
     const b = busca.trim().toLowerCase();
     return temas
       .filter((t) => !b || t.nome.toLowerCase().includes(b))
       .filter((t) => !soComVaga || t.participantes.length < t.maxVagas)
-      .sort((a, b) => (b.maxVagas - b.participantes.length) - (a.maxVagas - a.participantes.length));
+      .sort((a, b) => (b.criadoEm || "").localeCompare(a.criadoEm || ""));
   }, [temas, busca, soComVaga]);
 
-  const addTema = (d) => { salvar([{ id: uid(), participantes: [], ...d }, ...temas]); setModalTema(false); aviso("Publicação criada"); };
-  const addPart = (temaId, p) => {
-    salvar(temas.map((t) => t.id === temaId ? { ...t, participantes: [...t.participantes, { id: uid(), ...p }] } : t));
-    aviso("Participante adicionado");
-  };
-  const rmPart = (temaId, pid) => {
-    salvar(temas.map((t) => t.id === temaId ? { ...t, participantes: t.participantes.filter((p) => p.id !== pid) } : t));
-  };
-  const setMax = (temaId, max) => salvar(temas.map((t) => t.id === temaId ? { ...t, maxVagas: max } : t));
-  const setTipo = (temaId, tipo) => salvar(temas.map((t) => t.id === temaId ? { ...t, tipo } : t));
-  const setReqGrad = (temaId, v) => salvar(temas.map((t) => t.id === temaId ? { ...t, requiresGrad: v } : t));
-  const rmTema = (temaId) => { if (confirm("Remover esta publicação?")) { salvar(temas.filter((t) => t.id !== temaId)); aviso("Publicação removida"); } };
-
+  const sel = temas.find((t) => t.id === selId) || null;
   const comVaga = temas.filter((t) => t.participantes.length < t.maxVagas).length;
   const totalPart = temas.reduce((s, t) => s + t.participantes.length, 0);
+
+  const criar = (d) => { onAdd(d); setModalTema(false); };
+  const excluir = (t) => { if (confirm("Remover esta publicação?")) { onRem(t.id); if (selId === t.id) setSelId(null); } };
 
   return (
     <>
@@ -1166,81 +1262,124 @@ function Temas({ temas, salvar, aviso }) {
         <label className="check"><input type="checkbox" checked={soComVaga} onChange={(e) => setSoComVaga(e.target.checked)} /> só com vaga aberta</label>
       </div>
 
-      <div className="temas-grid">
-        {lista.map((t) => {
-          const restantes = t.maxVagas - t.participantes.length;
-          const pct = Math.min(100, (t.participantes.length / t.maxVagas) * 100);
-          const cheio = restantes <= 0;
-          return (
-            <div className={"tema-card " + (cheio ? "cheio" : "")} key={t.id}>
-              <div className="tema-top" onClick={() => setAberto(aberto === t.id ? null : t.id)}>
-                <div className="tema-nome">{t.nome}</div>
-                <span className={"vagas-badge " + (cheio ? "b-cheio" : restantes <= 2 ? "b-quase" : "b-ok")}>
-                  {cheio ? "Lotado" : `${restantes} vaga${restantes > 1 ? "s" : ""}`}
-                </span>
-              </div>
-              <div className="tema-prog"><div className="tema-prog-fill" style={{ width: `${pct}%`, background: cheio ? "#C2477A" : "#0D7D8A" }} /></div>
-              <div className="tema-chips">
-                <span className="chip-tipo" style={{ background: TIPO_COR[t.tipo] || "#7A8893" }}>{t.tipo || "Artigo"}</span>
-                {t.requiresGrad && <span className="chip-grad">requer graduado</span>}
-              </div>
-              <div className="tema-meta">
-                <span>{t.participantes.length}/{t.maxVagas} ocupadas</span>
-                <button className="link-mini" onClick={() => setAberto(aberto === t.id ? null : t.id)}>{aberto === t.id ? "fechar" : "ver participantes"}</button>
-              </div>
-              {aberto === t.id && (
-                <div className="tema-det">
-                  <div className="edit-pub">
-                    <label className="ep-campo">Tipo
-                      <select className="max-inp wide" value={t.tipo || "Artigo"} onChange={(e) => setTipo(t.id, e.target.value)}>
-                        {TIPOS.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
-                      </select>
-                    </label>
-                    <label className="ep-campo">Vagas
-                      <input type="number" min="1" className="max-inp" value={t.maxVagas} onChange={(e) => setMax(t.id, parseInt(e.target.value, 10) || 1)} />
-                    </label>
-                    <label className="check sm grad-check"><input type="checkbox" checked={!!t.requiresGrad} onChange={(e) => setReqGrad(t.id, e.target.checked)} /> exige médico graduado</label>
-                    <button className="mini del" onClick={() => rmTema(t.id)}>excluir</button>
-                  </div>
-                  <ul className="parts">
-                    {t.participantes.map((p) => (
-                      <li key={p.id}>
-                        <div>
-                          <span className="p-nome">{p.nome}</span>
-                          {p.autorPrincipal && <span className="tag-autor">autor principal</span>}
-                          {p.graduado && <span className="tag-grad">graduado</span>}
-                          <div className="p-fac">{p.faculdade}{p.email ? ` · ${p.email}` : ""}</div>
-                        </div>
-                        <button className="mini del" onClick={() => rmPart(t.id, p.id)}>×</button>
-                      </li>
-                    ))}
-                    {t.participantes.length === 0 && <li className="p-vazio">Sem participantes ainda.</li>}
-                  </ul>
-                  {!cheio && <FormPart onAdd={(p) => addPart(t.id, p)} />}
+      <div className="pub-split">
+        <div className="pub-lista card no-pad">
+          {lista.map((t) => {
+            const restantes = t.maxVagas - t.participantes.length;
+            const cheio = restantes <= 0;
+            const pct = Math.min(100, (t.participantes.length / t.maxVagas) * 100);
+            return (
+              <button key={t.id} className={"pub-item" + (selId === t.id ? " ativo" : "")} onClick={() => setSelId(t.id)}>
+                <div className="pub-item-top">
+                  <span className="pub-item-nome">{t.nome}</span>
+                  <span className={"vagas-badge " + (cheio ? "b-cheio" : restantes <= 2 ? "b-quase" : "b-ok")}>
+                    {cheio ? "Lotado" : `${restantes} vaga${restantes > 1 ? "s" : ""}`}
+                  </span>
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      {lista.length === 0 && <div className="vazio">Nenhum tema encontrado.</div>}
+                <div className="pub-item-prog"><div className="pub-item-fill" style={{ width: `${pct}%`, background: cheio ? "#C2477A" : "#2C7DA0" }} /></div>
+                <div className="pub-item-sub">
+                  <span className="chip-tipo sm" style={{ background: TIPO_COR[t.tipo] || "#7A8893" }}>{t.tipo || "Artigo"}</span>
+                  <span className="pub-item-ocup">{t.participantes.length}/{t.maxVagas}</span>
+                </div>
+              </button>
+            );
+          })}
+          {lista.length === 0 && <div className="vazio">Nenhuma publicação encontrada.</div>}
+        </div>
 
-      {modalTema && <FormTema onSalvar={addTema} onClose={() => setModalTema(false)} />}
+        <div className="pub-detalhe card">
+          {!sel ? (
+            <div className="pub-vazio-det">
+              <div className="pub-vazio-ic">≡</div>
+              <p>Selecione uma publicação na lista para ver os participantes e lançar pessoas (com o valor pago).</p>
+            </div>
+          ) : (
+            <DetalhePub key={sel.id} t={sel} onEdit={onEdit} onAddPart={onAddPart} onRemPart={onRemPart} onExcluir={() => excluir(sel)} />
+          )}
+        </div>
+      </div>
+
+      {modalTema && <FormTema onSalvar={criar} onClose={() => setModalTema(false)} />}
     </>
   );
 }
 
-function FormPart({ onAdd }) {
-  const [p, setP] = useState({ nome: "", faculdade: "", email: "", autorPrincipal: false, graduado: false });
+function DetalhePub({ t, onEdit, onAddPart, onRemPart, onExcluir }) {
+  const restantes = t.maxVagas - t.participantes.length;
+  const cheio = restantes <= 0;
+  const pct = Math.min(100, (t.participantes.length / t.maxVagas) * 100);
+  return (
+    <div className="dp">
+      <div className="dp-head">
+        <h3 className="dp-nome">{t.nome}</h3>
+        <button className="mini del" onClick={onExcluir}>excluir</button>
+      </div>
+      <div className="dp-prog"><div className="dp-prog-fill" style={{ width: `${pct}%`, background: cheio ? "#C2477A" : "#2C7DA0" }} /></div>
+      <div className="dp-ocup">{t.participantes.length} de {t.maxVagas} vagas ocupadas{t.area ? ` · ${t.area}` : ""}</div>
+
+      <div className="dp-controles">
+        <label className="ep-campo">Tipo
+          <select className="max-inp wide" value={t.tipo || "Artigo"} onChange={(e) => onEdit(t.id, { tipo: e.target.value })}>
+            {TIPOS.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
+          </select>
+        </label>
+        <label className="ep-campo">Vagas
+          <input type="number" min="1" className="max-inp" value={t.maxVagas} onChange={(e) => onEdit(t.id, { maxVagas: parseInt(e.target.value, 10) || 1 })} />
+        </label>
+        <label className="check sm grad-check"><input type="checkbox" checked={!!t.requiresGrad} onChange={(e) => onEdit(t.id, { requiresGrad: e.target.checked })} /> exige graduado</label>
+      </div>
+
+      <h4 className="dp-sub">Participantes ({t.participantes.length})</h4>
+      <ul className="parts">
+        {t.participantes.map((p) => (
+          <li key={p.id}>
+            <div>
+              <span className="p-nome">{p.nome}</span>
+              {p.autorPrincipal && <span className="tag-autor">autor principal</span>}
+              {p.graduado && <span className="tag-grad">graduado</span>}
+              <div className="p-fac">{p.faculdade}{p.email ? ` · ${p.email}` : ""}</div>
+            </div>
+            <button className="mini del" onClick={() => onRemPart(t.id, p.id)}>×</button>
+          </li>
+        ))}
+        {t.participantes.length === 0 && <li className="p-vazio">Sem participantes ainda.</li>}
+      </ul>
+
+      {cheio
+        ? <div className="dp-lotado">Publicação lotada ({t.maxVagas}/{t.maxVagas}). Aumente as vagas para adicionar mais pessoas.</div>
+        : <FormPart tema={t} onAdd={(d) => onAddPart(t, d)} />}
+    </div>
+  );
+}
+
+function FormPart({ tema, onAdd }) {
+  const vazio = { nome: "", faculdade: "", email: "", autorPrincipal: false, graduado: false, valor: "", taxa: "", data: hojeIso(), lancarVenda: true };
+  const [p, setP] = useState(vazio);
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
+  const enviar = () => {
+    if (!p.nome.trim()) { alert("Informe o nome."); return; }
+    const valor = parseFloat(String(p.valor).replace(",", ".")) || 0;
+    const taxa = parseFloat(String(p.taxa).replace(",", ".")) || 0;
+    onAdd({ ...p, valor, taxa });
+    setP({ ...vazio, data: p.data });
+  };
   return (
     <div className="form-part">
-      <input className="inp sm" placeholder="Nome" value={p.nome} onChange={(e) => set("nome", e.target.value)} />
-      <input className="inp sm" placeholder="Faculdade" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
-      <input className="inp sm" placeholder="Email" value={p.email} onChange={(e) => set("email", e.target.value)} />
-      <label className="check sm"><input type="checkbox" checked={p.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> autor principal</label>
-      <label className="check sm"><input type="checkbox" checked={p.graduado} onChange={(e) => set("graduado", e.target.checked)} /> graduado</label>
-      <button className="btn sm" onClick={() => { if (!p.nome.trim()) { alert("Informe o nome."); return; } onAdd(p); setP({ nome: "", faculdade: "", email: "", autorPrincipal: false, graduado: false }); }}>adicionar</button>
+      <div className="fp-titulo">Adicionar pessoa{p.lancarVenda ? " + lançar venda" : ""}</div>
+      <div className="fp-grid">
+        <input className="inp sm" placeholder="Nome" value={p.nome} onChange={(e) => set("nome", e.target.value)} />
+        <input className="inp sm" placeholder="Faculdade" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
+        <input className="inp sm" placeholder="Email" value={p.email} onChange={(e) => set("email", e.target.value)} />
+        <input className="inp sm" inputMode="decimal" placeholder="Valor pago (R$)" value={p.valor} onChange={(e) => set("valor", e.target.value)} />
+        <input className="inp sm" inputMode="decimal" placeholder="Taxa de publicação (R$)" value={p.taxa} onChange={(e) => set("taxa", e.target.value)} />
+        <input className="inp sm" type="date" value={p.data} onChange={(e) => set("data", e.target.value)} />
+      </div>
+      <div className="fp-opts">
+        <label className="check sm"><input type="checkbox" checked={p.lancarVenda} onChange={(e) => set("lancarVenda", e.target.checked)} /> lançar venda ({tema.tipo})</label>
+        <label className="check sm"><input type="checkbox" checked={p.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> autor principal</label>
+        <label className="check sm"><input type="checkbox" checked={p.graduado} onChange={(e) => set("graduado", e.target.checked)} /> graduado</label>
+        <button className="btn sm" onClick={enviar}>adicionar</button>
+      </div>
     </div>
   );
 }
@@ -1289,8 +1428,8 @@ function Estilos() {
     <style>{`
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root{
-  --ink:#0F2330; --brand:#0D7D8A; --brand-deep:#0A5560; --accent:#E8833A;
-  --bg:#F4F7F8; --surface:#FFFFFF; --border:#E4EAEC; --muted:#5B6B73; --muted2:#8997A0;
+  --ink:#1D3557; --brand:#2C7DA0; --brand-deep:#1D3557; --accent:#E8833A;
+  --bg:#F5F7FA; --surface:#FFFFFF; --border:#E3E8EF; --muted:#5B6B73; --muted2:#8997A0;
 }
 .root{ display:flex; min-height:100vh; background:var(--bg);
   font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; color:var(--ink);
@@ -1298,9 +1437,9 @@ function Estilos() {
 .root :is(table,td,th,.kpi-valor,.barra-val,.leg-val){ font-variant-numeric:tabular-nums; }
 
 /* SIDEBAR */
-.side{ width:236px; flex-shrink:0; background:var(--ink); color:#CFE0E3; display:flex; flex-direction:column;
+.side{ width:236px; flex-shrink:0; background:linear-gradient(180deg,#244468 0%,#1D3557 55%,#16273C 100%); color:#CFE0E3; display:flex; flex-direction:column;
   position:sticky; top:0; height:100vh; }
-.brand{ display:flex; align-items:center; gap:11px; padding:22px 20px 18px; }
+.brand{ display:flex; flex-direction:column; align-items:flex-start; gap:7px; padding:24px 22px 18px; }
 .brand-mark{ width:38px; height:38px; border-radius:10px; background:linear-gradient(135deg,var(--brand),var(--brand-deep));
   display:grid; place-items:center; font-weight:800; font-size:20px; color:#fff; }
 .brand-nome{ font-weight:700; font-size:16px; color:#fff; letter-spacing:.2px; }
@@ -1329,19 +1468,19 @@ nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 .kpis-3{ grid-template-columns:repeat(3,1fr); }
 .kpis-4{ grid-template-columns:repeat(4,1fr); }
 .kpi{ background:var(--surface); border:1px solid var(--border); border-radius:13px; overflow:hidden;
-  display:flex; box-shadow:0 1px 2px rgba(16,35,48,.03); }
+  display:flex; box-shadow:0 1px 2px rgba(29,53,87,.03); }
 .kpi-bar{ width:4px; flex-shrink:0; }
 .kpi-body{ padding:14px 16px; }
 .kpi-label{ font-size:11.5px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
 .kpi-valor{ font-size:24px; font-weight:700; margin-top:5px; letter-spacing:-.5px; }
 .kpi-sub{ font-size:11.5px; color:var(--muted2); margin-top:3px; }
 .kpi-click{ cursor:pointer; text-align:left; font-family:inherit; transition:.13s; }
-.kpi-click:hover{ box-shadow:0 3px 10px rgba(16,35,48,.08); transform:translateY(-1px); }
+.kpi-click:hover{ box-shadow:0 3px 10px rgba(29,53,87,.08); transform:translateY(-1px); }
 .kpi-ativo{ outline:2px solid var(--brand); }
 
 /* CARDS */
 .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px 20px;
-  margin-bottom:18px; box-shadow:0 1px 2px rgba(16,35,48,.03); }
+  margin-bottom:18px; box-shadow:0 1px 2px rgba(29,53,87,.04), 0 4px 16px rgba(29,53,87,.045); }
 .card.no-pad{ padding:0; overflow:hidden; }
 .card-head{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:14px; }
 .card-head.pad{ padding:18px 20px 0; }
@@ -1417,6 +1556,8 @@ select.inp{ cursor:pointer; }
 .row-zero td{ opacity:.42; }
 .row-total td{ background:#F4F8F9; font-weight:700; border-top:2px solid var(--border); }
 .fat-real{ font-size:10px; color:var(--brand); margin-top:2px; font-weight:600; }
+.extra-desc{ font-size:10px; color:var(--muted2); font-weight:500; margin-top:2px; max-width:130px; margin-left:auto;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .pos{ color:#1F8F66; }
 .negv{ color:#C2477A; }
 
@@ -1434,10 +1575,10 @@ select.inp{ cursor:pointer; }
   cursor:pointer; font-family:inherit; outline:none; }
 
 /* MODAL */
-.modal-bg{ position:fixed; inset:0; background:rgba(15,35,48,.42); display:grid; place-items:center; z-index:50; padding:20px;
+.modal-bg{ position:fixed; inset:0; background:rgba(29,53,87,.42); display:grid; place-items:center; z-index:50; padding:20px;
   backdrop-filter:blur(2px); }
 .modal{ background:#fff; border-radius:16px; width:100%; max-width:440px; max-height:90vh; overflow:auto;
-  box-shadow:0 20px 60px rgba(15,35,48,.3); }
+  box-shadow:0 20px 60px rgba(29,53,87,.3); }
 .modal-wide{ max-width:640px; }
 .modal-head{ display:flex; justify-content:space-between; align-items:center; padding:18px 22px; border-bottom:1px solid var(--border);
   position:sticky; top:0; background:#fff; }
@@ -1464,7 +1605,7 @@ select.inp{ cursor:pointer; }
 /* TEMAS */
 .temas-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
 .tema-card{ background:var(--surface); border:1px solid var(--border); border-radius:13px; padding:15px 16px;
-  box-shadow:0 1px 2px rgba(16,35,48,.03); }
+  box-shadow:0 1px 2px rgba(29,53,87,.03); }
 .tema-card.cheio{ background:#FDF7F9; }
 .tema-top{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; cursor:pointer; }
 .tema-nome{ font-size:13px; font-weight:600; line-height:1.35; }
@@ -1494,8 +1635,49 @@ select.inp{ cursor:pointer; }
 .p-vazio{ justify-content:center; color:var(--muted2); font-size:12px; padding:10px; }
 .tag-autor{ font-size:9.5px; font-weight:700; background:#E8833A22; color:#C26A1E; padding:1px 6px; border-radius:5px; margin-left:6px; }
 .tag-grad{ font-size:9.5px; font-weight:700; background:#2E9E7B22; color:#1F8F66; padding:1px 6px; border-radius:5px; margin-left:5px; }
-.form-part{ display:flex; flex-wrap:wrap; gap:7px; align-items:center; margin-top:11px; padding-top:11px; border-top:1px dashed var(--border); }
-.form-part .inp{ flex:1; min-width:110px; }
+/* PERIODO BAR */
+.periodo-bar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--surface);
+  border:1px solid var(--border); border-radius:12px; padding:10px 14px; margin-bottom:18px; box-shadow:0 1px 2px rgba(29,53,87,.03); }
+.periodo-lab{ font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+.periodo-bar .inp{ padding:8px 11px; font-size:13px; }
+.periodo-info{ margin-left:auto; font-size:12.5px; color:var(--muted); font-weight:600; }
+
+/* PUBLICACOES: lista + painel de detalhe */
+.pub-split{ display:grid; grid-template-columns:330px 1fr; gap:16px; align-items:start; }
+.pub-lista{ max-height:calc(100vh - 240px); overflow-y:auto; }
+.pub-item{ display:block; width:100%; text-align:left; background:transparent; border:none; border-bottom:1px solid #F0F4F5;
+  padding:12px 14px; cursor:pointer; font-family:inherit; transition:.12s; }
+.pub-item:hover{ background:#FAFCFD; }
+.pub-item.ativo{ background:#EAF5F6; box-shadow:inset 3px 0 0 var(--brand); }
+.pub-item-top{ display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+.pub-item-nome{ font-size:12.5px; font-weight:600; line-height:1.35; color:var(--ink); }
+.pub-item-prog{ height:5px; background:#EEF3F4; border-radius:4px; margin:8px 0 6px; overflow:hidden; }
+.pub-item-fill{ height:100%; border-radius:4px; }
+.pub-item-sub{ display:flex; align-items:center; justify-content:space-between; }
+.pub-item-ocup{ font-size:11px; color:var(--muted); font-weight:700; }
+.chip-tipo.sm{ font-size:9.5px; padding:2px 8px; }
+
+.pub-detalhe{ min-height:320px; }
+.pub-vazio-det{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; min-height:300px;
+  color:var(--muted2); text-align:center; font-size:13px; padding:30px; line-height:1.5; }
+.pub-vazio-ic{ width:56px; height:56px; border-radius:15px; background:#EEF3F4; display:grid; place-items:center; font-size:26px; color:var(--brand); }
+.dp-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.dp-nome{ font-size:16px; font-weight:700; line-height:1.3; }
+.dp-prog{ height:8px; background:#EEF3F4; border-radius:6px; margin:12px 0 6px; overflow:hidden; }
+.dp-prog-fill{ height:100%; border-radius:6px; transition:width .4s; }
+.dp-ocup{ font-size:12px; color:var(--muted); margin-bottom:14px; }
+.dp-controles{ display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; padding:13px 14px; background:#F8FAFB;
+  border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
+.dp-sub{ font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; margin-bottom:10px; }
+.dp-lotado{ font-size:12.5px; color:#C2477A; background:#FBE6EE; border-radius:9px; padding:11px 13px; margin-top:11px; }
+
+/* FORM PARTICIPANTE (com venda) */
+.form-part{ margin-top:14px; padding-top:14px; border-top:1px dashed var(--border); }
+.fp-titulo{ font-size:12.5px; font-weight:700; color:var(--brand-deep); margin-bottom:10px; }
+.fp-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.fp-grid .inp{ width:100%; }
+.fp-opts{ display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-top:11px; }
+.fp-opts .btn{ margin-left:auto; }
 
 /* LOADING / TOAST */
 .loading{ display:grid; place-items:center; min-height:100vh; gap:14px; color:var(--muted); font-size:13px;
@@ -1503,7 +1685,7 @@ select.inp{ cursor:pointer; }
 .spin{ width:34px; height:34px; border:3px solid #DCE6E8; border-top-color:var(--brand); border-radius:50%; animation:sp 1s linear infinite; }
 @keyframes sp{ to{ transform:rotate(360deg); } }
 .toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff;
-  padding:11px 20px; border-radius:10px; font-size:13px; font-weight:500; z-index:80; box-shadow:0 8px 24px rgba(15,35,48,.3);
+  padding:11px 20px; border-radius:10px; font-size:13px; font-weight:500; z-index:80; box-shadow:0 8px 24px rgba(29,53,87,.3);
   animation:up .2s ease; }
 @keyframes up{ from{ opacity:0; transform:translate(-50%,8px); } }
 
@@ -1512,7 +1694,8 @@ select.inp{ cursor:pointer; }
   .side{ width:100%; height:auto; position:relative; flex-direction:row; align-items:center; overflow-x:auto; }
   .brand{ padding:14px 16px; } nav{ flex-direction:row; padding:8px; } .side-foot{ display:none; }
   .main{ padding:18px 16px 50px; }
-  .kpis,.kpis-3,.kpis-4,.grid-2,.temas-grid,.destaques,.cli-info,.form-grid{ grid-template-columns:1fr; }
+  .kpis,.kpis-3,.kpis-4,.grid-2,.temas-grid,.pub-split,.fp-grid,.destaques,.cli-info,.form-grid{ grid-template-columns:1fr; }
+  .pub-lista{ max-height:none; }
   .head{ flex-direction:column; align-items:flex-start; }
 }
     `}</style>

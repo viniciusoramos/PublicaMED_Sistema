@@ -36,6 +36,7 @@ create table if not exists public.vendas (
   tipo          text          not null default 'Outro',
   valor         numeric(10,2) not null default 0,
   tema          text          not null default '',
+  participante_id uuid,
   criado_em     timestamptz   not null default now()
 );
 create index if not exists vendas_data_idx      on public.vendas (data);
@@ -69,6 +70,12 @@ create table if not exists public.participantes (
 );
 create index if not exists participantes_pub_idx on public.participantes (publicacao_id);
 
+-- liga venda -> participante (a venda some junto ao remover o participante)
+alter table public.vendas drop constraint if exists vendas_participante_fk;
+alter table public.vendas add constraint vendas_participante_fk
+  foreign key (participante_id) references public.participantes(id) on delete cascade;
+create index if not exists vendas_participante_idx on public.vendas (participante_id);
+
 -- ───────────────────────── TRABALHOS ──────────────────────────
 -- Controle de produção (aba "Trabalhos"). Ausente do "schema
 -- mínimo" do CONTEXTO, incluído para não perder a persistência
@@ -86,14 +93,17 @@ create table if not exists public.trabalhos (
 -- a sequência Jan→Dez independente de ordenação alfabética.
 create table if not exists public.financeiro (
   id               uuid          primary key default gen_random_uuid(),
-  mes              text          not null unique,
+  ano              smallint      not null default 2025,
+  mes              text          not null,
   ordem            smallint      not null default 0,
   faturamento      numeric(12,2) not null default 0,
   taxa_publicacao  numeric(12,2) not null default 0,
   custo_ads        numeric(12,2) not null default 0,
   custo_fixo       numeric(12,2) not null default 0,
   custo_extra      numeric(12,2) not null default 0,
-  criado_em        timestamptz   not null default now()
+  custo_extra_desc text          not null default '',
+  criado_em        timestamptz   not null default now(),
+  unique (ano, mes)
 );
 
 -- ============================================================

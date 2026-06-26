@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { entrar } from '../lib/db.js';
+import Logo from './Logo.jsx';
 
 const traduz = (msg = '') => {
   const m = msg.toLowerCase();
@@ -31,12 +32,9 @@ export default function Login() {
   return (
     <div style={S.root}>
       <form style={S.card} onSubmit={submeter}>
-        <div style={S.brandRow}>
-          <div style={S.mark}>P</div>
-          <div>
-            <div style={S.nome}>PublicaMED</div>
-            <div style={S.sub}>Painel de gestão</div>
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+          <Logo style={{ height: 30, color: '#1D3557' }} />
+          <div style={S.sub}>Painel de gestão</div>
         </div>
 
         <label style={S.label}>
@@ -63,27 +61,27 @@ export default function Login() {
 }
 
 const S = {
-  root: { minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: '#F4F7F8' },
+  root: { minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: '#F5F7FA' },
   card: {
-    background: '#fff', border: '1px solid #E4EAEC', borderRadius: 16, padding: '30px 30px 24px',
-    width: '100%', maxWidth: 380, boxShadow: '0 10px 40px rgba(16,35,48,.10)',
+    background: '#fff', border: '1px solid #E3E8EF', borderRadius: 16, padding: '30px 30px 24px',
+    width: '100%', maxWidth: 380, boxShadow: '0 10px 40px rgba(29,53,87,.10)',
     display: 'flex', flexDirection: 'column', gap: 14,
   },
   brandRow: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 },
   mark: {
     width: 42, height: 42, borderRadius: 11, display: 'grid', placeItems: 'center',
-    background: 'linear-gradient(135deg,#0D7D8A,#0A5560)', color: '#fff', fontWeight: 800, fontSize: 22,
+    background: 'linear-gradient(135deg,#2C7DA0,#1D3557)', color: '#fff', fontWeight: 800, fontSize: 22,
   },
-  nome: { fontWeight: 700, fontSize: 18, color: '#0F2330' },
+  nome: { fontWeight: 700, fontSize: 18, color: '#1D3557' },
   sub: { fontSize: 12.5, color: '#5B6B73', marginTop: 2 },
   label: { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5, fontWeight: 600, color: '#5B6B73' },
   input: {
-    border: '1px solid #E4EAEC', borderRadius: 9, padding: '10px 12px', fontSize: 14,
-    color: '#0F2330', fontFamily: 'inherit', outline: 'none',
+    border: '1px solid #E3E8EF', borderRadius: 9, padding: '10px 12px', fontSize: 14,
+    color: '#1D3557', fontFamily: 'inherit', outline: 'none',
   },
   erro: { background: '#FBE6EE', color: '#C2477A', borderRadius: 9, padding: '9px 12px', fontSize: 12.5, fontWeight: 600 },
   btn: {
-    background: '#0D7D8A', color: '#fff', border: 'none', padding: '11px 16px', borderRadius: 9,
+    background: '#2C7DA0', color: '#fff', border: 'none', padding: '11px 16px', borderRadius: 9,
     fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginTop: 4,
   },
   rodape: { fontSize: 11, color: '#8997A0', textAlign: 'center', marginTop: 4 },
