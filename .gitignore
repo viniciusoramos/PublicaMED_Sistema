@@ -1,0 +1,21 @@
+node_modules
+dist
+dist-ssr
+publicamed-site.zip
+*.local
+
+# arquivo original com dados de clientes (PII) — manter apenas local, nunca versionar
+publicamed_sistema.jsx
+
+# variáveis de ambiente — NUNCA commitar (contém service_role e chaves)
+.env
+.env.local
+.env.*.local
+
+# logs / editor / SO
+*.log
+npm-debug.log*
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
