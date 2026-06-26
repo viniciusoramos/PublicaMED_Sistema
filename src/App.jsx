@@ -1065,12 +1065,24 @@ function FormCliente({ cliente, onSalvar, onCancelar }) {
 function Trabalhos({ trabalhos, salvar, aviso }) {
   const [busca, setBusca] = useState("");
   const [fStatus, setFStatus] = useState("");
+  const [fTipo, setFTipo] = useState("");
+  const [ordem, setOrdem] = useState("recentes");
   const [modal, setModal] = useState(false);
 
   const filtrados = useMemo(() => {
     const b = busca.trim().toLowerCase();
-    return trabalhos.filter((t) => (!b || t.titulo.toLowerCase().includes(b)) && (!fStatus || t.status === fStatus));
-  }, [trabalhos, busca, fStatus]);
+    const arr = trabalhos.filter((t) =>
+      (!b || t.titulo.toLowerCase().includes(b)) &&
+      (!fStatus || t.status === fStatus) &&
+      (!fTipo || t.tipo === fTipo));
+    const cmp = {
+      recentes: (a, c) => (c.criadoEm || "").localeCompare(a.criadoEm || ""),
+      antigos: (a, c) => (a.criadoEm || "").localeCompare(c.criadoEm || ""),
+      status: (a, c) => STATUS.indexOf(a.status) - STATUS.indexOf(c.status) || (c.criadoEm || "").localeCompare(a.criadoEm || ""),
+      titulo: (a, c) => a.titulo.localeCompare(c.titulo),
+    }[ordem];
+    return [...arr].sort(cmp);
+  }, [trabalhos, busca, fStatus, fTipo, ordem]);
 
   const contagem = STATUS.map((s) => ({ s, n: trabalhos.filter((t) => t.status === s).length }));
 
@@ -1078,7 +1090,7 @@ function Trabalhos({ trabalhos, salvar, aviso }) {
     salvar(trabalhos.map((t) => (t.id === id ? { ...t, status } : t)));
   };
   const remover = (id) => { if (confirm("Remover trabalho?")) { salvar(trabalhos.filter((t) => t.id !== id)); aviso("Removido"); } };
-  const addTrab = (d) => { salvar([{ id: "t" + uid(), ...d }, ...trabalhos]); setModal(false); aviso("Trabalho adicionado"); };
+  const addTrab = (d) => { salvar([{ id: "t" + uid(), criadoEm: new Date().toISOString(), ...d }, ...trabalhos]); setModal(false); aviso("Trabalho adicionado"); };
 
   return (
     <>
@@ -1096,17 +1108,28 @@ function Trabalhos({ trabalhos, salvar, aviso }) {
 
       <div className="filtros">
         <input className="inp busca" placeholder="Buscar trabalho pelo título…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-        {fStatus && <button className="btn-ghost" onClick={() => setFStatus("")}>Limpar filtro de status</button>}
+        <select className="inp" value={fTipo} onChange={(e) => setFTipo(e.target.value)}>
+          <option value="">Todos os tipos</option>
+          {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select className="inp" value={ordem} onChange={(e) => setOrdem(e.target.value)}>
+          <option value="recentes">Mais recentes primeiro</option>
+          <option value="antigos">Mais antigos primeiro</option>
+          <option value="status">Ordenar por status</option>
+          <option value="titulo">Ordenar por título</option>
+        </select>
+        {fStatus && <button className="btn-ghost" onClick={() => setFStatus("")}>Limpar status: {fStatus}</button>}
       </div>
 
       <div className="card no-pad">
         <table className="tab">
-          <thead><tr><th>Título</th><th>Tipo</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Título</th><th>Tipo</th><th>Adicionado</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {filtrados.map((t) => (
               <tr key={t.id}>
                 <td className="cel-titulo">{t.titulo}</td>
                 <td><span className="tipo-pill" style={{ background: (TIPO_COR[t.tipo] || "#8B97A0") + "22", color: TIPO_COR[t.tipo] || "#8B97A0" }}>{t.tipo}</span></td>
+                <td className="nowrap muted">{t.criadoEm ? fmtData(t.criadoEm.slice(0, 10)) : "—"}</td>
                 <td>
                   <select className="status-sel" style={{ color: STATUS_COR[t.status], borderColor: STATUS_COR[t.status] + "55" }}
                     value={t.status} onChange={(e) => mudarStatus(t.id, e.target.value)}>
