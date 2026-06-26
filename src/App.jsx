@@ -134,6 +134,25 @@ const FAC_BASE = (() => {
   return { nomes, ufMap };
 })();
 
+// resolve a UF a partir do nome da faculdade: tenta o nome exato, depois por
+// sigla (início) e por trecho — assim "PUCRS" acha "PUCRS - Pontifícia...".
+function ufDaFaculdade(nome) {
+  const n = (nome || "").trim();
+  if (!n) return "N/I";
+  if (FAC_BASE.ufMap[n] && FAC_BASE.ufMap[n] !== "N/I") return FAC_BASE.ufMap[n];
+  const nb = n.toLowerCase();
+  for (const c of FAC_BASE.nomes) {
+    if (c.toLowerCase().startsWith(nb) && FAC_BASE.ufMap[c] !== "N/I") return FAC_BASE.ufMap[c];
+  }
+  if (nb.length >= 5) {
+    for (const c of FAC_BASE.nomes) {
+      const cb = c.toLowerCase();
+      if ((cb.includes(nb) || nb.includes(cb)) && FAC_BASE.ufMap[c] !== "N/I") return FAC_BASE.ufMap[c];
+    }
+  }
+  return "N/I";
+}
+
 /* ============================================================
    COMPONENTES BASE
    ============================================================ */
@@ -338,7 +357,7 @@ export default function App() {
       setTemas((ts) => ts.map((t) => (t.id === tema.id ? { ...t, participantes: [...t.participantes, part] } : t)));
       const acoes = ["Participante adicionado"];
       if (dados.lancarVenda && (dados.valor || 0) > 0) {
-        const uf = FAC_BASE.ufMap[dados.faculdade] || "N/I";
+        const uf = ufDaFaculdade(dados.faculdade);
         const venda = await db.criarVenda({
           data: dados.data || hojeIso(), nome: dados.nome, email: dados.email,
           faculdade: dados.faculdade, uf, tipo: tema.tipo, valor: dados.valor, tema: tema.nome,
@@ -364,6 +383,19 @@ export default function App() {
   const criarAnoFin = async (ano) => {
     try { const linhas = await db.criarAnoFinanceiro(ano); setFinanceiro((f) => [...f, ...linhas]); aviso(`Ano ${ano} criado`); }
     catch (e) { aviso("Erro: " + e.message); }
+  };
+  // edita os dados de um cliente -> aplica em TODAS as compras (vendas) dele
+  const salvarCliente = async (cliente, dados) => {
+    const uf = dados.uf && dados.uf !== "N/I" ? dados.uf : ufDaFaculdade(dados.faculdade);
+    const ids = new Set((cliente.compras || []).map((v) => v.id));
+    const antes = vendas;
+    setVendas((vs) => vs.map((v) => (ids.has(v.id) ? { ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf } : v)));
+    try {
+      for (const v of cliente.compras) {
+        await db.atualizarVenda(v.id, { ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf });
+      }
+      aviso("Cliente atualizado");
+    } catch (e) { aviso("Erro: " + e.message); setVendas(antes); }
   };
 
   /* ---------- métricas ---------- */
@@ -446,7 +478,7 @@ export default function App() {
         {tab === "vendas" && (
           <Vendas vendas={vendas} salvar={salvarVendas} aviso={aviso} temasExist={temas} />
         )}
-        {tab === "clientes" && <Clientes m={m} vendas={vendas} />}
+        {tab === "clientes" && <Clientes m={m} vendas={vendas} salvarCliente={salvarCliente} />}
         {tab === "trabalhos" && (
           <Trabalhos trabalhos={trabalhos} salvar={salvarTrabalhos} aviso={aviso} />
         )}
@@ -895,11 +927,13 @@ function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts }) {
 /* ============================================================
    CLIENTES
    ============================================================ */
-function Clientes({ m, vendas }) {
+function Clientes({ m, vendas, salvarCliente }) {
   const [busca, setBusca] = useState("");
   const [ordem, setOrdem] = useState("total");
   const [limite, setLimite] = useState(50);
   const [sel, setSel] = useState(null);
+  const [editando, setEditando] = useState(false);
+  const abrir = (c) => { setSel(c); setEditando(false); };
 
   const lista = useMemo(() => {
     const b = busca.trim().toLowerCase();
@@ -936,7 +970,7 @@ function Clientes({ m, vendas }) {
           <thead><tr><th>#</th><th>Cliente</th><th>Faculdade</th><th>UF</th><th className="r">Trabalhos</th><th className="r">Total gasto</th><th></th></tr></thead>
           <tbody>
             {lista.slice(0, limite).map((c, i) => (
-              <tr key={c.chave} className="row-click" onClick={() => setSel(c)}>
+              <tr key={c.chave} className="row-click" onClick={() => abrir(c)}>
                 <td className="muted">{i + 1}</td>
                 <td>
                   <div className="cel-nome">{c.nome || "—"}</div>
@@ -957,30 +991,70 @@ function Clientes({ m, vendas }) {
       </div>
 
       {sel && (
-        <Modal titulo={sel.nome} onClose={() => setSel(null)} wide>
-          <div className="cli-info">
-            <div><span className="ci-lab">Email</span>{sel.email || "—"}</div>
-            <div><span className="ci-lab">Faculdade</span>{sel.faculdade || "—"}</div>
-            <div><span className="ci-lab">Estado</span>{UF_NOME[sel.uf] || sel.uf}</div>
-            <div><span className="ci-lab">Total gasto</span><b>{brl(sel.total)}</b></div>
-            <div><span className="ci-lab">Trabalhos</span><b>{sel.qtd}</b></div>
-          </div>
-          <h4 className="sub-h">Histórico de compras</h4>
-          <table className="tab">
-            <thead><tr><th>Data</th><th>Tipo</th><th>Tema</th><th className="r">Valor</th></tr></thead>
-            <tbody>
-              {sel.compras.sort((a, b) => (b.data || "").localeCompare(a.data || "")).map((v) => (
-                <tr key={v.id}>
-                  <td className="nowrap muted">{fmtData(v.data)}</td>
-                  <td><span className="tipo-pill" style={{ background: TIPO_COR[v.tipo] + "22", color: TIPO_COR[v.tipo] }}>{v.tipo}</span></td>
-                  <td className="cel-fac">{v.tema || "—"}</td>
-                  <td className="r"><b>{brl(v.valor)}</b></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <Modal titulo={editando ? `Editar cliente · ${sel.nome}` : sel.nome} onClose={() => setSel(null)} wide>
+          {editando ? (
+            <FormCliente cliente={sel} onSalvar={(d) => { salvarCliente(sel, d); setSel(null); }} onCancelar={() => setEditando(false)} />
+          ) : (
+            <>
+              <div className="cli-info">
+                <div><span className="ci-lab">Email</span>{sel.email || "—"}</div>
+                <div><span className="ci-lab">Faculdade</span>{sel.faculdade || "—"}</div>
+                <div><span className="ci-lab">Estado</span>{UF_NOME[sel.uf] || sel.uf}</div>
+                <div><span className="ci-lab">Total gasto</span><b>{brl(sel.total)}</b></div>
+                <div><span className="ci-lab">Trabalhos</span><b>{sel.qtd}</b></div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+                <button className="btn-ghost" onClick={() => setEditando(true)}>Editar dados do cliente</button>
+              </div>
+              <h4 className="sub-h">Histórico de compras</h4>
+              <table className="tab">
+                <thead><tr><th>Data</th><th>Tipo</th><th>Tema</th><th className="r">Valor</th></tr></thead>
+                <tbody>
+                  {sel.compras.sort((a, b) => (b.data || "").localeCompare(a.data || "")).map((v) => (
+                    <tr key={v.id}>
+                      <td className="nowrap muted">{fmtData(v.data)}</td>
+                      <td><span className="tipo-pill" style={{ background: TIPO_COR[v.tipo] + "22", color: TIPO_COR[v.tipo] }}>{v.tipo}</span></td>
+                      <td className="cel-fac">{v.tema || "—"}</td>
+                      <td className="r"><b>{brl(v.valor)}</b></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </Modal>
       )}
+    </>
+  );
+}
+
+function FormCliente({ cliente, onSalvar, onCancelar }) {
+  const [f, setF] = useState({ nome: cliente.nome || "", email: cliente.email || "", faculdade: cliente.faculdade || "", uf: cliente.uf || "N/I" });
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const escolherFac = (nome) => {
+    const uf = ufDaFaculdade(nome);
+    setF((p) => ({ ...p, faculdade: nome, uf: uf !== "N/I" ? uf : p.uf }));
+  };
+  return (
+    <>
+      <div className="form-grid">
+        <Campo label="Nome"><input className="inp" value={f.nome} onChange={(e) => set("nome", e.target.value)} /></Campo>
+        <Campo label="Email"><input className="inp" value={f.email} onChange={(e) => set("email", e.target.value)} /></Campo>
+        <Campo label="Faculdade (define o estado)">
+          <input className="inp" list="fac-datalist-cli" value={f.faculdade} placeholder="Digite e escolha da lista" onChange={(e) => escolherFac(e.target.value)} />
+          <datalist id="fac-datalist-cli">{FAC_BASE.nomes.map((n) => <option key={n} value={n} />)}</datalist>
+        </Campo>
+        <Campo label="Estado (UF)">
+          <select className="inp" value={f.uf} onChange={(e) => set("uf", e.target.value)}>
+            {["N/I", ...Object.keys(UF_NOME).filter((u) => u !== "N/I")].map((u) => <option key={u} value={u}>{u === "N/I" ? "Não identificado" : `${u} · ${UF_NOME[u]}`}</option>)}
+          </select>
+        </Campo>
+      </div>
+      <p className="nota">Aplica nome, email, faculdade e estado em <b>todas as {cliente.qtd} compra(s)</b> deste cliente.</p>
+      <div className="form-acoes">
+        <button className="btn-ghost" onClick={onCancelar}>Cancelar</button>
+        <button className="btn" onClick={() => { if (!f.nome.trim() && !f.email.trim()) { alert("Informe nome ou email."); return; } onSalvar(f); }}>Salvar alterações</button>
+      </div>
     </>
   );
 }
@@ -1383,12 +1457,13 @@ function FormPart({ tema, onAdd }) {
       <div className="fp-titulo">Adicionar pessoa{p.lancarVenda ? " + lançar venda" : ""}</div>
       <div className="fp-grid">
         <input className="inp sm" placeholder="Nome" value={p.nome} onChange={(e) => set("nome", e.target.value)} />
-        <input className="inp sm" placeholder="Faculdade" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
+        <input className="inp sm" placeholder="Faculdade" list="fac-datalist" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
         <input className="inp sm" placeholder="Email" value={p.email} onChange={(e) => set("email", e.target.value)} />
         <input className="inp sm" inputMode="decimal" placeholder="Valor pago (R$)" value={p.valor} onChange={(e) => set("valor", e.target.value)} />
         <input className="inp sm" inputMode="decimal" placeholder="Taxa de publicação (R$)" value={p.taxa} onChange={(e) => set("taxa", e.target.value)} />
         <input className="inp sm" type="date" value={p.data} onChange={(e) => set("data", e.target.value)} />
       </div>
+      <datalist id="fac-datalist">{FAC_BASE.nomes.map((n) => <option key={n} value={n} />)}</datalist>
       <div className="fp-opts">
         <label className="check sm"><input type="checkbox" checked={p.lancarVenda} onChange={(e) => set("lancarVenda", e.target.checked)} /> lançar venda ({tema.tipo})</label>
         <label className="check sm"><input type="checkbox" checked={p.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> autor principal</label>

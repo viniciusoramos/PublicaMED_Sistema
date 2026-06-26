@@ -59,7 +59,7 @@ const pubDe = (p) => ({
 export async function carregarTudo() {
   const [v, t, f, p, fac] = await Promise.all([
     supabase.from('vendas').select('*, faculdades(nome)'),
-    supabase.from('trabalhos').select('*').order('criado_em', { ascending: true }),
+    supabase.from('trabalhos').select('*').order('criado_em', { ascending: false }),
     supabase.from('financeiro').select('*'),
     supabase.from('publicacoes').select('*, participantes(*)').order('criado_em', { ascending: false }),
     supabase.from('faculdades').select('id, nome, uf').order('nome', { ascending: true }),
