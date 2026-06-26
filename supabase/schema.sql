@@ -54,6 +54,8 @@ create table if not exists public.publicacoes (
   area             text        not null default '',
   vagas            integer     not null default 6 check (vagas >= 1),
   requer_graduado  boolean     not null default false,
+  taxa             numeric(10,2) not null default 0,
+  taxa_lancada     boolean     not null default false,
   criado_em        timestamptz not null default now()
 );
 

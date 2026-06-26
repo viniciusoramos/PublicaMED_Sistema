@@ -52,6 +52,8 @@ const pubDe = (p) => ({
   maxVagas: p.vagas,
   tipo: p.tipo || 'Artigo',
   requiresGrad: !!p.requer_graduado,
+  taxa: Number(p.taxa) || 0,
+  taxaLancada: !!p.taxa_lancada,
   participantes: (p.participantes || []).map(partDe),
 });
 
@@ -175,6 +177,8 @@ export async function atualizarPublicacao(id, campos) {
   if ('requiresGrad' in campos) row.requer_graduado = campos.requiresGrad;
   if ('area' in campos) row.area = campos.area;
   if ('nome' in campos) row.tema = campos.nome;
+  if ('taxa' in campos) row.taxa = campos.taxa;
+  if ('taxaLancada' in campos) row.taxa_lancada = campos.taxaLancada;
   if (Object.keys(row).length === 0) return;
   const { error } = await supabase.from('publicacoes').update(row).eq('id', id);
   if (error) throw error;
@@ -192,6 +196,17 @@ export async function adicionarParticipante(publicacaoId, p) {
     autor_principal: !!p.autorPrincipal,
     graduado: !!p.graduado,
   }).select().single();
+  if (error) throw error;
+  return partDe(data);
+}
+export async function atualizarParticipante(id, p) {
+  const { data, error } = await supabase.from('participantes').update({
+    nome: p.nome || '',
+    email: p.email || '',
+    faculdade: p.faculdade || '',
+    autor_principal: !!p.autorPrincipal,
+    graduado: !!p.graduado,
+  }).eq('id', id).select().single();
   if (error) throw error;
   return partDe(data);
 }

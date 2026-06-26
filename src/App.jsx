@@ -366,10 +366,6 @@ export default function App() {
         setVendas((vs) => [venda, ...vs]);
         acoes.push("venda lançada");
       }
-      if ((dados.taxa || 0) > 0) {
-        await lancarTaxaFinanceiro(dados.data || hojeIso(), dados.taxa);
-        acoes.push("taxa no financeiro");
-      }
       aviso(acoes.join(" · "));
     } catch (e) { aviso("Erro: " + e.message); }
   };
@@ -379,6 +375,30 @@ export default function App() {
     setVendas((vs) => vs.filter((v) => v.participanteId !== partId)); // a venda atrelada some junto
     try { await db.removerParticipante(partId); }
     catch (e) { aviso("Erro: " + e.message); setTemas(antesT); setVendas(antesV); }
+  };
+  // edita um participante -> atualiza o participante E a(s) venda(s) atrelada(s)
+  const editParticipante = async (tema, part, dados) => {
+    const antesT = temas, antesV = vendas;
+    const uf = ufDaFaculdade(dados.faculdade);
+    setTemas((ts) => ts.map((t) => (t.id === tema.id ? { ...t, participantes: t.participantes.map((p) => (p.id === part.id ? { ...p, ...dados } : p)) } : t)));
+    setVendas((vs) => vs.map((v) => (v.participanteId === part.id ? { ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf } : v)));
+    try {
+      await db.atualizarParticipante(part.id, dados);
+      for (const v of vendas.filter((x) => x.participanteId === part.id)) {
+        await db.atualizarVenda(v.id, { ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf });
+      }
+      aviso("Participante atualizado");
+    } catch (e) { aviso("Erro: " + e.message); setTemas(antesT); setVendas(antesV); }
+  };
+  // taxa de publicação = valor único da publicação, lançado uma vez no financeiro
+  const lancarTaxaPub = async (tema, valor, data) => {
+    if (tema.taxaLancada) { aviso("Taxa já lançada para esta publicação"); return; }
+    try {
+      await lancarTaxaFinanceiro(data, valor);
+      await db.atualizarPublicacao(tema.id, { taxa: valor, taxaLancada: true });
+      setTemas((ts) => ts.map((t) => (t.id === tema.id ? { ...t, taxa: valor, taxaLancada: true } : t)));
+      aviso("Taxa lançada no financeiro");
+    } catch (e) { aviso("Erro: " + e.message); }
   };
   const criarAnoFin = async (ano) => {
     try { const linhas = await db.criarAnoFinanceiro(ano); setFinanceiro((f) => [...f, ...linhas]); aviso(`Ano ${ano} criado`); }
@@ -487,7 +507,8 @@ export default function App() {
         )}
         {tab === "temas" && (
           <Temas temas={temas} onAdd={addPublicacao} onRem={remPublicacao} onEdit={editPublicacao}
-            onAddPart={addParticipante} onRemPart={remParticipante} aviso={aviso} />
+            onAddPart={addParticipante} onEditPart={editParticipante} onRemPart={remParticipante}
+            onLancarTaxa={lancarTaxaPub} aviso={aviso} />
         )}
       </main>
 
@@ -1343,7 +1364,7 @@ function FormMes({ linha, fatVendas, onSalvar, onClose }) {
 /* ============================================================
    TEMAS E VAGAS
    ============================================================ */
-function Temas({ temas, onAdd, onRem, onEdit, onAddPart, onRemPart, aviso }) {
+function Temas({ temas, onAdd, onRem, onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa, aviso }) {
   const [busca, setBusca] = useState("");
   const [soComVaga, setSoComVaga] = useState(false);
   const [selId, setSelId] = useState(null);
@@ -1406,7 +1427,7 @@ function Temas({ temas, onAdd, onRem, onEdit, onAddPart, onRemPart, aviso }) {
               <p>Selecione uma publicação na lista para ver os participantes e lançar pessoas (com o valor pago).</p>
             </div>
           ) : (
-            <DetalhePub key={sel.id} t={sel} onEdit={onEdit} onAddPart={onAddPart} onRemPart={onRemPart} onExcluir={() => excluir(sel)} />
+            <DetalhePub key={sel.id} t={sel} onEdit={onEdit} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa} onExcluir={() => excluir(sel)} />
           )}
         </div>
       </div>
@@ -1416,10 +1437,18 @@ function Temas({ temas, onAdd, onRem, onEdit, onAddPart, onRemPart, aviso }) {
   );
 }
 
-function DetalhePub({ t, onEdit, onAddPart, onRemPart, onExcluir }) {
+function DetalhePub({ t, onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa, onExcluir }) {
   const restantes = t.maxVagas - t.participantes.length;
   const cheio = restantes <= 0;
   const pct = Math.min(100, (t.participantes.length / t.maxVagas) * 100);
+  const [editP, setEditP] = useState(null);
+  const [taxaVal, setTaxaVal] = useState("");
+  const [taxaData, setTaxaData] = useState(hojeIso());
+  const lancar = () => {
+    const v = parseFloat(String(taxaVal).replace(",", ".")) || 0;
+    if (v <= 0) { alert("Informe o valor da taxa."); return; }
+    onLancarTaxa(t, v, taxaData); setTaxaVal("");
+  };
   return (
     <div className="dp">
       <div className="dp-head">
@@ -1441,6 +1470,19 @@ function DetalhePub({ t, onEdit, onAddPart, onRemPart, onExcluir }) {
         <label className="check sm grad-check"><input type="checkbox" checked={!!t.requiresGrad} onChange={(e) => onEdit(t.id, { requiresGrad: e.target.checked })} /> exige graduado</label>
       </div>
 
+      <div className="dp-taxa">
+        {t.taxaLancada ? (
+          <span className="dp-taxa-ok">Taxa de publicação: <b>{brl(t.taxa)}</b> · lançada no financeiro</span>
+        ) : (
+          <>
+            <span className="dp-taxa-lab">Taxa de publicação (custo único)</span>
+            <input className="inp sm dp-taxa-val" inputMode="decimal" placeholder="R$" value={taxaVal} onChange={(e) => setTaxaVal(e.target.value)} />
+            <input className="inp sm" type="date" value={taxaData} onChange={(e) => setTaxaData(e.target.value)} />
+            <button className="btn sm" onClick={lancar}>lançar no financeiro</button>
+          </>
+        )}
+      </div>
+
       <h4 className="dp-sub">Participantes ({t.participantes.length})</h4>
       <ul className="parts">
         {t.participantes.map((p) => (
@@ -1451,7 +1493,10 @@ function DetalhePub({ t, onEdit, onAddPart, onRemPart, onExcluir }) {
               {p.graduado && <span className="tag-grad">graduado</span>}
               <div className="p-fac">{p.faculdade}{p.email ? ` · ${p.email}` : ""}</div>
             </div>
-            <button className="mini del" onClick={() => onRemPart(t.id, p.id)}>×</button>
+            <div className="p-acoes">
+              <button className="mini" onClick={() => setEditP(p)}>editar</button>
+              <button className="mini del" onClick={() => onRemPart(t.id, p.id)}>×</button>
+            </div>
           </li>
         ))}
         {t.participantes.length === 0 && <li className="p-vazio">Sem participantes ainda.</li>}
@@ -1460,19 +1505,24 @@ function DetalhePub({ t, onEdit, onAddPart, onRemPart, onExcluir }) {
       {cheio
         ? <div className="dp-lotado">Publicação lotada ({t.maxVagas}/{t.maxVagas}). Aumente as vagas para adicionar mais pessoas.</div>
         : <FormPart tema={t} onAdd={(d) => onAddPart(t, d)} />}
+
+      {editP && (
+        <Modal titulo="Editar participante" onClose={() => setEditP(null)}>
+          <FormParticipante part={editP} onSalvar={(d) => { onEditPart(t, editP, d); setEditP(null); }} onCancelar={() => setEditP(null)} />
+        </Modal>
+      )}
     </div>
   );
 }
 
 function FormPart({ tema, onAdd }) {
-  const vazio = { nome: "", faculdade: "", email: "", autorPrincipal: false, graduado: false, valor: "", taxa: "", data: hojeIso(), lancarVenda: true };
+  const vazio = { nome: "", faculdade: "", email: "", autorPrincipal: false, graduado: false, valor: "", data: hojeIso(), lancarVenda: true };
   const [p, setP] = useState(vazio);
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
   const enviar = () => {
     if (!p.nome.trim()) { alert("Informe o nome."); return; }
     const valor = parseFloat(String(p.valor).replace(",", ".")) || 0;
-    const taxa = parseFloat(String(p.taxa).replace(",", ".")) || 0;
-    onAdd({ ...p, valor, taxa });
+    onAdd({ ...p, valor });
     setP({ ...vazio, data: p.data });
   };
   return (
@@ -1483,7 +1533,6 @@ function FormPart({ tema, onAdd }) {
         <input className="inp sm" placeholder="Faculdade" list="fac-datalist" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
         <input className="inp sm" placeholder="Email" value={p.email} onChange={(e) => set("email", e.target.value)} />
         <input className="inp sm" inputMode="decimal" placeholder="Valor pago (R$)" value={p.valor} onChange={(e) => set("valor", e.target.value)} />
-        <input className="inp sm" inputMode="decimal" placeholder="Taxa de publicação (R$)" value={p.taxa} onChange={(e) => set("taxa", e.target.value)} />
         <input className="inp sm" type="date" value={p.data} onChange={(e) => set("data", e.target.value)} />
       </div>
       <datalist id="fac-datalist">{FAC_BASE.nomes.map((n) => <option key={n} value={n} />)}</datalist>
@@ -1494,6 +1543,29 @@ function FormPart({ tema, onAdd }) {
         <button className="btn sm" onClick={enviar}>adicionar</button>
       </div>
     </div>
+  );
+}
+
+function FormParticipante({ part, onSalvar, onCancelar }) {
+  const [f, setF] = useState({ nome: part.nome || "", faculdade: part.faculdade || "", email: part.email || "", autorPrincipal: !!part.autorPrincipal, graduado: !!part.graduado });
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  return (
+    <>
+      <Campo label="Nome"><input className="inp" value={f.nome} onChange={(e) => set("nome", e.target.value)} /></Campo>
+      <Campo label="Faculdade">
+        <input className="inp" list="fac-datalist-pe" placeholder="Digite e escolha da lista" value={f.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
+        <datalist id="fac-datalist-pe">{FAC_BASE.nomes.map((n) => <option key={n} value={n} />)}</datalist>
+      </Campo>
+      <Campo label="Email"><input className="inp" value={f.email} onChange={(e) => set("email", e.target.value)} /></Campo>
+      <div className="fp-opts">
+        <label className="check sm"><input type="checkbox" checked={f.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> autor principal</label>
+        <label className="check sm"><input type="checkbox" checked={f.graduado} onChange={(e) => set("graduado", e.target.checked)} /> graduado</label>
+      </div>
+      <div className="form-acoes">
+        <button className="btn-ghost" onClick={onCancelar}>Cancelar</button>
+        <button className="btn" onClick={() => { if (!f.nome.trim()) { alert("Informe o nome."); return; } onSalvar(f); }}>Salvar</button>
+      </div>
+    </>
   );
 }
 
@@ -1783,6 +1855,12 @@ select.inp{ cursor:pointer; }
   border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
 .dp-sub{ font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; margin-bottom:10px; }
 .dp-lotado{ font-size:12.5px; color:#C2477A; background:#FBE6EE; border-radius:9px; padding:11px 13px; margin-top:11px; }
+.dp-taxa{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:11px 13px; background:#F4F8FB; border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
+.dp-taxa-lab{ font-size:12px; font-weight:600; color:var(--muted); }
+.dp-taxa-val{ max-width:110px; }
+.dp-taxa-ok{ font-size:12.5px; color:#1F8F66; font-weight:600; }
+.dp-taxa .btn.sm{ margin-left:auto; }
+.p-acoes{ display:flex; gap:6px; align-items:center; flex-shrink:0; }
 
 /* FORM PARTICIPANTE (com venda) */
 .form-part{ margin-top:14px; padding-top:14px; border-top:1px dashed var(--border); }
