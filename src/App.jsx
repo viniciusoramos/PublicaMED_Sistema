@@ -506,7 +506,7 @@ export default function App() {
           <Financeiro financeiro={financeiro} salvar={salvarFinanceiro} vendas={vendas} aviso={aviso} onCriarAno={criarAnoFin} />
         )}
         {tab === "temas" && (
-          <Temas temas={temas} onAdd={addPublicacao} onRem={remPublicacao} onEdit={editPublicacao}
+          <Temas temas={temas} vendas={vendas} onAdd={addPublicacao} onRem={remPublicacao} onEdit={editPublicacao}
             onAddPart={addParticipante} onEditPart={editParticipante} onRemPart={remParticipante}
             onLancarTaxa={lancarTaxaPub} aviso={aviso} />
         )}
@@ -1469,7 +1469,7 @@ function FormMes({ linha, fatVendas, onSalvar, onClose }) {
 /* ============================================================
    TEMAS E VAGAS
    ============================================================ */
-function Temas({ temas, onAdd, onRem, onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa, aviso }) {
+function Temas({ temas, vendas, onAdd, onRem, onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa, aviso }) {
   const [busca, setBusca] = useState("");
   const [soComVaga, setSoComVaga] = useState(false);
   const [selId, setSelId] = useState(null);
@@ -1532,7 +1532,7 @@ function Temas({ temas, onAdd, onRem, onEdit, onAddPart, onEditPart, onRemPart, 
               <p>Selecione uma publicação na lista para ver os participantes e lançar pessoas (com o valor pago).</p>
             </div>
           ) : (
-            <DetalhePub key={sel.id} t={sel} onEdit={onEdit} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa} onExcluir={() => excluir(sel)} />
+            <DetalhePub key={sel.id} t={sel} vendas={vendas} onEdit={onEdit} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa} onExcluir={() => excluir(sel)} />
           )}
         </div>
       </div>
@@ -1542,7 +1542,7 @@ function Temas({ temas, onAdd, onRem, onEdit, onAddPart, onEditPart, onRemPart, 
   );
 }
 
-function DetalhePub({ t, onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa, onExcluir }) {
+function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa, onExcluir }) {
   const restantes = t.maxVagas - t.participantes.length;
   const cheio = restantes <= 0;
   const pct = Math.min(100, (t.participantes.length / t.maxVagas) * 100);
@@ -1554,6 +1554,18 @@ function DetalhePub({ t, onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa,
     if (v <= 0) { alert("Informe o valor da taxa."); return; }
     onLancarTaxa(t, v, taxaData); setTaxaVal("");
   };
+  // faturamento desta publicação = soma dos pagamentos (vendas ligadas pelo tema ou pelo participante)
+  const faturamento = useMemo(() => {
+    const partIds = new Set(t.participantes.map((p) => p.id));
+    const vistos = new Set();
+    let total = 0;
+    for (const v of vendas) {
+      if (vistos.has(v.id)) continue;
+      if (v.tema === t.nome || (v.participanteId && partIds.has(v.participanteId))) { total += v.valor || 0; vistos.add(v.id); }
+    }
+    return total;
+  }, [vendas, t.participantes, t.nome]);
+  const lucro = faturamento - (t.taxa || 0);
   return (
     <div className="dp">
       <div className="dp-head">
@@ -1562,6 +1574,12 @@ function DetalhePub({ t, onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa,
       </div>
       <div className="dp-prog"><div className="dp-prog-fill" style={{ width: `${pct}%`, background: cheio ? "#C2477A" : "#2C7DA0" }} /></div>
       <div className="dp-ocup">{t.participantes.length} de {t.maxVagas} vagas ocupadas{t.area ? ` · ${t.area}` : ""}</div>
+
+      <div className="dp-fin">
+        <div className="dp-fin-item"><span>Faturamento</span><b>{brl(faturamento)}</b></div>
+        <div className="dp-fin-item"><span>Taxa de publicação</span><b className={(t.taxa || 0) > 0 ? "negv" : ""}>{brl(t.taxa || 0)}</b></div>
+        <div className="dp-fin-item"><span>Lucro</span><b className={lucro >= 0 ? "pos" : "negv"}>{brl(lucro)}</b></div>
+      </div>
 
       <div className="dp-controles">
         <label className="ep-campo">Tipo
@@ -1977,6 +1995,10 @@ select.inp{ cursor:pointer; }
 .cmp-pick .inp{ max-width:170px; }
 .cmp-vs{ color:var(--muted); font-weight:700; }
 .vazio.pad{ padding:18px 4px; }
+.dp-fin{ display:flex; gap:28px; flex-wrap:wrap; padding:13px 16px; background:#F4F8FB; border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
+.dp-fin-item{ display:flex; flex-direction:column; gap:2px; }
+.dp-fin-item span{ font-size:10.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.dp-fin-item b{ font-size:18px; color:var(--ink); }
 
 /* FORM PARTICIPANTE (com venda) */
 .form-part{ margin-top:14px; padding-top:14px; border-top:1px dashed var(--border); }
