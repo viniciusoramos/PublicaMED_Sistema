@@ -275,7 +275,8 @@ const trabalhoMudou = (a, b) => a.titulo !== b.titulo || a.tipo !== b.tipo || a.
 const finMudou = (a, b) =>
   (a.faturamento || 0) !== (b.faturamento || 0) || (a.taxaPublicacao || 0) !== (b.taxaPublicacao || 0) ||
   (a.custoAds || 0) !== (b.custoAds || 0) || (a.custoFixo || 0) !== (b.custoFixo || 0) ||
-  (a.custoExtra || 0) !== (b.custoExtra || 0) || (a.custoExtraDesc || "") !== (b.custoExtraDesc || "");
+  (a.custoExtra || 0) !== (b.custoExtra || 0) || (a.custoExtraDesc || "") !== (b.custoExtraDesc || "") ||
+  (a.faturamentoAjuste || 0) !== (b.faturamentoAjuste || 0);
 // (CRUD de publicações é incremental via db.*; ver os handlers granulares no App)
 
 export default function App() {
