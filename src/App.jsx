@@ -64,6 +64,23 @@ const fmtData = (iso) => {
 const mesDeIso = (iso) => (iso ? parseInt(iso.split("-")[1], 10) - 1 : null);
 const anoDeIso = (iso) => (iso ? parseInt(iso.split("-")[0], 10) : null);
 const hojeIso = () => new Date().toISOString().slice(0, 10);
+// Lê número no padrão brasileiro: ponto = separador de milhar, vírgula = decimal.
+// Ex.: "1.260" -> 1260 · "1.260,50" -> 1260.5 · "124,17" -> 124.17 · "1260" -> 1260 · "124.17" -> 124.17
+const numBR = (v) => {
+  if (typeof v === "number") return v;
+  let s = String(v ?? "").trim().replace(/[^\d.,-]/g, "");
+  if (!s) return 0;
+  const temV = s.includes(","), temP = s.includes(".");
+  if (temV && temP) s = s.replace(/\./g, "").replace(",", ".");      // 1.260,50 -> 1260.50
+  else if (temV) s = s.replace(",", ".");                            // 1260,50 -> 1260.50
+  else if (temP) {                                                   // só ponto (ambíguo)
+    const p = s.split(".");
+    if (p.length > 2 || p[p.length - 1].length === 3) s = s.replace(/\./g, ""); // milhar: 1.260 / 1.234.567
+    // senão é decimal (124.17 / 1.5): mantém
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+};
 const dddDe = (tel) => {
   if (!tel) return null;
   const mt = String(tel).match(/\((\d{2})\)/);
@@ -906,7 +923,7 @@ function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts }) {
   };
   const submeter = () => {
     if (!f.nome.trim() && !f.email.trim()) { alert("Informe ao menos o nome ou o email."); return; }
-    onSalvar({ ...f, valor: parseFloat(String(f.valor).replace(",", ".")) || 0 });
+    onSalvar({ ...f, valor: numBR(f.valor) });
   };
 
   return (
@@ -1448,7 +1465,7 @@ function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
     custoAds: linha.custoAds || 0, custoFixo: linha.custoFixo || 0, custoExtra: linha.custoExtra || 0,
     custoExtraDesc: linha.custoExtraDesc || "",
   });
-  const setn = (k, v) => setF((p) => ({ ...p, [k]: parseFloat(String(v).replace(",", ".")) || 0 }));
+  const setn = (k, v) => setF((p) => ({ ...p, [k]: numBR(v) }));
   const setTxt = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const ct = f.taxaPublicacao + f.custoAds + f.custoFixo + f.custoExtra;
   const fatTotal = (fatVendas || 0) + f.faturamentoAjuste;
@@ -1566,7 +1583,7 @@ function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, 
   const [taxaVal, setTaxaVal] = useState("");
   const [taxaData, setTaxaData] = useState(hojeIso());
   const lancar = () => {
-    const v = parseFloat(String(taxaVal).replace(",", ".")) || 0;
+    const v = numBR(taxaVal);
     if (v <= 0) { alert("Informe o valor da taxa."); return; }
     onLancarTaxa(t, v, taxaData); setTaxaVal("");
   };
@@ -1679,7 +1696,7 @@ function FormPart({ tema, onAdd }) {
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
   const enviar = () => {
     if (!p.nome.trim()) { alert("Informe o nome."); return; }
-    const valor = parseFloat(String(p.valor).replace(",", ".")) || 0;
+    const valor = numBR(p.valor);
     onAdd({ ...p, valor });
     setP({ ...vazio, data: p.data });
   };
@@ -1713,7 +1730,7 @@ function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const salvar = () => {
     if (!f.nome.trim()) { alert("Informe o nome."); return; }
-    onSalvar({ ...f, valor: parseFloat(String(f.valor).replace(",", ".")) || 0 });
+    onSalvar({ ...f, valor: numBR(f.valor) });
   };
   return (
     <>
