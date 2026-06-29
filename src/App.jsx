@@ -281,6 +281,7 @@ const finMudou = (a, b) =>
 
 export default function App() {
   const [tab, setTab] = useState("overview");
+  const [menuAberto, setMenuAberto] = useState(false);
   const [vendas, setVendas] = useState([]);
   const [trabalhos, setTrabalhos] = useState([]);
   const [financeiro, setFinanceiro] = useState([]);
@@ -494,15 +495,23 @@ export default function App() {
   return (
     <div className="root">
       <Estilos />
+      {/* TOPBAR (aparece só no celular) */}
+      <header className="topbar">
+        <button className="hamb" onClick={() => setMenuAberto(true)} aria-label="Abrir menu">☰</button>
+        <Logo style={{ height: 20, color: "#fff" }} />
+        <span className="topbar-tit">{(navItens.find((n) => n[0] === tab) || [])[1] || ""}</span>
+      </header>
+      {menuAberto && <div className="side-backdrop" onClick={() => setMenuAberto(false)} />}
       {/* SIDEBAR */}
-      <aside className="side">
+      <aside className={"side" + (menuAberto ? " aberta" : "")}>
         <div className="brand">
+          <button className="side-close" onClick={() => setMenuAberto(false)} aria-label="Fechar menu">×</button>
           <Logo style={{ height: 26, color: "#fff" }} />
           <div className="brand-sub">Painel de gestão</div>
         </div>
         <nav>
           {navItens.map(([id, lab, ic]) => (
-            <button key={id} className={"nav " + (tab === id ? "ativo" : "")} onClick={() => setTab(id)}>
+            <button key={id} className={"nav " + (tab === id ? "ativo" : "")} onClick={() => { setTab(id); setMenuAberto(false); }}>
               <span className="nav-ic">{ic}</span>{lab}
             </button>
           ))}
@@ -1829,6 +1838,15 @@ nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 .persist.on .pdot{ background:#3FBF8F; box-shadow:0 0 0 3px rgba(63,191,143,.18); }
 .persist.off .pdot{ background:var(--accent); }
 
+/* topbar + sidebar-gaveta (só no celular; escondidos no desktop) */
+.topbar{ display:none; position:fixed; top:0; left:0; right:0; height:54px; z-index:30; align-items:center; gap:10px;
+  padding:0 8px; background:linear-gradient(90deg,#1D3557,#244468); box-shadow:0 2px 12px rgba(13,25,40,.18); }
+.topbar-tit{ color:#fff; font-weight:600; font-size:14.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.hamb{ background:transparent; border:none; color:#fff; font-size:23px; line-height:1; cursor:pointer; padding:6px 10px; border-radius:9px; flex-shrink:0; }
+.hamb:active{ background:rgba(255,255,255,.14); }
+.side-backdrop{ display:none; position:fixed; inset:0; background:rgba(13,25,40,.5); z-index:55; }
+.side-close{ display:none; position:absolute; top:14px; right:12px; background:transparent; border:none; color:#A9C0C6; font-size:26px; line-height:1; cursor:pointer; }
+
 /* MAIN */
 .main{ flex:1; padding:32px 44px 70px; min-width:0; max-width:1840px; }
 .head{ display:flex; justify-content:space-between; align-items:flex-end; gap:16px; margin-bottom:28px; }
@@ -2088,13 +2106,19 @@ select.inp{ cursor:pointer; }
 @keyframes up{ from{ opacity:0; transform:translate(-50%,8px); } }
 
 @media (max-width:900px){
-  .root{ flex-direction:column; }
-  .side{ width:100%; height:auto; position:relative; flex-direction:row; align-items:center; overflow-x:auto; }
-  .brand{ padding:14px 16px; } nav{ flex-direction:row; padding:8px; } .side-foot{ display:none; }
-  .main{ padding:18px 16px 50px; }
+  .topbar{ display:flex; }
+  .side-close{ display:block; }
+  /* sidebar vira gaveta à esquerda, escondida até abrir pelo menu */
+  .side{ position:fixed; top:0; left:0; width:250px; max-width:84vw; height:100vh; z-index:60;
+    transform:translateX(-100%); transition:transform .25s ease; box-shadow:6px 0 34px rgba(0,0,0,.34); }
+  .side.aberta{ transform:translateX(0); }
+  .side-backdrop{ display:block; }
+  .main{ padding:70px 16px 54px; }
+  .head{ flex-direction:column; align-items:flex-start; gap:6px; margin-bottom:18px; }
+  .head h1{ font-size:23px; }
   .kpis,.kpis-3,.kpis-4,.grid-2,.temas-grid,.pub-split,.fp-grid,.destaques,.cli-info,.form-grid{ grid-template-columns:1fr; }
   .pub-lista{ max-height:none; }
-  .head{ flex-direction:column; align-items:flex-start; }
+  .periodo-bar{ flex-wrap:wrap; }
 }
     `}</style>
   );
