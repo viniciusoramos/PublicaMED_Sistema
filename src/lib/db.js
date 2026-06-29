@@ -109,7 +109,9 @@ export async function criarVenda(d) {
   return vendaDe(data);
 }
 export async function atualizarVenda(id, d) {
-  const { data, error } = await supabase.from('vendas').update(await vendaLinha(d)).eq('id', id).select('*, faculdades(nome)').single();
+  const row = await vendaLinha(d);
+  if (d.participanteId) row.participante_id = d.participanteId; // cura/garante o vínculo com o participante
+  const { data, error } = await supabase.from('vendas').update(row).eq('id', id).select('*, faculdades(nome)').single();
   if (error) throw error;
   return vendaDe(data);
 }

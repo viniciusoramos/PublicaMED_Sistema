@@ -366,7 +366,10 @@ export default function App() {
         setVendas((vs) => [venda, ...vs]);
         acoes.push("venda lançada");
       }
-      aviso(acoes.join(" · "));
+      // exige graduado e acabou de lotar sem nenhum graduado?
+      const lotouSemGrad = tema.requiresGrad && (tema.participantes.length + 1) >= tema.maxVagas
+        && !dados.graduado && !tema.participantes.some((p) => p.graduado);
+      aviso(acoes.join(" · ") + (lotouSemGrad ? " · ⚠️ lotou sem nenhum graduado!" : ""));
     } catch (e) { aviso("Erro: " + e.message); }
   };
   const remParticipante = async (temaId, partId) => {
@@ -376,16 +379,25 @@ export default function App() {
     try { await db.removerParticipante(partId); }
     catch (e) { aviso("Erro: " + e.message); setTemas(antesT); setVendas(antesV); }
   };
-  // edita um participante -> atualiza o participante E a(s) venda(s) atrelada(s)
+  // edita um participante -> atualiza o participante E a venda dele (dados + valor pago)
   const editParticipante = async (tema, part, dados) => {
     const antesT = temas, antesV = vendas;
     const uf = ufDaFaculdade(dados.faculdade);
+    // acha a venda do participante: pelo vínculo direto, ou pelo tema + nome antigo
+    const venda = vendas.find((v) =>
+      (v.participanteId && v.participanteId === part.id) ||
+      (v.tema === tema.nome && (v.nome || "").trim().toLowerCase() === (part.nome || "").trim().toLowerCase())
+    );
     setTemas((ts) => ts.map((t) => (t.id === tema.id ? { ...t, participantes: t.participantes.map((p) => (p.id === part.id ? { ...p, ...dados } : p)) } : t)));
-    setVendas((vs) => vs.map((v) => (v.participanteId === part.id ? { ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf } : v)));
+    if (venda) setVendas((vs) => vs.map((v) => (v.id === venda.id ? { ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, valor: dados.valor ?? v.valor, participanteId: part.id } : v)));
     try {
       await db.atualizarParticipante(part.id, dados);
-      for (const v of vendas.filter((x) => x.participanteId === part.id)) {
-        await db.atualizarVenda(v.id, { ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf });
+      if (venda) {
+        await db.atualizarVenda(venda.id, { ...venda, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, valor: dados.valor ?? venda.valor, participanteId: part.id });
+      } else if ((dados.valor || 0) > 0) {
+        // participante sem venda: cria uma já vinculada
+        const nova = await db.criarVenda({ data: hojeIso(), nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, tipo: tema.tipo, valor: dados.valor, tema: tema.nome, participanteId: part.id });
+        setVendas((vs) => [nova, ...vs]);
       }
       aviso("Participante atualizado");
     } catch (e) { aviso("Erro: " + e.message); setTemas(antesT); setVendas(antesV); }
@@ -1566,6 +1578,12 @@ function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, 
     return total;
   }, [vendas, t.participantes, t.nome]);
   const lucro = faturamento - (t.taxa || 0);
+  // venda de um participante (vínculo direto ou pelo tema + nome)
+  const vendaDoPart = (p) => vendas.find((v) =>
+    (v.participanteId && v.participanteId === p.id) ||
+    (v.tema === t.nome && (v.nome || "").trim().toLowerCase() === (p.nome || "").trim().toLowerCase())
+  );
+  const semGraduado = t.requiresGrad && !t.participantes.some((p) => p.graduado);
   return (
     <div className="dp">
       <div className="dp-head">
@@ -1606,22 +1624,32 @@ function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, 
         )}
       </div>
 
+      {semGraduado && (
+        cheio
+          ? <div className="aviso-grad erro">Lotada sem nenhum graduado — esta publicação exige pelo menos um participante graduado.</div>
+          : <div className="aviso-grad">Exige graduado · ainda não há nenhum graduado entre os participantes.</div>
+      )}
+
       <h4 className="dp-sub">Participantes ({t.participantes.length})</h4>
       <ul className="parts">
-        {t.participantes.map((p) => (
-          <li key={p.id}>
-            <div>
-              <span className="p-nome">{p.nome}</span>
-              {p.autorPrincipal && <span className="tag-autor">autor principal</span>}
-              {p.graduado && <span className="tag-grad">graduado</span>}
-              <div className="p-fac">{p.faculdade}{p.email ? ` · ${p.email}` : ""}</div>
-            </div>
-            <div className="p-acoes">
-              <button className="mini" onClick={() => setEditP(p)}>editar</button>
-              <button className="mini del" onClick={() => onRemPart(t.id, p.id)}>×</button>
-            </div>
-          </li>
-        ))}
+        {t.participantes.map((p) => {
+          const vd = vendaDoPart(p);
+          return (
+            <li key={p.id}>
+              <div>
+                <span className="p-nome">{p.nome}</span>
+                {p.autorPrincipal && <span className="tag-autor">autor principal</span>}
+                {p.graduado && <span className="tag-grad">graduado</span>}
+                <div className="p-fac">{p.faculdade}{p.email ? ` · ${p.email}` : ""}</div>
+              </div>
+              <div className="p-acoes">
+                <span className="p-valor" title="Valor pago na vaga">{vd ? brl(vd.valor) : "—"}</span>
+                <button className="mini" onClick={() => setEditP(p)}>editar</button>
+                <button className="mini del" onClick={() => onRemPart(t.id, p.id)}>×</button>
+              </div>
+            </li>
+          );
+        })}
         {t.participantes.length === 0 && <li className="p-vazio">Sem participantes ainda.</li>}
       </ul>
 
@@ -1631,7 +1659,7 @@ function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, 
 
       {editP && (
         <Modal titulo="Editar participante" onClose={() => setEditP(null)}>
-          <FormParticipante part={editP} onSalvar={(d) => { onEditPart(t, editP, d); setEditP(null); }} onCancelar={() => setEditP(null)} />
+          <FormParticipante part={editP} valorAtual={vendaDoPart(editP)?.valor ?? ""} onSalvar={(d) => { onEditPart(t, editP, d); setEditP(null); }} onCancelar={() => setEditP(null)} />
         </Modal>
       )}
     </div>
@@ -1669,9 +1697,17 @@ function FormPart({ tema, onAdd }) {
   );
 }
 
-function FormParticipante({ part, onSalvar, onCancelar }) {
-  const [f, setF] = useState({ nome: part.nome || "", faculdade: part.faculdade || "", email: part.email || "", autorPrincipal: !!part.autorPrincipal, graduado: !!part.graduado });
+function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
+  const [f, setF] = useState({
+    nome: part.nome || "", faculdade: part.faculdade || "", email: part.email || "",
+    autorPrincipal: !!part.autorPrincipal, graduado: !!part.graduado,
+    valor: valorAtual === "" || valorAtual == null ? "" : String(valorAtual),
+  });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const salvar = () => {
+    if (!f.nome.trim()) { alert("Informe o nome."); return; }
+    onSalvar({ ...f, valor: parseFloat(String(f.valor).replace(",", ".")) || 0 });
+  };
   return (
     <>
       <Campo label="Nome"><input className="inp" value={f.nome} onChange={(e) => set("nome", e.target.value)} /></Campo>
@@ -1679,14 +1715,17 @@ function FormParticipante({ part, onSalvar, onCancelar }) {
         <input className="inp" list="fac-datalist-pe" placeholder="Digite e escolha da lista" value={f.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
         <datalist id="fac-datalist-pe">{FAC_BASE.nomes.map((n) => <option key={n} value={n} />)}</datalist>
       </Campo>
-      <Campo label="Email"><input className="inp" value={f.email} onChange={(e) => set("email", e.target.value)} /></Campo>
+      <div className="form-grid">
+        <Campo label="Email"><input className="inp" value={f.email} onChange={(e) => set("email", e.target.value)} /></Campo>
+        <Campo label="Valor pago na vaga (R$)"><input className="inp" inputMode="decimal" value={f.valor} onChange={(e) => set("valor", e.target.value)} /></Campo>
+      </div>
       <div className="fp-opts">
         <label className="check sm"><input type="checkbox" checked={f.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> autor principal</label>
         <label className="check sm"><input type="checkbox" checked={f.graduado} onChange={(e) => set("graduado", e.target.checked)} /> graduado</label>
       </div>
       <div className="form-acoes">
         <button className="btn-ghost" onClick={onCancelar}>Cancelar</button>
-        <button className="btn" onClick={() => { if (!f.nome.trim()) { alert("Informe o nome."); return; } onSalvar(f); }}>Salvar</button>
+        <button className="btn" onClick={salvar}>Salvar</button>
       </div>
     </>
   );
@@ -1999,6 +2038,9 @@ select.inp{ cursor:pointer; }
 .dp-fin-item{ display:flex; flex-direction:column; gap:2px; }
 .dp-fin-item span{ font-size:10.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
 .dp-fin-item b{ font-size:18px; color:var(--ink); }
+.p-valor{ font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; margin-right:6px; white-space:nowrap; }
+.aviso-grad{ font-size:12.5px; color:#9A6700; background:#FFF6E0; border:1px solid #F2D98A; border-radius:9px; padding:10px 13px; margin-bottom:14px; }
+.aviso-grad.erro{ color:#C2477A; background:#FBE6EE; border-color:#F3C2D6; font-weight:600; }
 
 /* FORM PARTICIPANTE (com venda) */
 .form-part{ margin-top:14px; padding-top:14px; border-top:1px dashed var(--border); }
