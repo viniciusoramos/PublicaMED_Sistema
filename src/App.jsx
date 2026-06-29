@@ -1230,8 +1230,9 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
     .filter((f) => f.ano === anoSel)
     .sort((a, b) => a.ordem - b.ordem)
     .map((f) => {
+      const faturamento = fatVendasMes[f.ordem] || 0; // = soma das vendas pagas no mês (pela data do pagamento)
       const custoTotal = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0);
-      return { ...f, custoTotal, lucro: (f.faturamento || 0) - custoTotal };
+      return { ...f, faturamento, custoTotal, lucro: faturamento - custoTotal };
     });
   const tot = linhas.reduce((a, l) => ({
     faturamento: a.faturamento + (l.faturamento || 0),
@@ -1285,7 +1286,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
     const [a, o] = key.split("-").map(Number);
     const f = financeiro.find((x) => x.ano === a && x.ordem === o);
     if (!f) return null;
-    const entrou = f.faturamento || 0;
+    const entrou = vendas.reduce((s, v) => (anoDeIso(v.data) === a && mesDeIso(v.data) === o ? s + (v.valor || 0) : s), 0);
     const saiu = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0);
     return { rot: `${f.mes}/${f.ano}`, entrou, saiu, saldo: entrou - saiu };
   };
@@ -1338,7 +1339,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
           </div>
 
           <div className="card no-pad">
-            <div className="card-head pad"><h3>Fechamento mensal · {anoSel}</h3><span className="hint">clique em “editar” para ajustar custos</span></div>
+            <div className="card-head pad"><h3>Fechamento mensal · {anoSel}</h3><span className="hint">Faturamento = soma das vendas pagas no mês · “editar” ajusta os custos</span></div>
             <div className="scroll-x">
               <table className="tab fin">
                 <thead>
@@ -1351,9 +1352,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
                 <tbody>
                   {linhas.map((l) => (
                     <tr key={l.id} className={l.faturamento === 0 && l.custoTotal === 0 ? "row-zero" : ""}>
-                      <td><b>{l.mes}</b>{fatVendasMes[l.ordem] > 0 && Math.abs(fatVendasMes[l.ordem] - l.faturamento) > 1 && (
-                        <div className="fat-real" title="Soma real das vendas deste mês">vendas: {brl(fatVendasMes[l.ordem])}</div>
-                      )}</td>
+                      <td><b>{l.mes}</b></td>
                       <td className="r">{brl(l.faturamento)}</td>
                       <td className="r neg">{brl(l.taxaPublicacao)}</td>
                       <td className="r neg">{brl(l.custoAds)}</td>
@@ -1433,13 +1432,13 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
       )}
 
       {editLinha && (
-        <FormMes linha={editLinha} fatVendas={fatVendasMes[editLinha.ordem]} onSalvar={(d) => salvarLinha(editLinha.id, d)} onClose={() => setEditId(null)} />
+        <FormMes linha={editLinha} onSalvar={(d) => salvarLinha(editLinha.id, d)} onClose={() => setEditId(null)} />
       )}
     </>
   );
 }
 
-function FormMes({ linha, fatVendas, onSalvar, onClose }) {
+function FormMes({ linha, onSalvar, onClose }) {
   const [f, setF] = useState({
     faturamento: linha.faturamento || 0, taxaPublicacao: linha.taxaPublicacao || 0,
     custoAds: linha.custoAds || 0, custoFixo: linha.custoFixo || 0, custoExtra: linha.custoExtra || 0,
@@ -1450,11 +1449,11 @@ function FormMes({ linha, fatVendas, onSalvar, onClose }) {
   const ct = f.taxaPublicacao + f.custoAds + f.custoFixo + f.custoExtra;
   return (
     <Modal titulo={`Fechamento · ${linha.mes}`} onClose={onClose}>
+      <div className="fatura-auto">
+        Faturamento (soma das vendas pagas no mês): <b>{brl(f.faturamento)}</b>
+        <div className="hint">Calculado automaticamente pelas vendas. Para mudar, ajuste as vendas do mês.</div>
+      </div>
       <div className="form-grid">
-        <Campo label="Faturamento">
-          <input className="inp" defaultValue={f.faturamento} onChange={(e) => setn("faturamento", e.target.value)} />
-          {fatVendas > 0 && <button className="link-mini" onClick={() => setF((p) => ({ ...p, faturamento: fatVendas }))}>usar soma das vendas ({brl(fatVendas)})</button>}
-        </Campo>
         <Campo label="Taxa de publicação"><input className="inp" defaultValue={f.taxaPublicacao} onChange={(e) => setn("taxaPublicacao", e.target.value)} /></Campo>
         <Campo label="Custo com anúncios (Ads)"><input className="inp" defaultValue={f.custoAds} onChange={(e) => setn("custoAds", e.target.value)} /></Campo>
         <Campo label="Custo fixo"><input className="inp" defaultValue={f.custoFixo} onChange={(e) => setn("custoFixo", e.target.value)} /></Campo>
@@ -2041,6 +2040,8 @@ select.inp{ cursor:pointer; }
 .p-valor{ font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; margin-right:6px; white-space:nowrap; }
 .aviso-grad{ font-size:12.5px; color:#9A6700; background:#FFF6E0; border:1px solid #F2D98A; border-radius:9px; padding:10px 13px; margin-bottom:14px; }
 .aviso-grad.erro{ color:#C2477A; background:#FBE6EE; border-color:#F3C2D6; font-weight:600; }
+.fatura-auto{ background:#F4F8FB; border:1px solid var(--border); border-radius:10px; padding:11px 13px; margin-bottom:14px; font-size:13.5px; color:var(--ink); }
+.fatura-auto b{ font-size:16px; }
 
 /* FORM PARTICIPANTE (com venda) */
 .form-part{ margin-top:14px; padding-top:14px; border-top:1px dashed var(--border); }
