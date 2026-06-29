@@ -392,12 +392,9 @@ export default function App() {
     if (venda) setVendas((vs) => vs.map((v) => (v.id === venda.id ? { ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, valor: dados.valor ?? v.valor, participanteId: part.id } : v)));
     try {
       await db.atualizarParticipante(part.id, dados);
+      // só ATUALIZA a venda existente — nunca cria (evita venda duplicada)
       if (venda) {
         await db.atualizarVenda(venda.id, { ...venda, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, valor: dados.valor ?? venda.valor, participanteId: part.id });
-      } else if ((dados.valor || 0) > 0) {
-        // participante sem venda: cria uma já vinculada
-        const nova = await db.criarVenda({ data: hojeIso(), nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, tipo: tema.tipo, valor: dados.valor, tema: tema.nome, participanteId: part.id });
-        setVendas((vs) => [nova, ...vs]);
       }
       aviso("Participante atualizado");
     } catch (e) { aviso("Erro: " + e.message); setTemas(antesT); setVendas(antesV); }
@@ -1566,14 +1563,17 @@ function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, 
     if (v <= 0) { alert("Informe o valor da taxa."); return; }
     onLancarTaxa(t, v, taxaData); setTaxaVal("");
   };
-  // faturamento desta publicação = soma dos pagamentos (vendas ligadas pelo tema ou pelo participante)
+  // faturamento = soma de UMA venda por participante (à prova de venda duplicada);
+  // bate exatamente com os valores mostrados por pessoa na lista
   const faturamento = useMemo(() => {
-    const partIds = new Set(t.participantes.map((p) => p.id));
     const vistos = new Set();
     let total = 0;
-    for (const v of vendas) {
-      if (vistos.has(v.id)) continue;
-      if (v.tema === t.nome || (v.participanteId && partIds.has(v.participanteId))) { total += v.valor || 0; vistos.add(v.id); }
+    for (const p of t.participantes) {
+      const v = vendas.find((x) =>
+        (x.participanteId && x.participanteId === p.id) ||
+        (x.tema === t.nome && (x.nome || "").trim().toLowerCase() === (p.nome || "").trim().toLowerCase())
+      );
+      if (v && !vistos.has(v.id)) { total += v.valor || 0; vistos.add(v.id); }
     }
     return total;
   }, [vendas, t.participantes, t.nome]);
