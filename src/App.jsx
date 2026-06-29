@@ -282,6 +282,7 @@ const finMudou = (a, b) =>
 export default function App() {
   const [tab, setTab] = useState("overview");
   const [menuAberto, setMenuAberto] = useState(false);
+  const [pubAlvo, setPubAlvo] = useState(null);
   const [vendas, setVendas] = useState([]);
   const [trabalhos, setTrabalhos] = useState([]);
   const [financeiro, setFinanceiro] = useState([]);
@@ -333,6 +334,14 @@ export default function App() {
     const antes = financeiro; setFinanceiro(nf);
     try { for (const f of nf) { const old = antes.find((x) => x.id === f.id); if (old && finMudou(old, f)) await db.atualizarFinanceiro(f.id, f); } }
     catch (e) { aviso("Erro ao salvar: " + e.message); setFinanceiro(antes); }
+  };
+  // clicar num trabalho abre a publicação correspondente em "Publicações e vagas" (liga pelo título = nome)
+  const abrirPublicacao = (titulo) => {
+    const alvo = (titulo || "").trim().toLowerCase();
+    const pub = temas.find((t) => (t.nome || "").trim().toLowerCase() === alvo);
+    if (!pub) { aviso("Esse trabalho não tem publicação vinculada."); return; }
+    setPubAlvo(pub.id);
+    setTab("temas");
   };
   /* ---------- publicacoes / participantes (granular, com venda junto) ---------- */
   const addPublicacao = async (dados) => {
@@ -536,13 +545,14 @@ export default function App() {
         )}
         {tab === "clientes" && <Clientes m={m} vendas={vendas} salvarCliente={salvarCliente} />}
         {tab === "trabalhos" && (
-          <Trabalhos trabalhos={trabalhos} salvar={salvarTrabalhos} aviso={aviso} />
+          <Trabalhos trabalhos={trabalhos} salvar={salvarTrabalhos} aviso={aviso} onAbrirPublicacao={abrirPublicacao} />
         )}
         {tab === "financeiro" && (
           <Financeiro financeiro={financeiro} salvar={salvarFinanceiro} vendas={vendas} aviso={aviso} onCriarAno={criarAnoFin} />
         )}
         {tab === "temas" && (
-          <Temas temas={temas} vendas={vendas} onAdd={addPublicacao} onRem={remPublicacao} onEdit={editPublicacao}
+          <Temas temas={temas} vendas={vendas} alvoId={pubAlvo} onAlvoUsado={() => setPubAlvo(null)}
+            onAdd={addPublicacao} onRem={remPublicacao} onEdit={editPublicacao}
             onAddPart={addParticipante} onEditPart={editParticipante} onRemPart={remParticipante}
             onLancarTaxa={lancarTaxaPub} aviso={aviso} />
         )}
@@ -1119,7 +1129,7 @@ function FormCliente({ cliente, onSalvar, onCancelar }) {
 /* ============================================================
    TRABALHOS (status)
    ============================================================ */
-function Trabalhos({ trabalhos, salvar, aviso }) {
+function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
   const [busca, setBusca] = useState("");
   const [fStatus, setFStatus] = useState("");
   const [fTipo, setFTipo] = useState("");
@@ -1184,7 +1194,7 @@ function Trabalhos({ trabalhos, salvar, aviso }) {
           <tbody>
             {filtrados.map((t) => (
               <tr key={t.id}>
-                <td className="cel-titulo">{t.titulo}</td>
+                <td className="cel-titulo"><button className="link-titulo" onClick={() => onAbrirPublicacao(t.titulo)} title="Ver em Publicações e vagas">{t.titulo}</button></td>
                 <td><span className="tipo-pill" style={{ background: (TIPO_COR[t.tipo] || "#8B97A0") + "22", color: TIPO_COR[t.tipo] || "#8B97A0" }}>{t.tipo}</span></td>
                 <td className="nowrap muted">{t.criadoEm ? fmtData(t.criadoEm.slice(0, 10)) : "—"}</td>
                 <td>
@@ -1512,11 +1522,20 @@ function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
 /* ============================================================
    TEMAS E VAGAS
    ============================================================ */
-function Temas({ temas, vendas, onAdd, onRem, onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa, aviso }) {
+function Temas({ temas, vendas, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa, aviso }) {
   const [busca, setBusca] = useState("");
   const [soComVaga, setSoComVaga] = useState(false);
   const [selId, setSelId] = useState(null);
   const [modalTema, setModalTema] = useState(false);
+  const detalheRef = useRef(null);
+  // veio de um clique em "Trabalhos"? seleciona a publicação e rola até o detalhe
+  useEffect(() => {
+    if (alvoId) {
+      setSelId(alvoId);
+      if (onAlvoUsado) onAlvoUsado();
+      requestAnimationFrame(() => { if (detalheRef.current) detalheRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); });
+    }
+  }, [alvoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lista = useMemo(() => {
     const b = busca.trim().toLowerCase();
@@ -1568,7 +1587,7 @@ function Temas({ temas, vendas, onAdd, onRem, onEdit, onAddPart, onEditPart, onR
           {lista.length === 0 && <div className="vazio">Nenhuma publicação encontrada.</div>}
         </div>
 
-        <div className="pub-detalhe card">
+        <div className="pub-detalhe card" ref={detalheRef}>
           {!sel ? (
             <div className="pub-vazio-det">
               <div className="pub-vazio-ic">≡</div>
@@ -1930,6 +1949,8 @@ select.inp{ cursor:pointer; }
 .cel-tema{ font-size:11px; color:var(--muted2); margin-top:2px; max-width:330px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cel-fac{ font-size:12px; color:var(--muted); max-width:200px; }
 .cel-titulo{ font-size:12.5px; max-width:560px; line-height:1.4; }
+.link-titulo{ background:transparent; border:none; padding:0; font:inherit; color:var(--brand); text-align:left; cursor:pointer; line-height:1.4; }
+.link-titulo:hover{ text-decoration:underline; color:var(--brand-deep); }
 .uf-pill{ display:inline-block; min-width:30px; text-align:center; font-size:11px; font-weight:700; color:var(--brand-deep);
   background:#E6F2F3; padding:2px 7px; border-radius:6px; }
 .tipo-pill{ display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; white-space:nowrap; }
