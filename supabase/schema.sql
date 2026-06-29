@@ -104,6 +104,7 @@ create table if not exists public.financeiro (
   custo_fixo       numeric(12,2) not null default 0,
   custo_extra      numeric(12,2) not null default 0,
   custo_extra_desc text          not null default '',
+  faturamento_ajuste numeric(12,2) not null default 0,
   criado_em        timestamptz   not null default now(),
   unique (ano, mes)
 );

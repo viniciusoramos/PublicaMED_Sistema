@@ -35,6 +35,7 @@ const finDe = (r) => ({
   custoFixo: Number(r.custo_fixo) || 0,
   custoExtra: Number(r.custo_extra) || 0,
   custoExtraDesc: r.custo_extra_desc || '',
+  faturamentoAjuste: Number(r.faturamento_ajuste) || 0,
 });
 const partDe = (x) => ({
   id: x.id,
@@ -155,6 +156,7 @@ export async function atualizarFinanceiro(id, d) {
     custo_fixo: d.custoFixo || 0,
     custo_extra: d.custoExtra || 0,
     custo_extra_desc: d.custoExtraDesc || '',
+    faturamento_ajuste: d.faturamentoAjuste || 0,
   }).eq('id', id).select().single();
   if (error) throw error;
   return finDe(data);

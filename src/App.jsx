@@ -1230,7 +1230,8 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
     .filter((f) => f.ano === anoSel)
     .sort((a, b) => a.ordem - b.ordem)
     .map((f) => {
-      const faturamento = fatVendasMes[f.ordem] || 0; // = soma das vendas pagas no mês (pela data do pagamento)
+      // faturamento = soma das vendas pagas no mês (automático) + ajuste manual (diferença registrada à mão)
+      const faturamento = (fatVendasMes[f.ordem] || 0) + (f.faturamentoAjuste || 0);
       const custoTotal = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0);
       return { ...f, faturamento, custoTotal, lucro: faturamento - custoTotal };
     });
@@ -1286,7 +1287,8 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
     const [a, o] = key.split("-").map(Number);
     const f = financeiro.find((x) => x.ano === a && x.ordem === o);
     if (!f) return null;
-    const entrou = vendas.reduce((s, v) => (anoDeIso(v.data) === a && mesDeIso(v.data) === o ? s + (v.valor || 0) : s), 0);
+    const vendasMes = vendas.reduce((s, v) => (anoDeIso(v.data) === a && mesDeIso(v.data) === o ? s + (v.valor || 0) : s), 0);
+    const entrou = vendasMes + (f.faturamentoAjuste || 0);
     const saiu = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0);
     return { rot: `${f.mes}/${f.ano}`, entrou, saiu, saldo: entrou - saiu };
   };
@@ -1352,7 +1354,9 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
                 <tbody>
                   {linhas.map((l) => (
                     <tr key={l.id} className={l.faturamento === 0 && l.custoTotal === 0 ? "row-zero" : ""}>
-                      <td><b>{l.mes}</b></td>
+                      <td><b>{l.mes}</b>{(l.faturamentoAjuste || 0) !== 0 && (
+                        <div className="fat-real" title="Vendas do mês + ajuste manual">vendas {brl(fatVendasMes[l.ordem])} + ajuste {brl(l.faturamentoAjuste)}</div>
+                      )}</td>
                       <td className="r">{brl(l.faturamento)}</td>
                       <td className="r neg">{brl(l.taxaPublicacao)}</td>
                       <td className="r neg">{brl(l.custoAds)}</td>
@@ -1432,28 +1436,31 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
       )}
 
       {editLinha && (
-        <FormMes linha={editLinha} onSalvar={(d) => salvarLinha(editLinha.id, d)} onClose={() => setEditId(null)} />
+        <FormMes linha={editLinha} fatVendas={fatVendasMes[editLinha.ordem]} onSalvar={(d) => salvarLinha(editLinha.id, d)} onClose={() => setEditId(null)} />
       )}
     </>
   );
 }
 
-function FormMes({ linha, onSalvar, onClose }) {
+function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
   const [f, setF] = useState({
-    faturamento: linha.faturamento || 0, taxaPublicacao: linha.taxaPublicacao || 0,
+    faturamentoAjuste: linha.faturamentoAjuste || 0, taxaPublicacao: linha.taxaPublicacao || 0,
     custoAds: linha.custoAds || 0, custoFixo: linha.custoFixo || 0, custoExtra: linha.custoExtra || 0,
     custoExtraDesc: linha.custoExtraDesc || "",
   });
   const setn = (k, v) => setF((p) => ({ ...p, [k]: parseFloat(String(v).replace(",", ".")) || 0 }));
   const setTxt = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const ct = f.taxaPublicacao + f.custoAds + f.custoFixo + f.custoExtra;
+  const fatTotal = (fatVendas || 0) + f.faturamentoAjuste;
   return (
     <Modal titulo={`Fechamento · ${linha.mes}`} onClose={onClose}>
       <div className="fatura-auto">
-        Faturamento (soma das vendas pagas no mês): <b>{brl(f.faturamento)}</b>
-        <div className="hint">Calculado automaticamente pelas vendas. Para mudar, ajuste as vendas do mês.</div>
+        Vendas pagas no mês (automático): <b>{brl(fatVendas)}</b>
+        {f.faturamentoAjuste !== 0 && <> + ajuste <b>{brl(f.faturamentoAjuste)}</b> = <b>{brl(fatTotal)}</b></>}
+        <div className="hint">As vendas somam sozinhas. Use o ajuste só pra registrar receita que não foi lançada venda a venda.</div>
       </div>
       <div className="form-grid">
+        <Campo label="Ajuste de faturamento (diferença)"><input className="inp" defaultValue={f.faturamentoAjuste} onChange={(e) => setn("faturamentoAjuste", e.target.value)} /></Campo>
         <Campo label="Taxa de publicação"><input className="inp" defaultValue={f.taxaPublicacao} onChange={(e) => setn("taxaPublicacao", e.target.value)} /></Campo>
         <Campo label="Custo com anúncios (Ads)"><input className="inp" defaultValue={f.custoAds} onChange={(e) => setn("custoAds", e.target.value)} /></Campo>
         <Campo label="Custo fixo"><input className="inp" defaultValue={f.custoFixo} onChange={(e) => setn("custoFixo", e.target.value)} /></Campo>
@@ -1463,8 +1470,9 @@ function FormMes({ linha, onSalvar, onClose }) {
         <input className="inp" placeholder="Ex.: Compra de celular" value={f.custoExtraDesc} onChange={(e) => setTxt("custoExtraDesc", e.target.value)} />
       </Campo>
       <div className="resumo-mes">
+        <div><span>Faturamento</span><b className="pos">{brl(fatTotal)}</b></div>
         <div><span>Custo total</span><b className="negv">{brl(ct)}</b></div>
-        <div><span>Lucro</span><b className={f.faturamento - ct >= 0 ? "pos" : "negv"}>{brl(f.faturamento - ct)}</b></div>
+        <div><span>Lucro</span><b className={fatTotal - ct >= 0 ? "pos" : "negv"}>{brl(fatTotal - ct)}</b></div>
       </div>
       <div className="form-acoes">
         <button className="btn-ghost" onClick={onClose}>Cancelar</button>
