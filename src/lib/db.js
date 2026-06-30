@@ -150,6 +150,11 @@ export async function renomearTrabalho(id, titulo) {
   const { error } = await supabase.from('trabalhos').update({ titulo: titulo || '' }).eq('id', id);
   if (error) throw error;
 }
+// atualiza só o local de publicação do trabalho
+export async function atualizarLocalTrabalho(id, local) {
+  const { error } = await supabase.from('trabalhos').update({ local_publicacao: local || '' }).eq('id', id);
+  if (error) throw error;
+}
 
 const MESES_DB = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
