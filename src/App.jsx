@@ -1718,6 +1718,7 @@ function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, 
                 {p.autorPrincipal && <span className="tag-autor">autor principal</span>}
                 {p.graduado && <span className="tag-grad">graduado</span>}
                 <div className="p-fac">{p.faculdade}{p.email ? ` · ${p.email}` : ""}</div>
+                {p.orcid ? <div className="p-orcid"><a href={`https://orcid.org/${p.orcid.trim()}`} target="_blank" rel="noreferrer">ORCID: {p.orcid}</a></div> : null}
               </div>
               <div className="p-acoes">
                 <span className="p-valor" title="Valor pago na vaga">{vd ? brl(vd.valor) : "—"}</span>
@@ -1744,7 +1745,7 @@ function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, 
 }
 
 function FormPart({ tema, onAdd }) {
-  const vazio = { nome: "", faculdade: "", email: "", autorPrincipal: false, graduado: false, valor: "", data: hojeIso(), lancarVenda: true };
+  const vazio = { nome: "", faculdade: "", email: "", orcid: "", autorPrincipal: false, graduado: false, valor: "", data: hojeIso(), lancarVenda: true };
   const [p, setP] = useState(vazio);
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
   const enviar = () => {
@@ -1760,6 +1761,7 @@ function FormPart({ tema, onAdd }) {
         <input className="inp sm" placeholder="Nome" value={p.nome} onChange={(e) => set("nome", e.target.value)} />
         <input className="inp sm" placeholder="Faculdade" list="fac-datalist" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
         <input className="inp sm" placeholder="Email" value={p.email} onChange={(e) => set("email", e.target.value)} />
+        <input className="inp sm" placeholder="ORCID (opcional)" value={p.orcid} onChange={(e) => set("orcid", e.target.value)} />
         <input className="inp sm" inputMode="decimal" placeholder="Valor pago (R$)" value={p.valor} onChange={(e) => set("valor", e.target.value)} />
         <input className="inp sm" type="date" value={p.data} onChange={(e) => set("data", e.target.value)} />
       </div>
@@ -1776,7 +1778,7 @@ function FormPart({ tema, onAdd }) {
 
 function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
   const [f, setF] = useState({
-    nome: part.nome || "", faculdade: part.faculdade || "", email: part.email || "",
+    nome: part.nome || "", faculdade: part.faculdade || "", email: part.email || "", orcid: part.orcid || "",
     autorPrincipal: !!part.autorPrincipal, graduado: !!part.graduado,
     valor: valorAtual === "" || valorAtual == null ? "" : String(valorAtual),
   });
@@ -1796,6 +1798,7 @@ function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
         <Campo label="Email"><input className="inp" value={f.email} onChange={(e) => set("email", e.target.value)} /></Campo>
         <Campo label="Valor pago na vaga (R$)"><input className="inp" inputMode="decimal" value={f.valor} onChange={(e) => set("valor", e.target.value)} /></Campo>
       </div>
+      <Campo label="ORCID (opcional)"><input className="inp" placeholder="0000-0000-0000-0000" value={f.orcid} onChange={(e) => set("orcid", e.target.value)} /></Campo>
       <div className="fp-opts">
         <label className="check sm"><input type="checkbox" checked={f.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> autor principal</label>
         <label className="check sm"><input type="checkbox" checked={f.graduado} onChange={(e) => set("graduado", e.target.checked)} /> graduado</label>
@@ -1981,6 +1984,9 @@ select.inp{ cursor:pointer; }
 .link-titulo{ background:transparent; border:none; padding:0; font:inherit; color:var(--brand); text-align:left; cursor:pointer; line-height:1.4; }
 .link-titulo:hover{ text-decoration:underline; color:var(--brand-deep); }
 .onde-pub{ font-size:11px; color:var(--muted); margin-top:3px; }
+.p-orcid{ font-size:11px; margin-top:2px; }
+.p-orcid a{ color:var(--brand); text-decoration:none; }
+.p-orcid a:hover{ text-decoration:underline; }
 .uf-pill{ display:inline-block; min-width:30px; text-align:center; font-size:11px; font-weight:700; color:var(--brand-deep);
   background:#E6F2F3; padding:2px 7px; border-radius:6px; }
 .tipo-pill{ display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; white-space:nowrap; }

@@ -42,6 +42,7 @@ const partDe = (x) => ({
   nome: x.nome || '',
   faculdade: x.faculdade || '',
   email: x.email || '',
+  orcid: x.orcid || '',
   autorPrincipal: !!x.autor_principal,
   graduado: !!x.graduado,
 });
@@ -197,6 +198,7 @@ export async function adicionarParticipante(publicacaoId, p) {
     nome: p.nome || '',
     email: p.email || '',
     faculdade: p.faculdade || '',
+    orcid: p.orcid || '',
     autor_principal: !!p.autorPrincipal,
     graduado: !!p.graduado,
   }).select().single();
@@ -208,6 +210,7 @@ export async function atualizarParticipante(id, p) {
     nome: p.nome || '',
     email: p.email || '',
     faculdade: p.faculdade || '',
+    orcid: p.orcid || '',
     autor_principal: !!p.autorPrincipal,
     graduado: !!p.graduado,
   }).eq('id', id).select().single();

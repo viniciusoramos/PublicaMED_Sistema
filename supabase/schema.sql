@@ -68,6 +68,7 @@ create table if not exists public.participantes (
   faculdade        text        not null default '',
   autor_principal  boolean     not null default false,
   graduado         boolean     not null default false,
+  orcid            text        not null default '',
   criado_em        timestamptz not null default now()
 );
 create index if not exists participantes_pub_idx on public.participantes (publicacao_id);
