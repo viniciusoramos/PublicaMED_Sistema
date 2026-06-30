@@ -1196,6 +1196,9 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
   const mudarStatus = (id, status) => {
     salvar(trabalhos.map((t) => (t.id === id ? { ...t, status } : t)));
   };
+  const mudarLocal = (id, local) => {
+    salvar(trabalhos.map((t) => (t.id === id ? { ...t, localPublicacao: local } : t)));
+  };
   const remover = (id) => { if (confirm("Remover trabalho?")) { salvar(trabalhos.filter((t) => t.id !== id)); aviso("Removido"); } };
   const addTrab = (d) => { salvar([{ id: "t" + uid(), criadoEm: new Date().toISOString(), ...d }, ...trabalhos]); setModal(false); aviso("Trabalho adicionado"); };
 
@@ -1234,7 +1237,12 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
           <tbody>
             {filtrados.map((t) => (
               <tr key={t.id}>
-                <td className="cel-titulo"><button className="link-titulo" onClick={() => onAbrirPublicacao(t.titulo)} title="Ver em Publicações e vagas">{t.titulo}</button>{t.localPublicacao ? <div className="onde-pub">📍 {t.localPublicacao}</div> : null}</td>
+                <td className="cel-titulo">
+                  <button className="link-titulo" onClick={() => onAbrirPublicacao(t.titulo)} title="Ver em Publicações e vagas">{t.titulo}</button>
+                  <input className="onde-inp" defaultValue={t.localPublicacao || ""} placeholder="📍 onde será publicado…"
+                    title="Onde será publicado (clique e digite)"
+                    onBlur={(e) => { const v = e.target.value.trim(); if (v !== (t.localPublicacao || "")) mudarLocal(t.id, v); }} />
+                </td>
                 <td><span className="tipo-pill" style={{ background: corTipo(t.tipo) + "22", color: corTipo(t.tipo) }}>{t.tipo}</span></td>
                 <td className="nowrap muted">{t.criadoEm ? fmtData(t.criadoEm.slice(0, 10)) : "—"}</td>
                 <td>
@@ -2013,6 +2021,9 @@ select.inp{ cursor:pointer; }
 .link-titulo{ background:transparent; border:none; padding:0; font:inherit; color:var(--brand); text-align:left; cursor:pointer; line-height:1.4; }
 .link-titulo:hover{ text-decoration:underline; color:var(--brand-deep); }
 .onde-pub{ font-size:11px; color:var(--muted); margin-top:3px; }
+.onde-inp{ display:block; margin-top:5px; width:100%; max-width:440px; background:transparent; border:1px solid transparent; border-radius:6px; padding:3px 7px; font-size:11.5px; color:var(--muted); font-family:inherit; transition:.12s; }
+.onde-inp:hover{ border-color:var(--border); }
+.onde-inp:focus{ border-color:var(--brand); background:var(--surface); color:var(--ink); outline:none; }
 .p-orcid{ font-size:11px; margin-top:2px; }
 .p-orcid a{ color:var(--brand); text-decoration:none; }
 .p-orcid a:hover{ text-decoration:underline; }
