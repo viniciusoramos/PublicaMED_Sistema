@@ -121,6 +121,12 @@ export async function removerVenda(id) {
   const { error } = await supabase.from('vendas').delete().eq('id', id);
   if (error) throw error;
 }
+// renomeia o tema (nome da publicação) em todas as vendas ligadas — 1 update em lote
+export async function renomearTemaVendas(antigo, novo) {
+  if (!antigo || antigo === novo) return;
+  const { error } = await supabase.from('vendas').update({ tema: novo }).eq('tema', antigo);
+  if (error) throw error;
+}
 
 /* ---------- trabalhos ---------- */
 export async function criarTrabalho(d) {
@@ -137,6 +143,11 @@ export async function atualizarTrabalho(id, d) {
 }
 export async function removerTrabalho(id) {
   const { error } = await supabase.from('trabalhos').delete().eq('id', id);
+  if (error) throw error;
+}
+// atualiza só o título do trabalho (não toca nas outras colunas)
+export async function renomearTrabalho(id, titulo) {
+  const { error } = await supabase.from('trabalhos').update({ titulo: titulo || '' }).eq('id', id);
   if (error) throw error;
 }
 

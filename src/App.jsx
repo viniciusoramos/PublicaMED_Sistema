@@ -374,6 +374,23 @@ export default function App() {
     try { await db.atualizarPublicacao(id, campos); }
     catch (e) { aviso("Erro: " + e.message); setTemas(antes); }
   };
+  // renomeia a publicação e sincroniza o trabalho vinculado (mesmo título) e as vendas (mesmo tema)
+  const editNomePublicacao = async (tema, novoNome) => {
+    const nome = (novoNome || "").trim();
+    if (!nome || nome === tema.nome) return;
+    const antigo = tema.nome;
+    const antT = temas, antTr = trabalhos, antV = vendas;
+    setTemas((ts) => ts.map((t) => (t.id === tema.id ? { ...t, nome } : t)));
+    setTrabalhos((tr) => tr.map((x) => (x.titulo === antigo ? { ...x, titulo: nome } : x)));
+    setVendas((vs) => vs.map((v) => (v.tema === antigo ? { ...v, tema: nome } : v)));
+    try {
+      await db.atualizarPublicacao(tema.id, { nome });
+      const trab = trabalhos.find((x) => x.titulo === antigo);
+      if (trab) await db.renomearTrabalho(trab.id, nome);
+      await db.renomearTemaVendas(antigo, nome);
+      aviso("Nome atualizado");
+    } catch (e) { aviso("Erro: " + e.message); setTemas(antT); setTrabalhos(antTr); setVendas(antV); }
+  };
   // soma a taxa de publicação no mês correspondente do Financeiro (cria o ano se faltar)
   const lancarTaxaFinanceiro = async (dataIso, taxa) => {
     const ano = anoDeIso(dataIso), mesIdx = mesDeIso(dataIso);
@@ -574,7 +591,7 @@ export default function App() {
         )}
         {tab === "temas" && (
           <Temas temas={temas} vendas={vendas} alvoId={pubAlvo} onAlvoUsado={() => setPubAlvo(null)}
-            onAdd={addPublicacao} onRem={remPublicacao} onEdit={editPublicacao}
+            onAdd={addPublicacao} onRem={remPublicacao} onEdit={editPublicacao} onEditNome={editNomePublicacao}
             onAddPart={addParticipante} onEditPart={editParticipante} onRemPart={remParticipante}
             onLancarTaxa={lancarTaxaPub} aviso={aviso} />
         )}
@@ -1545,7 +1562,7 @@ function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
 /* ============================================================
    TEMAS E VAGAS
    ============================================================ */
-function Temas({ temas, vendas, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa, aviso }) {
+function Temas({ temas, vendas, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, aviso }) {
   const [busca, setBusca] = useState("");
   const [soComVaga, setSoComVaga] = useState(false);
   const [selId, setSelId] = useState(null);
@@ -1617,7 +1634,7 @@ function Temas({ temas, vendas, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onAdd
               <p>Selecione uma publicação na lista para ver os participantes e lançar pessoas (com o valor pago).</p>
             </div>
           ) : (
-            <DetalhePub key={sel.id} t={sel} vendas={vendas} onEdit={onEdit} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa} onExcluir={() => excluir(sel)} />
+            <DetalhePub key={sel.id} t={sel} vendas={vendas} onEdit={onEdit} onEditNome={onEditNome} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa} onExcluir={() => excluir(sel)} />
           )}
         </div>
       </div>
@@ -1627,11 +1644,13 @@ function Temas({ temas, vendas, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onAdd
   );
 }
 
-function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa, onExcluir }) {
+function DetalhePub({ t, vendas = [], onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onExcluir }) {
   const { tipos } = useContext(ListasCtx);
   const restantes = t.maxVagas - t.participantes.length;
   const cheio = restantes <= 0;
   const pct = Math.min(100, (t.participantes.length / t.maxVagas) * 100);
+  const [editandoNome, setEditandoNome] = useState(false);
+  const [nomeTmp, setNomeTmp] = useState("");
   const [editP, setEditP] = useState(null);
   const [taxaVal, setTaxaVal] = useState("");
   const [taxaData, setTaxaData] = useState(hojeIso());
@@ -1664,8 +1683,18 @@ function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, 
   return (
     <div className="dp">
       <div className="dp-head">
-        <h3 className="dp-nome">{t.nome}</h3>
-        <button className="mini del" onClick={onExcluir}>excluir</button>
+        {editandoNome ? (
+          <div className="dp-nome-edit">
+            <input className="inp" autoFocus value={nomeTmp} onChange={(e) => setNomeTmp(e.target.value)} />
+            <button className="btn sm" onClick={() => { if (nomeTmp.trim()) { onEditNome(t, nomeTmp); setEditandoNome(false); } }}>salvar</button>
+            <button className="mini" onClick={() => setEditandoNome(false)}>cancelar</button>
+          </div>
+        ) : (
+          <>
+            <h3 className="dp-nome">{t.nome} <button className="mini dp-edit-nome" onClick={() => { setNomeTmp(t.nome); setEditandoNome(true); }}>editar nome</button></h3>
+            <button className="mini del" onClick={onExcluir}>excluir</button>
+          </>
+        )}
       </div>
       <div className="dp-prog"><div className="dp-prog-fill" style={{ width: `${pct}%`, background: cheio ? "#C56B91" : "#2C7DA0" }} /></div>
       <div className="dp-ocup">{t.participantes.length} de {t.maxVagas} vagas ocupadas{t.area ? ` · ${t.area}` : ""}</div>
@@ -2110,6 +2139,9 @@ select.inp{ cursor:pointer; }
 .pub-vazio-ic{ width:56px; height:56px; border-radius:15px; background:#EEF3F4; display:grid; place-items:center; font-size:26px; color:var(--brand); }
 .dp-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
 .dp-nome{ font-size:16px; font-weight:700; line-height:1.3; }
+.dp-edit-nome{ vertical-align:middle; margin-left:8px; font-weight:600; }
+.dp-nome-edit{ display:flex; gap:8px; align-items:center; flex:1; flex-wrap:wrap; }
+.dp-nome-edit .inp{ flex:1; min-width:220px; font-size:15px; font-weight:600; }
 .dp-prog{ height:8px; background:var(--track); border-radius:6px; margin:12px 0 6px; overflow:hidden; }
 .dp-prog-fill{ height:100%; border-radius:6px; transition:width .4s; }
 .dp-ocup{ font-size:12px; color:var(--muted); margin-bottom:14px; }
