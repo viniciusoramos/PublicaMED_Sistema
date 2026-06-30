@@ -1599,7 +1599,7 @@ function Temas({ temas, vendas, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onAdd
                     {cheio ? "Lotado" : `${restantes} vaga${restantes > 1 ? "s" : ""}`}
                   </span>
                 </div>
-                <div className="pub-item-prog"><div className="pub-item-fill" style={{ width: `${pct}%`, background: cheio ? "#C2477A" : "#2C7DA0" }} /></div>
+                <div className="pub-item-prog"><div className="pub-item-fill" style={{ width: `${pct}%`, background: cheio ? "#C56B91" : "#2C7DA0" }} /></div>
                 <div className="pub-item-sub">
                   <span className="chip-tipo sm" style={{ background: corTipo(t.tipo) }}>{t.tipo || "Artigo"}</span>
                   <span className="pub-item-ocup">{t.participantes.length}/{t.maxVagas}</span>
@@ -1667,7 +1667,7 @@ function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, 
         <h3 className="dp-nome">{t.nome}</h3>
         <button className="mini del" onClick={onExcluir}>excluir</button>
       </div>
-      <div className="dp-prog"><div className="dp-prog-fill" style={{ width: `${pct}%`, background: cheio ? "#C2477A" : "#2C7DA0" }} /></div>
+      <div className="dp-prog"><div className="dp-prog-fill" style={{ width: `${pct}%`, background: cheio ? "#C56B91" : "#2C7DA0" }} /></div>
       <div className="dp-ocup">{t.participantes.length} de {t.maxVagas} vagas ocupadas{t.area ? ` · ${t.area}` : ""}</div>
 
       <div className="dp-fin">
@@ -1851,10 +1851,10 @@ function Estilos() {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root{
   --ink:#1D3557; --brand:#2C7DA0; --brand-deep:#1D3557; --accent:#E8833A;
-  --bg:#F5F7FA; --surface:#FFFFFF; --soft:#F4F8FB; --hover:#FAFCFD; --border:#E3E8EF; --muted:#5B6B73; --muted2:#8997A0;
+  --bg:#F5F7FA; --surface:#FFFFFF; --soft:#F4F8FB; --hover:#FAFCFD; --track:#EEF3F4; --border:#E3E8EF; --muted:#5B6B73; --muted2:#8997A0;
 }
 .root.dark{
-  --ink:#E7EEF4; --bg:#0E1620; --surface:#172230; --soft:#121C28; --hover:#1B2735;
+  --ink:#E7EEF4; --bg:#0E1620; --surface:#172230; --soft:#121C28; --hover:#1B2735; --track:#26333F;
   --border:#2A3947; --muted:#9DB0BD; --muted2:#738390;
 }
 .root{ display:flex; min-height:100vh; background:var(--bg);
@@ -2051,9 +2051,9 @@ select.inp{ cursor:pointer; }
 .tema-top{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; cursor:pointer; }
 .tema-nome{ font-size:13px; font-weight:600; line-height:1.35; }
 .vagas-badge{ font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; flex-shrink:0; }
-.b-ok{ background:#E3F3EC; color:#1F8F66; }
-.b-quase{ background:#FCF1DE; color:#C98A1E; }
-.b-cheio{ background:#FBE6EE; color:#C2477A; }
+.b-ok{ background:rgba(46,158,123,.16); color:#2FA980; }
+.b-quase{ background:rgba(224,169,59,.18); color:#E0A93B; }
+.b-cheio{ background:rgba(194,71,122,.18); color:#D76BA0; }
 .tema-prog{ height:6px; background:#EEF3F4; border-radius:5px; margin:11px 0 7px; overflow:hidden; }
 .tema-prog-fill{ height:100%; border-radius:5px; transition:width .4s; }
 .tema-meta{ display:flex; justify-content:space-between; align-items:center; font-size:11.5px; color:var(--muted); }
@@ -2086,13 +2086,13 @@ select.inp{ cursor:pointer; }
 /* PUBLICACOES: lista + painel de detalhe */
 .pub-split{ display:grid; grid-template-columns:330px 1fr; gap:16px; align-items:start; }
 .pub-lista{ max-height:calc(100vh - 240px); overflow-y:auto; }
-.pub-item{ display:block; width:100%; text-align:left; background:transparent; border:none; border-bottom:1px solid #F0F4F5;
+.pub-item{ display:block; width:100%; text-align:left; background:transparent; border:none; border-bottom:1px solid var(--border);
   padding:12px 14px; cursor:pointer; font-family:inherit; transition:.12s; }
-.pub-item:hover{ background:#FAFCFD; }
-.pub-item.ativo{ background:#EAF5F6; box-shadow:inset 3px 0 0 var(--brand); }
+.pub-item:hover{ background:var(--hover); }
+.pub-item.ativo{ background:rgba(44,125,160,.16); box-shadow:inset 3px 0 0 var(--brand); }
 .pub-item-top{ display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
 .pub-item-nome{ font-size:12.5px; font-weight:600; line-height:1.35; color:var(--ink); }
-.pub-item-prog{ height:5px; background:#EEF3F4; border-radius:4px; margin:8px 0 6px; overflow:hidden; }
+.pub-item-prog{ height:5px; background:var(--track); border-radius:4px; margin:8px 0 6px; overflow:hidden; }
 .pub-item-fill{ height:100%; border-radius:4px; }
 .pub-item-sub{ display:flex; align-items:center; justify-content:space-between; }
 .pub-item-ocup{ font-size:11px; color:var(--muted); font-weight:700; }
@@ -2104,13 +2104,13 @@ select.inp{ cursor:pointer; }
 .pub-vazio-ic{ width:56px; height:56px; border-radius:15px; background:#EEF3F4; display:grid; place-items:center; font-size:26px; color:var(--brand); }
 .dp-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
 .dp-nome{ font-size:16px; font-weight:700; line-height:1.3; }
-.dp-prog{ height:8px; background:#EEF3F4; border-radius:6px; margin:12px 0 6px; overflow:hidden; }
+.dp-prog{ height:8px; background:var(--track); border-radius:6px; margin:12px 0 6px; overflow:hidden; }
 .dp-prog-fill{ height:100%; border-radius:6px; transition:width .4s; }
 .dp-ocup{ font-size:12px; color:var(--muted); margin-bottom:14px; }
 .dp-controles{ display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; padding:13px 14px; background:var(--soft);
   border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
 .dp-sub{ font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; margin-bottom:10px; }
-.dp-lotado{ font-size:12.5px; color:#C2477A; background:#FBE6EE; border-radius:9px; padding:11px 13px; margin-top:11px; }
+.dp-lotado{ font-size:12.5px; color:#D76BA0; background:rgba(194,71,122,.14); border-radius:9px; padding:11px 13px; margin-top:11px; }
 .dp-taxa{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:11px 13px; background:var(--soft); border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
 .dp-taxa-lab{ font-size:12px; font-weight:600; color:var(--muted); }
 .dp-taxa-val{ max-width:110px; }
@@ -2133,8 +2133,8 @@ select.inp{ cursor:pointer; }
 .dp-fin-item span{ font-size:10.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
 .dp-fin-item b{ font-size:18px; color:var(--ink); }
 .p-valor{ font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; margin-right:6px; white-space:nowrap; }
-.aviso-grad{ font-size:12.5px; color:#9A6700; background:#FFF6E0; border:1px solid #F2D98A; border-radius:9px; padding:10px 13px; margin-bottom:14px; }
-.aviso-grad.erro{ color:#C2477A; background:#FBE6EE; border-color:#F3C2D6; font-weight:600; }
+.aviso-grad{ font-size:12.5px; color:#E0A93B; background:rgba(224,169,59,.13); border:1px solid rgba(224,169,59,.38); border-radius:9px; padding:10px 13px; margin-bottom:14px; }
+.aviso-grad.erro{ color:#D76BA0; background:rgba(194,71,122,.13); border-color:rgba(194,71,122,.4); font-weight:600; }
 .fatura-auto{ background:var(--soft); border:1px solid var(--border); border-radius:10px; padding:11px 13px; margin-bottom:14px; font-size:13.5px; color:var(--ink); }
 .fatura-auto b{ font-size:16px; }
 
