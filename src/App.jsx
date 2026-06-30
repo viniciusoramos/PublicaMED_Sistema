@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, useContext } from "react";
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, LineChart, Line,
@@ -51,6 +51,13 @@ const STATUS_COR = {
   "A fazer":"#9AA5AB","Aguardando certificado":"#E0A93B",
   "Concluído":"#3B92C2","Certificado emitido":"#2E9E7B",
 };
+// cores para tipos/status criados pelo usuário (fora dos padrões): paleta estável por hash
+const PALETA = ["#2C7DA0","#C2477A","#2E9E7B","#E8833A","#6366A8","#0E8A8A","#B5651D","#7E57C2"];
+const hashCor = (s) => PALETA[[...String(s || "")].reduce((a, c) => a + c.charCodeAt(0), 0) % PALETA.length];
+const corTipo = (v) => TIPO_COR[v] || hashCor(v);
+const corStatus = (v) => STATUS_COR[v] || hashCor(v);
+// tipos/status disponíveis (padrões + criados pelo usuário) chegam aos componentes por contexto
+const ListasCtx = React.createContext({ tipos: TIPOS, status: STATUS });
 
 /* ---------- Utilidades ---------- */
 const brl = (n) =>
@@ -501,9 +508,20 @@ export default function App() {
     ["temas", "Publicações e vagas", "≡"],
   ];
 
+  // tipos/status = padrões + os criados pelo usuário (que já existem nos dados)
+  const tiposDisp = useMemo(
+    () => [...new Set([...TIPOS, ...temas.map((t) => t.tipo), ...trabalhos.map((t) => t.tipo)])].filter(Boolean),
+    [temas, trabalhos]);
+  const statusDisp = useMemo(
+    () => [...new Set([...STATUS, ...trabalhos.map((t) => t.status)])].filter(Boolean),
+    [trabalhos]);
+
   return (
+    <ListasCtx.Provider value={{ tipos: tiposDisp, status: statusDisp }}>
     <div className="root">
       <Estilos />
+      <datalist id="tipos-datalist">{tiposDisp.map((t) => <option key={t} value={t} />)}</datalist>
+      <datalist id="status-datalist">{statusDisp.map((s) => <option key={s} value={s} />)}</datalist>
       {/* TOPBAR (aparece só no celular) */}
       <header className="topbar">
         <button className="hamb" onClick={() => setMenuAberto(true)} aria-label="Abrir menu">☰</button>
@@ -560,6 +578,7 @@ export default function App() {
 
       {toast && <div className="toast">{toast}</div>}
     </div>
+    </ListasCtx.Provider>
   );
 }
 
@@ -584,7 +603,7 @@ function calcMetricas(vendas) {
   });
   const clientes = Object.values(clientesMap).sort((a, b) => b.total - a.total);
 
-  const porTipo = TIPOS.map((t) => {
+  const porTipo = [...new Set([...TIPOS, ...vendas.map((v) => v.tipo)])].filter(Boolean).map((t) => {
     const arr = vendas.filter((v) => v.tipo === t);
     return { tipo: t, qtd: arr.length, total: arr.reduce((s, v) => s + v.valor, 0) };
   }).filter((x) => x.qtd > 0).sort((a, b) => b.total - a.total);
@@ -688,7 +707,7 @@ function Overview({ vendas, financeiro, trabalhos }) {
   const facTop = m.porFaculdade[0];
   const cliTop = m.clientes[0];
 
-  const donut = m.porTipo.map((t) => ({ name: t.tipo, value: t.total, cor: TIPO_COR[t.tipo] }));
+  const donut = m.porTipo.map((t) => ({ name: t.tipo, value: t.total, cor: corTipo(t.tipo) }));
   const maxUF = Math.max(...m.porUF.filter((u) => u.uf !== "N/I").map((u) => u.qtd), 1);
   const ufData = m.porUF.filter((u) => u.uf !== "N/I").slice(0, 8)
     .map((u) => ({ label: `${u.uf} · ${UF_NOME[u.uf]}`, value: u.qtd, cor: "#2C7DA0" }));
@@ -757,7 +776,7 @@ function Overview({ vendas, financeiro, trabalhos }) {
           <div className="card-head"><h3>Destaques</h3></div>
           <div className="destaques">
             <Destaque rotulo="Produto campeão" principal={tipoTop?.tipo || "—"}
-              detalhe={tipoTop ? `${brl(tipoTop.total)} · ${tipoTop.qtd} vendas` : ""} cor={TIPO_COR[tipoTop?.tipo]} />
+              detalhe={tipoTop ? `${brl(tipoTop.total)} · ${tipoTop.qtd} vendas` : ""} cor={corTipo(tipoTop?.tipo)} />
             <Destaque rotulo="Estado líder" principal={ufTop ? UF_NOME[ufTop.uf] : "—"}
               detalhe={ufTop ? `${ufTop.qtd} compras · ${brl(ufTop.total)}` : ""} cor="#2C7DA0" />
             <Destaque rotulo="Faculdade líder" principal={facTop?.faculdade || "—"}
@@ -805,6 +824,7 @@ function Destaque({ rotulo, principal, detalhe, cor }) {
    VENDAS
    ============================================================ */
 function Vendas({ vendas, salvar, aviso, temasExist }) {
+  const { tipos } = useContext(ListasCtx);
   const [busca, setBusca] = useState("");
   const [fTipo, setFTipo] = useState("");
   const [fUF, setFUF] = useState("");
@@ -868,7 +888,7 @@ function Vendas({ vendas, salvar, aviso, temasExist }) {
         <input className="inp busca" placeholder="Buscar por nome, email, faculdade ou tema…" value={busca} onChange={(e) => setBusca(e.target.value)} />
         <select className="inp" value={fTipo} onChange={(e) => setFTipo(e.target.value)}>
           <option value="">Todos os tipos</option>
-          {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
+          {tipos.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
         <select className="inp" value={fUF} onChange={(e) => setFUF(e.target.value)}>
           <option value="">Todos os estados</option>
@@ -900,7 +920,7 @@ function Vendas({ vendas, salvar, aviso, temasExist }) {
                 </td>
                 <td className="cel-fac">{v.faculdade || "—"}</td>
                 <td><span className="uf-pill">{v.uf}</span></td>
-                <td><span className="tipo-pill" style={{ background: TIPO_COR[v.tipo] + "22", color: TIPO_COR[v.tipo] }}>{v.tipo}</span></td>
+                <td><span className="tipo-pill" style={{ background: corTipo(v.tipo) + "22", color: corTipo(v.tipo) }}>{v.tipo}</span></td>
                 <td className="r"><b>{brl(v.valor)}</b></td>
                 <td className="acoes">
                   <button className="mini" onClick={() => { setEditando(v); setModal(true); }}>editar</button>
@@ -966,9 +986,7 @@ function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts }) {
           <Campo label="Telefone (opcional)"><input className="inp" placeholder="(31)99999-9999" value={f.telefone} onChange={(e) => set("telefone", e.target.value)} /></Campo>
         )}
         <Campo label="Tipo de trabalho">
-          <select className="inp" value={f.tipo} onChange={(e) => set("tipo", e.target.value)}>
-            {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
+          <input className="inp" list="tipos-datalist" placeholder="Escolha ou digite um novo" value={f.tipo} onChange={(e) => set("tipo", e.target.value)} />
         </Campo>
         <Campo label={outraFac ? "Estado (UF) da nova faculdade" : "Estado (UF)"}>
           <select className="inp" value={f.uf} onChange={(e) => set("uf", e.target.value)}>
@@ -1080,7 +1098,7 @@ function Clientes({ m, vendas, salvarCliente }) {
                   {sel.compras.sort((a, b) => (b.data || "").localeCompare(a.data || "")).map((v) => (
                     <tr key={v.id}>
                       <td className="nowrap muted">{fmtData(v.data)}</td>
-                      <td><span className="tipo-pill" style={{ background: TIPO_COR[v.tipo] + "22", color: TIPO_COR[v.tipo] }}>{v.tipo}</span></td>
+                      <td><span className="tipo-pill" style={{ background: corTipo(v.tipo) + "22", color: corTipo(v.tipo) }}>{v.tipo}</span></td>
                       <td className="cel-fac">{v.tema || "—"}</td>
                       <td className="r"><b>{brl(v.valor)}</b></td>
                     </tr>
@@ -1130,6 +1148,7 @@ function FormCliente({ cliente, onSalvar, onCancelar }) {
    TRABALHOS (status)
    ============================================================ */
 function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
+  const { tipos, status: statusDisp } = useContext(ListasCtx);
   const [busca, setBusca] = useState("");
   const [fStatus, setFStatus] = useState("");
   const [fTipo, setFTipo] = useState("");
@@ -1145,13 +1164,13 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
     const cmp = {
       recentes: (a, c) => (c.criadoEm || "").localeCompare(a.criadoEm || ""),
       antigos: (a, c) => (a.criadoEm || "").localeCompare(c.criadoEm || ""),
-      status: (a, c) => STATUS.indexOf(a.status) - STATUS.indexOf(c.status) || (c.criadoEm || "").localeCompare(a.criadoEm || ""),
+      status: (a, c) => statusDisp.indexOf(a.status) - statusDisp.indexOf(c.status) || (c.criadoEm || "").localeCompare(a.criadoEm || ""),
       titulo: (a, c) => a.titulo.localeCompare(c.titulo),
     }[ordem];
     return [...arr].sort(cmp);
   }, [trabalhos, busca, fStatus, fTipo, ordem]);
 
-  const contagem = STATUS.map((s) => ({ s, n: trabalhos.filter((t) => t.status === s).length }));
+  const contagem = statusDisp.map((s) => ({ s, n: trabalhos.filter((t) => t.status === s).length }));
 
   const mudarStatus = (id, status) => {
     salvar(trabalhos.map((t) => (t.id === id ? { ...t, status } : t)));
@@ -1167,7 +1186,7 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
       <div className="kpis kpis-4">
         {contagem.map(({ s, n }) => (
           <button key={s} className={"kpi kpi-click " + (fStatus === s ? "kpi-ativo" : "")} onClick={() => setFStatus(fStatus === s ? "" : s)}>
-            <div className="kpi-bar" style={{ background: STATUS_COR[s] }} />
+            <div className="kpi-bar" style={{ background: corStatus(s) }} />
             <div className="kpi-body"><div className="kpi-label">{s}</div><div className="kpi-valor">{n}</div></div>
           </button>
         ))}
@@ -1177,7 +1196,7 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
         <input className="inp busca" placeholder="Buscar trabalho pelo título…" value={busca} onChange={(e) => setBusca(e.target.value)} />
         <select className="inp" value={fTipo} onChange={(e) => setFTipo(e.target.value)}>
           <option value="">Todos os tipos</option>
-          {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
+          {tipos.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
         <select className="inp" value={ordem} onChange={(e) => setOrdem(e.target.value)}>
           <option value="recentes">Mais recentes primeiro</option>
@@ -1194,13 +1213,14 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
           <tbody>
             {filtrados.map((t) => (
               <tr key={t.id}>
-                <td className="cel-titulo"><button className="link-titulo" onClick={() => onAbrirPublicacao(t.titulo)} title="Ver em Publicações e vagas">{t.titulo}</button></td>
-                <td><span className="tipo-pill" style={{ background: (TIPO_COR[t.tipo] || "#8B97A0") + "22", color: TIPO_COR[t.tipo] || "#8B97A0" }}>{t.tipo}</span></td>
+                <td className="cel-titulo"><button className="link-titulo" onClick={() => onAbrirPublicacao(t.titulo)} title="Ver em Publicações e vagas">{t.titulo}</button>{t.localPublicacao ? <div className="onde-pub">📍 {t.localPublicacao}</div> : null}</td>
+                <td><span className="tipo-pill" style={{ background: corTipo(t.tipo) + "22", color: corTipo(t.tipo) }}>{t.tipo}</span></td>
                 <td className="nowrap muted">{t.criadoEm ? fmtData(t.criadoEm.slice(0, 10)) : "—"}</td>
                 <td>
-                  <select className="status-sel" style={{ color: STATUS_COR[t.status], borderColor: STATUS_COR[t.status] + "55" }}
-                    value={t.status} onChange={(e) => mudarStatus(t.id, e.target.value)}>
-                    {STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
+                  <select className="status-sel" style={{ color: corStatus(t.status), borderColor: corStatus(t.status) + "55" }}
+                    value={t.status} onChange={(e) => { if (e.target.value === "__novo") { const s = prompt("Nome do novo status:"); if (s && s.trim()) mudarStatus(t.id, s.trim()); } else mudarStatus(t.id, e.target.value); }}>
+                    {statusDisp.map((s) => <option key={s} value={s}>{s}</option>)}
+                    <option value="__novo">➕ Novo status…</option>
                   </select>
                 </td>
                 <td className="acoes"><button className="mini del" onClick={() => remover(t.id)}>×</button></td>
@@ -1217,17 +1237,16 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
 }
 
 function FormTrabalho({ onSalvar, onClose }) {
-  const [f, setF] = useState({ titulo: "", tipo: "Artigo", status: "A fazer" });
+  const [f, setF] = useState({ titulo: "", tipo: "Artigo", status: "A fazer", localPublicacao: "" });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   return (
     <Modal titulo="Novo trabalho" onClose={onClose}>
       <Campo label="Título do trabalho"><input className="inp" value={f.titulo} onChange={(e) => set("titulo", e.target.value)} /></Campo>
-      <Campo label="Tipo">
-        <select className="inp" value={f.tipo} onChange={(e) => set("tipo", e.target.value)}>{TIPOS.map((t) => <option key={t}>{t}</option>)}</select>
-      </Campo>
-      <Campo label="Status">
-        <select className="inp" value={f.status} onChange={(e) => set("status", e.target.value)}>{STATUS.map((s) => <option key={s}>{s}</option>)}</select>
-      </Campo>
+      <div className="form-grid">
+        <Campo label="Tipo"><input className="inp" list="tipos-datalist" placeholder="Escolha ou digite um novo" value={f.tipo} onChange={(e) => set("tipo", e.target.value)} /></Campo>
+        <Campo label="Status"><input className="inp" list="status-datalist" placeholder="Escolha ou digite um novo" value={f.status} onChange={(e) => set("status", e.target.value)} /></Campo>
+      </div>
+      <Campo label="Onde será publicado (opcional)"><input className="inp" placeholder="Ex.: Revista X · Congresso Y" value={f.localPublicacao} onChange={(e) => set("localPublicacao", e.target.value)} /></Campo>
       <div className="form-acoes">
         <button className="btn-ghost" onClick={onClose}>Cancelar</button>
         <button className="btn" onClick={() => { if (!f.titulo.trim()) { alert("Informe o título."); return; } onSalvar(f); }}>Adicionar</button>
@@ -1578,7 +1597,7 @@ function Temas({ temas, vendas, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onAdd
                 </div>
                 <div className="pub-item-prog"><div className="pub-item-fill" style={{ width: `${pct}%`, background: cheio ? "#C2477A" : "#2C7DA0" }} /></div>
                 <div className="pub-item-sub">
-                  <span className="chip-tipo sm" style={{ background: TIPO_COR[t.tipo] || "#7A8893" }}>{t.tipo || "Artigo"}</span>
+                  <span className="chip-tipo sm" style={{ background: corTipo(t.tipo) }}>{t.tipo || "Artigo"}</span>
                   <span className="pub-item-ocup">{t.participantes.length}/{t.maxVagas}</span>
                 </div>
               </button>
@@ -1605,6 +1624,7 @@ function Temas({ temas, vendas, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onAdd
 }
 
 function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, onLancarTaxa, onExcluir }) {
+  const { tipos } = useContext(ListasCtx);
   const restantes = t.maxVagas - t.participantes.length;
   const cheio = restantes <= 0;
   const pct = Math.min(100, (t.participantes.length / t.maxVagas) * 100);
@@ -1655,7 +1675,7 @@ function DetalhePub({ t, vendas = [], onEdit, onAddPart, onEditPart, onRemPart, 
       <div className="dp-controles">
         <label className="ep-campo">Tipo
           <select className="max-inp wide" value={t.tipo || "Artigo"} onChange={(e) => onEdit(t.id, { tipo: e.target.value })}>
-            {TIPOS.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
+            {tipos.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
           </select>
         </label>
         <label className="ep-campo">Vagas
@@ -1792,9 +1812,7 @@ function FormTema({ onSalvar, onClose }) {
       <Campo label="Tema da publicação"><input className="inp" value={f.nome} onChange={(e) => set("nome", e.target.value)} /></Campo>
       <div className="form-grid">
         <Campo label="Tipo de trabalho">
-          <select className="inp" value={f.tipo} onChange={(e) => set("tipo", e.target.value)}>
-            {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
+          <input className="inp" list="tipos-datalist" placeholder="Escolha ou digite um novo" value={f.tipo} onChange={(e) => set("tipo", e.target.value)} />
         </Campo>
         <Campo label="Número de vagas"><input type="number" min="1" className="inp" value={f.maxVagas} onChange={(e) => set("maxVagas", parseInt(e.target.value, 10) || 1)} /></Campo>
       </div>
@@ -1951,6 +1969,7 @@ select.inp{ cursor:pointer; }
 .cel-titulo{ font-size:12.5px; max-width:560px; line-height:1.4; }
 .link-titulo{ background:transparent; border:none; padding:0; font:inherit; color:var(--brand); text-align:left; cursor:pointer; line-height:1.4; }
 .link-titulo:hover{ text-decoration:underline; color:var(--brand-deep); }
+.onde-pub{ font-size:11px; color:var(--muted); margin-top:3px; }
 .uf-pill{ display:inline-block; min-width:30px; text-align:center; font-size:11px; font-weight:700; color:var(--brand-deep);
   background:#E6F2F3; padding:2px 7px; border-radius:6px; }
 .tipo-pill{ display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; white-space:nowrap; }

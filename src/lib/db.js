@@ -71,7 +71,7 @@ export async function carregarTudo() {
   if (erro) throw erro;
   return {
     vendas: v.data.map(vendaDe),
-    trabalhos: t.data.map((x) => ({ id: x.id, titulo: x.titulo, tipo: x.tipo, status: x.status, criadoEm: x.criado_em })),
+    trabalhos: t.data.map((x) => ({ id: x.id, titulo: x.titulo, tipo: x.tipo, status: x.status, criadoEm: x.criado_em, localPublicacao: x.local_publicacao || '' })),
     financeiro: f.data.map(finDe).sort((a, b) => (a.ano - b.ano) || (a.ordem - b.ordem)),
     temas: p.data.map(pubDe).sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || '')),
     faculdades: fac.data,
@@ -124,15 +124,15 @@ export async function removerVenda(id) {
 /* ---------- trabalhos ---------- */
 export async function criarTrabalho(d) {
   const { data, error } = await supabase.from('trabalhos')
-    .insert({ titulo: d.titulo || '', tipo: d.tipo || 'Artigo', status: d.status || 'A fazer' }).select().single();
+    .insert({ titulo: d.titulo || '', tipo: d.tipo || 'Artigo', status: d.status || 'A fazer', local_publicacao: d.localPublicacao || '' }).select().single();
   if (error) throw error;
-  return { id: data.id, titulo: data.titulo, tipo: data.tipo, status: data.status, criadoEm: data.criado_em };
+  return { id: data.id, titulo: data.titulo, tipo: data.tipo, status: data.status, criadoEm: data.criado_em, localPublicacao: data.local_publicacao || '' };
 }
 export async function atualizarTrabalho(id, d) {
   const { data, error } = await supabase.from('trabalhos')
-    .update({ titulo: d.titulo || '', tipo: d.tipo || 'Artigo', status: d.status || 'A fazer' }).eq('id', id).select().single();
+    .update({ titulo: d.titulo || '', tipo: d.tipo || 'Artigo', status: d.status || 'A fazer', local_publicacao: d.localPublicacao || '' }).eq('id', id).select().single();
   if (error) throw error;
-  return { id: data.id, titulo: data.titulo, tipo: data.tipo, status: data.status, criadoEm: data.criado_em };
+  return { id: data.id, titulo: data.titulo, tipo: data.tipo, status: data.status, criadoEm: data.criado_em, localPublicacao: data.local_publicacao || '' };
 }
 export async function removerTrabalho(id) {
   const { error } = await supabase.from('trabalhos').delete().eq('id', id);

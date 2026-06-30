@@ -87,6 +87,7 @@ create table if not exists public.trabalhos (
   titulo     text        not null default '',
   tipo       text        not null default 'Artigo',
   status     text        not null default 'A fazer',
+  local_publicacao text  not null default '',
   criado_em  timestamptz not null default now()
 );
 
