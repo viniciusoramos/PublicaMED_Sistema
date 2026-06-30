@@ -482,6 +482,14 @@ export default function App() {
     );
   }
 
+  // tipos/status = padrões + os criados pelo usuário. Calcular ANTES dos returns condicionais (regras de hooks!)
+  const tiposDisp = useMemo(
+    () => [...new Set([...TIPOS, ...temas.map((t) => t.tipo), ...trabalhos.map((t) => t.tipo)])].filter(Boolean),
+    [temas, trabalhos]);
+  const statusDisp = useMemo(
+    () => [...new Set([...STATUS, ...trabalhos.map((t) => t.status)])].filter(Boolean),
+    [trabalhos]);
+
   if (sessao === undefined) {
     return (
       <div className="loading">
@@ -509,14 +517,6 @@ export default function App() {
     ["financeiro", "Financeiro", "$"],
     ["temas", "Publicações e vagas", "≡"],
   ];
-
-  // tipos/status = padrões + os criados pelo usuário (que já existem nos dados)
-  const tiposDisp = useMemo(
-    () => [...new Set([...TIPOS, ...temas.map((t) => t.tipo), ...trabalhos.map((t) => t.tipo)])].filter(Boolean),
-    [temas, trabalhos]);
-  const statusDisp = useMemo(
-    () => [...new Set([...STATUS, ...trabalhos.map((t) => t.status)])].filter(Boolean),
-    [trabalhos]);
 
   return (
     <ListasCtx.Provider value={{ tipos: tiposDisp, status: statusDisp }}>
