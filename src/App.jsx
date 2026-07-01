@@ -1686,6 +1686,7 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
   const [taxaVal, setTaxaVal] = useState("");
   const [taxaData, setTaxaData] = useState(hojeIso());
   const [subindoCert, setSubindoCert] = useState(false);
+  const [copiado, setCopiado] = useState(false);
   const lancar = () => {
     const v = numBR(taxaVal);
     if (v <= 0) { alert("Informe o valor da taxa."); return; }
@@ -1724,6 +1725,15 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
   const linkWhats = (p) => {
     const msg = `Olá, ${p.nome}! 🎓 Segue o certificado da publicação "${t.nome}".\n\nBaixe aqui: ${t.certificadoUrl}\n\nQualquer dúvida, estou à disposição! — PublicaMED`;
     return `https://wa.me/${waTel(p.telefone)}?text=${encodeURIComponent(msg)}`;
+  };
+  const copiarAutores = () => {
+    const txt = t.participantes.map((p) => {
+      const nome = p.nome + (p.autorPrincipal ? " (autor principal)" : "");
+      return `Nome: ${nome}\nFaculdade: ${p.faculdade || ""}\nEmail: ${p.email || ""}`;
+    }).join("\n\n");
+    const ok = () => { setCopiado(true); setTimeout(() => setCopiado(false), 1600); };
+    if (navigator.clipboard) navigator.clipboard.writeText(txt).then(ok, () => alert(txt));
+    else alert(txt);
   };
   return (
     <div className="dp">
@@ -1787,7 +1797,10 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
           : <div className="aviso-grad">Exige graduado · ainda não há nenhum graduado entre os participantes.</div>
       )}
 
-      <h4 className="dp-sub">Participantes ({t.participantes.length})</h4>
+      <div className="dp-part-head">
+        <h4 className="dp-sub" style={{ margin: 0 }}>Participantes ({t.participantes.length})</h4>
+        {t.participantes.length > 0 && <button className="mini copiar-btn" onClick={copiarAutores}>{copiado ? "✓ copiado!" : "copiar autores"}</button>}
+      </div>
       <ul className="parts">
         {t.participantes.map((p) => {
           const vd = vendaDoPart(p);
@@ -2253,6 +2266,8 @@ select.inp{ cursor:pointer; }
 .dp-controles{ display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; padding:13px 14px; background:var(--soft);
   border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
 .dp-sub{ font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; margin-bottom:10px; }
+.dp-part-head{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
+.copiar-btn{ white-space:nowrap; }
 .dp-lotado{ font-size:12.5px; color:#D76BA0; background:rgba(194,71,122,.14); border-radius:9px; padding:11px 13px; margin-top:11px; }
 .dp-taxa{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:11px 13px; background:var(--soft); border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
 .dp-taxa-lab{ font-size:12px; font-weight:600; color:var(--muted); }
