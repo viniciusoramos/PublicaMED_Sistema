@@ -43,6 +43,7 @@ const partDe = (x) => ({
   faculdade: x.faculdade || '',
   email: x.email || '',
   orcid: x.orcid || '',
+  telefone: x.telefone || '',
   autorPrincipal: !!x.autor_principal,
   graduado: !!x.graduado,
 });
@@ -56,6 +57,7 @@ const pubDe = (p) => ({
   requiresGrad: !!p.requer_graduado,
   taxa: Number(p.taxa) || 0,
   taxaLancada: !!p.taxa_lancada,
+  certificadoUrl: p.certificado_url || '',
   participantes: (p.participantes || []).map(partDe),
 });
 
@@ -200,9 +202,18 @@ export async function atualizarPublicacao(id, campos) {
   if ('nome' in campos) row.tema = campos.nome;
   if ('taxa' in campos) row.taxa = campos.taxa;
   if ('taxaLancada' in campos) row.taxa_lancada = campos.taxaLancada;
+  if ('certificadoUrl' in campos) row.certificado_url = campos.certificadoUrl;
   if (Object.keys(row).length === 0) return;
   const { error } = await supabase.from('publicacoes').update(row).eq('id', id);
   if (error) throw error;
+}
+// sobe o PDF do certificado da publicação pro Storage e devolve a URL pública (com cache-bust)
+export async function uploadCertificado(pubId, file) {
+  const path = `${pubId}.pdf`;
+  const up = await supabase.storage.from('certificados').upload(path, file, { upsert: true, contentType: 'application/pdf' });
+  if (up.error) throw up.error;
+  const { data } = supabase.storage.from('certificados').getPublicUrl(path);
+  return `${data.publicUrl}?t=${Date.now()}`;
 }
 export async function removerPublicacao(id) {
   const { error } = await supabase.from('publicacoes').delete().eq('id', id);
@@ -215,6 +226,7 @@ export async function adicionarParticipante(publicacaoId, p) {
     email: p.email || '',
     faculdade: p.faculdade || '',
     orcid: p.orcid || '',
+    telefone: p.telefone || '',
     autor_principal: !!p.autorPrincipal,
     graduado: !!p.graduado,
   }).select().single();
@@ -227,6 +239,7 @@ export async function atualizarParticipante(id, p) {
     email: p.email || '',
     faculdade: p.faculdade || '',
     orcid: p.orcid || '',
+    telefone: p.telefone || '',
     autor_principal: !!p.autorPrincipal,
     graduado: !!p.graduado,
   }).eq('id', id).select().single();

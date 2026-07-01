@@ -88,6 +88,12 @@ const numBR = (v) => {
   const n = parseFloat(s);
   return isNaN(n) ? 0 : n;
 };
+// telefone -> formato WhatsApp (só dígitos, com DDI 55 se faltar)
+const waTel = (tel) => {
+  const d = String(tel || "").replace(/\D/g, "");
+  if (!d) return "";
+  return d.startsWith("55") ? d : "55" + d;
+};
 const dddDe = (tel) => {
   if (!tel) return null;
   const mt = String(tel).match(/\((\d{2})\)/);
@@ -1679,6 +1685,7 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
   const [editP, setEditP] = useState(null);
   const [taxaVal, setTaxaVal] = useState("");
   const [taxaData, setTaxaData] = useState(hojeIso());
+  const [subindoCert, setSubindoCert] = useState(false);
   const lancar = () => {
     const v = numBR(taxaVal);
     if (v <= 0) { alert("Informe o valor da taxa."); return; }
@@ -1705,6 +1712,19 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
     (v.tema === t.nome && (v.nome || "").trim().toLowerCase() === (p.nome || "").trim().toLowerCase())
   );
   const semGraduado = t.requiresGrad && !t.participantes.some((p) => p.graduado);
+  const enviarCert = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setSubindoCert(true);
+    try { const url = await db.uploadCertificado(t.id, file); onEdit(t.id, { certificadoUrl: url }); }
+    catch (err) { alert("Erro ao subir o certificado: " + (err.message || err)); }
+    setSubindoCert(false);
+  };
+  const linkWhats = (p) => {
+    const msg = `Olá, ${p.nome}! 🎓 Segue o certificado da publicação "${t.nome}".\n\nBaixe aqui: ${t.certificadoUrl}\n\nQualquer dúvida, estou à disposição! — PublicaMED`;
+    return `https://wa.me/${waTel(p.telefone)}?text=${encodeURIComponent(msg)}`;
+  };
   return (
     <div className="dp">
       <div className="dp-head">
@@ -1795,6 +1815,35 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
         ? <div className="dp-lotado">Publicação lotada ({t.maxVagas}/{t.maxVagas}). Aumente as vagas para adicionar mais pessoas.</div>
         : <FormPart tema={t} onAdd={(d) => onAddPart(t, d)} />}
 
+      <div className="dp-cert">
+        <div className="dp-cert-top">
+          <h4 className="dp-sub" style={{ margin: 0 }}>Certificados</h4>
+          {t.certificadoUrl ? (
+            <span className="cert-status">
+              <a href={t.certificadoUrl} target="_blank" rel="noreferrer">ver PDF</a>
+              <label className="mini cert-file">{subindoCert ? "enviando…" : "trocar"}<input type="file" accept="application/pdf" onChange={enviarCert} /></label>
+            </span>
+          ) : (
+            <label className="btn sm cert-file">{subindoCert ? "enviando…" : "Subir certificado (PDF)"}<input type="file" accept="application/pdf" onChange={enviarCert} /></label>
+          )}
+        </div>
+        {t.certificadoUrl ? (
+          <ul className="cert-lista">
+            {t.participantes.map((p) => (
+              <li key={p.id}>
+                <span className="cert-nome">{p.nome}</span>
+                {p.telefone
+                  ? <a className="btn sm wa-btn" href={linkWhats(p)} target="_blank" rel="noreferrer">📲 Enviar no WhatsApp</a>
+                  : <span className="cert-sem-tel">sem telefone — adicione no “editar”</span>}
+              </li>
+            ))}
+            {t.participantes.length === 0 && <li className="cert-sem-tel">Sem participantes ainda.</li>}
+          </ul>
+        ) : (
+          <p className="cert-hint">Suba o PDF do certificado pra liberar o envio pra cada participante pelo WhatsApp. (O “Enviar a todos” automático entra depois, quando o número/API estiver configurado.)</p>
+        )}
+      </div>
+
       {editP && (
         <Modal titulo="Editar participante" onClose={() => setEditP(null)}>
           <FormParticipante part={editP} valorAtual={vendaDoPart(editP)?.valor ?? ""} onSalvar={(d) => { onEditPart(t, editP, d); setEditP(null); }} onCancelar={() => setEditP(null)} />
@@ -1805,7 +1854,7 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
 }
 
 function FormPart({ tema, onAdd }) {
-  const vazio = { nome: "", faculdade: "", email: "", orcid: "", autorPrincipal: false, graduado: false, valor: "", data: hojeIso(), lancarVenda: true };
+  const vazio = { nome: "", faculdade: "", email: "", orcid: "", telefone: "", autorPrincipal: false, graduado: false, valor: "", data: hojeIso(), lancarVenda: true };
   const [p, setP] = useState(vazio);
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
   const enviar = () => {
@@ -1822,6 +1871,7 @@ function FormPart({ tema, onAdd }) {
         <input className="inp sm" placeholder="Faculdade" list="fac-datalist" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
         <input className="inp sm" placeholder="Email" value={p.email} onChange={(e) => set("email", e.target.value)} />
         <input className="inp sm" placeholder="ORCID (opcional)" value={p.orcid} onChange={(e) => set("orcid", e.target.value)} />
+        <input className="inp sm" placeholder="Telefone / WhatsApp" value={p.telefone} onChange={(e) => set("telefone", e.target.value)} />
         <input className="inp sm" inputMode="decimal" placeholder="Valor pago (R$)" value={p.valor} onChange={(e) => set("valor", e.target.value)} />
         <input className="inp sm" type="date" value={p.data} onChange={(e) => set("data", e.target.value)} />
       </div>
@@ -1838,7 +1888,7 @@ function FormPart({ tema, onAdd }) {
 
 function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
   const [f, setF] = useState({
-    nome: part.nome || "", faculdade: part.faculdade || "", email: part.email || "", orcid: part.orcid || "",
+    nome: part.nome || "", faculdade: part.faculdade || "", email: part.email || "", orcid: part.orcid || "", telefone: part.telefone || "",
     autorPrincipal: !!part.autorPrincipal, graduado: !!part.graduado,
     valor: valorAtual === "" || valorAtual == null ? "" : String(valorAtual),
   });
@@ -1858,7 +1908,10 @@ function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
         <Campo label="Email"><input className="inp" value={f.email} onChange={(e) => set("email", e.target.value)} /></Campo>
         <Campo label="Valor pago na vaga (R$)"><input className="inp" inputMode="decimal" value={f.valor} onChange={(e) => set("valor", e.target.value)} /></Campo>
       </div>
-      <Campo label="ORCID (opcional)"><input className="inp" placeholder="0000-0000-0000-0000" value={f.orcid} onChange={(e) => set("orcid", e.target.value)} /></Campo>
+      <div className="form-grid">
+        <Campo label="ORCID (opcional)"><input className="inp" placeholder="0000-0000-0000-0000" value={f.orcid} onChange={(e) => set("orcid", e.target.value)} /></Campo>
+        <Campo label="Telefone / WhatsApp"><input className="inp" placeholder="(31) 99999-9999" value={f.telefone} onChange={(e) => set("telefone", e.target.value)} /></Campo>
+      </div>
       <div className="fp-opts">
         <label className="check sm"><input type="checkbox" checked={f.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> autor principal</label>
         <label className="check sm"><input type="checkbox" checked={f.graduado} onChange={(e) => set("graduado", e.target.checked)} /> graduado</label>
@@ -2052,6 +2105,19 @@ select.inp{ cursor:pointer; }
 .dp-local{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:11px 13px; background:var(--soft); border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
 .dp-local-lab{ font-size:12px; font-weight:600; color:var(--muted); white-space:nowrap; }
 .dp-local .inp{ flex:1; min-width:240px; }
+.dp-cert{ margin-top:20px; padding:16px; background:var(--soft); border:1px solid var(--border); border-radius:12px; }
+.dp-cert-top{ display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+.cert-status{ display:flex; align-items:center; gap:12px; font-size:12.5px; }
+.cert-status a{ color:var(--brand); }
+.cert-file{ position:relative; overflow:hidden; cursor:pointer; }
+.cert-file input[type=file]{ position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+.cert-lista{ list-style:none; display:flex; flex-direction:column; gap:6px; }
+.cert-lista li{ display:flex; justify-content:space-between; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:8px 12px; }
+.cert-nome{ font-size:13px; font-weight:600; color:var(--ink); }
+.wa-btn{ background:#25D366 !important; color:#fff !important; border:none; white-space:nowrap; text-decoration:none; }
+.wa-btn:hover{ background:#1FB855 !important; }
+.cert-sem-tel{ font-size:11.5px; color:var(--muted2); }
+.cert-hint{ font-size:12px; color:var(--muted); line-height:1.5; }
 .p-orcid{ font-size:11px; margin-top:2px; }
 .p-orcid a{ color:var(--brand); text-decoration:none; }
 .p-orcid a:hover{ text-decoration:underline; }
