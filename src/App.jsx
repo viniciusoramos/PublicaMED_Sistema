@@ -450,18 +450,19 @@ export default function App() {
   const editParticipante = async (tema, part, dados) => {
     const antesT = temas, antesV = vendas;
     const uf = ufDaFaculdade(dados.faculdade);
-    // acha a venda do participante: pelo vínculo direto, ou pelo tema + nome antigo
-    const venda = vendas.find((v) =>
-      (v.participanteId && v.participanteId === part.id) ||
-      (v.tema === tema.nome && (v.nome || "").trim().toLowerCase() === (part.nome || "").trim().toLowerCase())
-    );
     setTemas((ts) => ts.map((t) => (t.id === tema.id ? { ...t, participantes: t.participantes.map((p) => (p.id === part.id ? { ...p, ...dados } : p)) } : t)));
-    if (venda) setVendas((vs) => vs.map((v) => (v.id === venda.id ? { ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, valor: dados.valor ?? v.valor, participanteId: part.id } : v)));
     try {
       await db.atualizarParticipante(part.id, dados);
-      // só ATUALIZA a venda existente — nunca cria (evita venda duplicada)
-      if (venda) {
-        await db.atualizarVenda(venda.id, { ...venda, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, valor: dados.valor ?? venda.valor, participanteId: part.id });
+      // busca a venda no BANCO (evita duplicar por causa de estado desatualizado)
+      const vendaDB = await db.buscarVendaDoParticipante(part.id, tema.nome, part.nome);
+      if (vendaDB) {
+        const valor = dados.valorMexido ? dados.valor : vendaDB.valor; // só troca o valor se o usuário mexeu
+        const atual = await db.atualizarVenda(vendaDB.id, { ...vendaDB, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, valor, participanteId: part.id });
+        setVendas((vs) => [atual, ...vs.filter((v) => v.id !== atual.id)]);
+      } else if (dados.valorMexido && (dados.valor || 0) > 0) {
+        // participante sem venda: cria uma já vinculada, com o valor informado
+        const nova = await db.criarVenda({ data: hojeIso(), nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, tipo: tema.tipo, valor: dados.valor, tema: tema.nome, participanteId: part.id });
+        setVendas((vs) => [nova, ...vs]);
       }
       aviso("Participante atualizado");
     } catch (e) { aviso("Erro: " + e.message); setTemas(antesT); setVendas(antesV); }
@@ -1908,7 +1909,8 @@ function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const salvar = () => {
     if (!f.nome.trim()) { alert("Informe o nome."); return; }
-    onSalvar({ ...f, valor: numBR(f.valor) });
+    const inicial = valorAtual === "" || valorAtual == null ? "" : String(valorAtual);
+    onSalvar({ ...f, valor: numBR(f.valor), valorMexido: String(f.valor) !== inicial });
   };
   return (
     <>

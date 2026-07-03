@@ -119,6 +119,21 @@ export async function atualizarVenda(id, d) {
   if (error) throw error;
   return vendaDe(data);
 }
+// procura a venda de um participante direto no banco (confiável, evita duplicar): por vínculo, senão por tema+nome
+export async function buscarVendaDoParticipante(participanteId, tema, nome) {
+  if (participanteId) {
+    const r = await supabase.from('vendas').select('*, faculdades(nome)').eq('participante_id', participanteId).limit(1);
+    if (r.error) throw r.error;
+    if (r.data && r.data.length) return vendaDe(r.data[0]);
+  }
+  const n = (nome || '').trim();
+  if (tema && n) {
+    const r = await supabase.from('vendas').select('*, faculdades(nome)').eq('tema', tema).ilike('nome', n).limit(1);
+    if (r.error) throw r.error;
+    if (r.data && r.data.length) return vendaDe(r.data[0]);
+  }
+  return null;
+}
 export async function removerVenda(id) {
   const { error } = await supabase.from('vendas').delete().eq('id', id);
   if (error) throw error;
