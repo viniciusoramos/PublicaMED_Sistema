@@ -10,11 +10,18 @@ const traduz = (msg = '') => {
   return msg;
 };
 
+// respeita o tema salvo (o toggle fica dentro do app; aqui só lemos)
+const temaSalvoEscuro = () => {
+  try { return localStorage.getItem('tema') === 'dark'; } catch { return false; }
+};
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(false);
+  const dark = temaSalvoEscuro();
+  const S = dark ? SD : SL;
 
   const submeter = async (e) => {
     e.preventDefault();
@@ -33,7 +40,7 @@ export default function Login() {
     <div style={S.root}>
       <form style={S.card} onSubmit={submeter}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-          <Logo style={{ height: 30, color: '#1D3557' }} />
+          <Logo style={{ height: 30, color: dark ? '#E6EDF5' : '#1D3557' }} />
           <div style={S.sub}>Painel de gestão</div>
         </div>
 
@@ -60,29 +67,41 @@ export default function Login() {
   );
 }
 
-const S = {
-  root: { minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: '#F5F7FA' },
+/* tema claro */
+const SL = {
+  root: { minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: '#F6F8FA', colorScheme: 'light' },
   card: {
-    background: '#fff', border: '1px solid #E3E8EF', borderRadius: 16, padding: '30px 30px 24px',
-    width: '100%', maxWidth: 380, boxShadow: '0 10px 40px rgba(29,53,87,.10)',
+    background: '#fff', border: '1px solid #E4E9EF', borderRadius: 14, padding: '30px 30px 24px',
+    width: '100%', maxWidth: 380, boxShadow: '0 1px 2px rgba(16,24,40,.05), 0 12px 32px rgba(16,24,40,.08)',
     display: 'flex', flexDirection: 'column', gap: 14,
   },
-  brandRow: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 },
-  mark: {
-    width: 42, height: 42, borderRadius: 11, display: 'grid', placeItems: 'center',
-    background: 'linear-gradient(135deg,#2C7DA0,#1D3557)', color: '#fff', fontWeight: 800, fontSize: 22,
+  sub: { fontSize: 12.5, color: '#5A6B7E', marginTop: 2 },
+  label: {
+    display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11, fontWeight: 600,
+    color: '#6F7E90', textTransform: 'uppercase', letterSpacing: '.05em',
   },
-  nome: { fontWeight: 700, fontSize: 18, color: '#1D3557' },
-  sub: { fontSize: 12.5, color: '#5B6B73', marginTop: 2 },
-  label: { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5, fontWeight: 600, color: '#5B6B73' },
   input: {
-    border: '1px solid #E3E8EF', borderRadius: 9, padding: '10px 12px', fontSize: 14,
-    color: '#1D3557', fontFamily: 'inherit', outline: 'none',
+    border: '1px solid #E4E9EF', borderRadius: 8, padding: '10px 12px', fontSize: 14,
+    color: '#22334A', background: '#fff', fontFamily: 'inherit', outline: 'none',
   },
-  erro: { background: '#FBE6EE', color: '#C2477A', borderRadius: 9, padding: '9px 12px', fontSize: 12.5, fontWeight: 600 },
+  erro: { background: 'rgba(185,58,108,.10)', color: '#B93A6C', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, fontWeight: 600 },
   btn: {
-    background: '#2C7DA0', color: '#fff', border: 'none', padding: '11px 16px', borderRadius: 9,
-    fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', marginTop: 4,
+    background: '#2C7DA0', color: '#fff', border: 'none', padding: '11px 16px', borderRadius: 8,
+    fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginTop: 4,
+    boxShadow: '0 1px 2px rgba(16,24,40,.08)',
   },
-  rodape: { fontSize: 11, color: '#8997A0', textAlign: 'center', marginTop: 4 },
+  rodape: { fontSize: 11, color: '#6F7E90', textAlign: 'center', marginTop: 4 },
+};
+
+/* tema escuro (mesmos tokens do app) */
+const SD = {
+  ...SL,
+  root: { ...SL.root, background: '#0F1520', colorScheme: 'dark' },
+  card: { ...SL.card, background: '#161E2B', border: '1px solid #263243', boxShadow: '0 4px 12px rgba(0,0,0,.45), 0 20px 48px rgba(0,0,0,.55)' },
+  sub: { ...SL.sub, color: '#98A8BA' },
+  label: { ...SL.label, color: '#8296AB' },
+  input: { ...SL.input, color: '#E6EDF5', background: '#121926', border: '1px solid #263243' },
+  erro: { background: 'rgba(229,139,176,.12)', color: '#E58BB0', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, fontWeight: 600 },
+  btn: { ...SL.btn, background: '#2B7495' },
+  rodape: { ...SL.rodape, color: '#8296AB' },
 };

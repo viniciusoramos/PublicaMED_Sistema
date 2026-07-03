@@ -189,9 +189,8 @@ function ufDaFaculdade(nome) {
 function KPI({ label, valor, sub, cor }) {
   return (
     <div className="kpi">
-      <div className="kpi-bar" style={{ background: cor }} />
       <div className="kpi-body">
-        <div className="kpi-label">{label}</div>
+        <div className="kpi-label">{cor && <span className="kpi-dot" style={{ background: cor }} />}{label}</div>
         <div className="kpi-valor">{valor}</div>
         {sub && <div className="kpi-sub">{sub}</div>}
       </div>
@@ -500,15 +499,17 @@ export default function App() {
 
   if (!db.ENV_OK) {
     return (
-      <div className="loading">
+      <div className={"root" + (dark ? " dark" : "")}><Estilos />
+      <div className="loading" style={{ flex: 1 }}>
         <div style={{ maxWidth: 440, textAlign: "center", padding: 24 }}>
-          <h2 style={{ color: "#1D3557", marginBottom: 10 }}>Configuração ausente</h2>
-          <p style={{ color: "#54657A", fontSize: 14, lineHeight: 1.6 }}>
+          <h2 style={{ marginBottom: 10 }}>Configuração ausente</h2>
+          <p style={{ fontSize: 14, lineHeight: 1.6 }}>
             Defina <b>VITE_SUPABASE_URL</b> e <b>VITE_SUPABASE_ANON_KEY</b> nas
-            variáveis de ambiente do Netlify (Site configuration → Environment variables)
-            e publique novamente.
+            variáveis de ambiente da hospedagem (Cloudflare Pages → Settings →
+            Environment variables) e publique novamente.
           </p>
         </div>
+      </div>
       </div>
     );
   }
@@ -523,9 +524,8 @@ export default function App() {
 
   if (sessao === undefined) {
     return (
-      <div className="loading">
-        <div className="spin" />
-        <p>Carregando...</p>
+      <div className={"root" + (dark ? " dark" : "")}><Estilos />
+        <div className="loading" style={{ flex: 1 }}><div className="spin" /><p>Carregando...</p></div>
       </div>
     );
   }
@@ -533,9 +533,8 @@ export default function App() {
 
   if (!pronto) {
     return (
-      <div className="loading">
-        <div className="spin" />
-        <p>Carregando seus dados…</p>
+      <div className={"root" + (dark ? " dark" : "")}><Estilos />
+        <div className="loading" style={{ flex: 1 }}><div className="spin" /><p>Carregando seus dados…</p></div>
       </div>
     );
   }
@@ -586,7 +585,7 @@ export default function App() {
             <div style={{ fontSize: 11, color: "#7E97A0", marginTop: 10, wordBreak: "break-all" }}>{sessao.user.email}</div>
           )}
           <button className="tema-btn" onClick={toggleTema}>{dark ? "☀️ Modo claro" : "🌙 Modo escuro"}</button>
-          <button onClick={sair} style={{ marginTop: 10, width: "100%", background: "transparent", color: "#A9C0C6", border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, padding: "8px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Sair</button>
+          <button className="tema-btn" onClick={sair}>Sair</button>
         </div>
       </aside>
 
@@ -766,14 +765,13 @@ function Overview({ vendas, financeiro, trabalhos }) {
           <option value="">Ano inteiro</option>
           {MESES.map((nm, i) => <option key={i} value={i}>{nm}</option>)}
         </select>
-        <span className="periodo-info">{num(m.nVendas)} vendas · {brl(m.totalFat)}</span>
       </div>
 
       <div className="kpis">
         <KPI label="Faturamento (vendas)" valor={brl(m.totalFat)} sub={`${num(m.nVendas)} vendas no período`} cor="#2C7DA0" />
         <KPI label="Lucro líquido" valor={brl(lucroTotal)} sub={`Custos: ${brl(custoTotal)}`} cor="#2E9E7B" />
         <KPI label="Clientes únicos" valor={num(m.clientes.length)} sub={`Ticket médio ${brl(m.ticket)}`} cor="#6366A8" />
-        <KPI label="Certificados emitidos" valor={num(certEmitido)} sub={`${num(pendentes)} no total`} cor="#E8833A" />
+        <KPI label="Certificados emitidos" valor={num(certEmitido)} sub={`${num(pendentes)} pendentes`} cor="#E8833A" />
       </div>
 
       <div className="grid-2">
@@ -804,7 +802,7 @@ function Overview({ vendas, financeiro, trabalhos }) {
         <div className="card">
           <div className="card-head"><h3>Estados que mais compram</h3><span className="hint">por nº de compras</span></div>
           <BarrasH data={ufData} max={maxUF} fmt={(v) => `${v}`} />
-          <p className="nota">O estado de cada venda é identificado pela faculdade do cliente: {num(m.nVendas - (m.porUF.find((u) => u.uf === "N/I")?.qtd || 0))} de {num(m.nVendas)} vendas com estado definido. As poucas não identificadas são instituições do exterior ou sem faculdade informada.</p>
+          <p className="nota" title="As não identificadas são instituições do exterior ou sem faculdade informada.">Estado identificado pela faculdade do cliente · {num(m.nVendas - (m.porUF.find((u) => u.uf === "N/I")?.qtd || 0))} de {num(m.nVendas)} vendas com estado definido.</p>
         </div>
 
         <div className="card">
@@ -842,15 +840,12 @@ function Overview({ vendas, financeiro, trabalhos }) {
   );
 }
 
-function Destaque({ rotulo, principal, detalhe, cor }) {
+function Destaque({ rotulo, principal, detalhe }) {
   return (
     <div className="destaque">
-      <div className="dq-bar" style={{ background: cor || "#2C7DA0" }} />
-      <div>
-        <div className="dq-rot">{rotulo}</div>
-        <div className="dq-pri">{principal}</div>
-        <div className="dq-det">{detalhe}</div>
-      </div>
+      <div className="dq-rot">{rotulo}</div>
+      <div className="dq-pri">{principal}</div>
+      <div className="dq-det">{detalhe}</div>
     </div>
   );
 }
@@ -955,7 +950,7 @@ function Vendas({ vendas, salvar, aviso, temasExist }) {
                 </td>
                 <td className="cel-fac">{v.faculdade || "—"}</td>
                 <td><span className="uf-pill">{v.uf}</span></td>
-                <td><span className="tipo-pill" style={{ background: corTipo(v.tipo) + "22", color: corTipo(v.tipo) }}>{v.tipo}</span></td>
+                <td><span className="tipo-pill" style={{ "--tc": corTipo(v.tipo) }}>{v.tipo}</span></td>
                 <td className="r"><b>{brl(v.valor)}</b></td>
                 <td className="acoes">
                   <button className="mini" onClick={() => { setEditando(v); setModal(true); }}>editar</button>
@@ -1133,7 +1128,7 @@ function Clientes({ m, vendas, salvarCliente }) {
                   {sel.compras.sort((a, b) => (b.data || "").localeCompare(a.data || "")).map((v) => (
                     <tr key={v.id}>
                       <td className="nowrap muted">{fmtData(v.data)}</td>
-                      <td><span className="tipo-pill" style={{ background: corTipo(v.tipo) + "22", color: corTipo(v.tipo) }}>{v.tipo}</span></td>
+                      <td><span className="tipo-pill" style={{ "--tc": corTipo(v.tipo) }}>{v.tipo}</span></td>
                       <td className="cel-fac">{v.tema || "—"}</td>
                       <td className="r"><b>{brl(v.valor)}</b></td>
                     </tr>
@@ -1219,14 +1214,16 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
 
   return (
     <>
-      <Header titulo="Trabalhos" sub={`${num(trabalhos.length)} trabalhos no controle de produção`}
+      <Header titulo="Trabalhos" sub={`${num(trabalhos.length)} trabalhos no controle de produção · clique num cartão de status para filtrar`}
         acao={<button className="btn" onClick={() => setModal(true)}>+ Novo trabalho</button>} />
 
       <div className="kpis kpis-4">
         {contagem.map(({ s, n }) => (
           <button key={s} className={"kpi kpi-click " + (fStatus === s ? "kpi-ativo" : "")} onClick={() => setFStatus(fStatus === s ? "" : s)}>
-            <div className="kpi-bar" style={{ background: corStatus(s) }} />
-            <div className="kpi-body"><div className="kpi-label">{s}</div><div className="kpi-valor">{n}</div></div>
+            <div className="kpi-body">
+              <div className="kpi-label"><span className="kpi-dot" style={{ background: corStatus(s) }} />{s}</div>
+              <div className="kpi-valor">{n}</div>
+            </div>
           </button>
         ))}
       </div>
@@ -1264,10 +1261,10 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
                     <button className="onde-add" onClick={() => setEditLocalId(t.id)}>+ definir onde será publicado</button>
                   )}
                 </td>
-                <td><span className="tipo-pill" style={{ background: corTipo(t.tipo) + "22", color: corTipo(t.tipo) }}>{t.tipo}</span></td>
+                <td><span className="tipo-pill" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo}</span></td>
                 <td className="nowrap muted">{t.criadoEm ? fmtData(t.criadoEm.slice(0, 10)) : "—"}</td>
                 <td>
-                  <select className="status-sel" style={{ color: corStatus(t.status), borderColor: corStatus(t.status) + "55" }}
+                  <select className="status-sel" style={{ "--tc": corStatus(t.status) }}
                     value={t.status} onChange={(e) => { if (e.target.value === "__novo") { const s = prompt("Nome do novo status:"); if (s && s.trim()) mudarStatus(t.id, s.trim()); } else mudarStatus(t.id, e.target.value); }}>
                     {statusDisp.map((s) => <option key={s} value={s}>{s}</option>)}
                     <option value="__novo">➕ Novo status…</option>
@@ -1419,7 +1416,6 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
           {anos.length === 0 && <option value="">—</option>}
           {anos.map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
-        {anoSel != null && <span className="periodo-info">{brl(tot.faturamento)} faturados · lucro {brl(tot.lucro)}</span>}
       </div>
 
       {anoSel == null ? (
@@ -1464,10 +1460,10 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
                         <div className="fat-real" title="Vendas do mês + ajuste manual">vendas {brl(fatVendasMes[l.ordem])} + ajuste {brl(l.faturamentoAjuste)}</div>
                       )}</td>
                       <td className="r">{brl(l.faturamento)}</td>
-                      <td className="r neg">{brl(l.taxaPublicacao)}</td>
-                      <td className="r neg">{brl(l.custoAds)}</td>
-                      <td className="r neg">{brl(l.custoFixo)}</td>
-                      <td className="r neg">{brl(l.custoExtra)}{l.custoExtraDesc ? <div className="extra-desc" title={l.custoExtraDesc}>{l.custoExtraDesc}</div> : null}</td>
+                      <td className="r muted">{brl(l.taxaPublicacao)}</td>
+                      <td className="r muted">{brl(l.custoAds)}</td>
+                      <td className="r muted">{brl(l.custoFixo)}</td>
+                      <td className="r muted">{brl(l.custoExtra)}{l.custoExtraDesc ? <div className="extra-desc" title={l.custoExtraDesc}>{l.custoExtraDesc}</div> : null}</td>
                       <td className="r neg"><b>{brl(l.custoTotal)}</b></td>
                       <td className="r"><b className={l.lucro >= 0 ? "pos" : "negv"}>{brl(l.lucro)}</b></td>
                       <td className="acoes"><button className="mini" onClick={() => setEditId(l.id)}>editar</button></td>
@@ -1487,6 +1483,29 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <div className="card no-pad">
+            <div className="card-head pad">
+              <h3>Movimentações recentes</h3>
+              <span className="hint">pagamentos recebidos (+) e custos (−) · {movimentacoes.length} no total</span>
+            </div>
+            <div className="scroll-x">
+              <table className="tab mov">
+                <thead><tr><th>Quando</th><th>Movimentação</th><th className="r">Valor</th></tr></thead>
+                <tbody>
+                  {movimentacoes.slice(0, LIM_MOV).map((m, i) => (
+                    <tr key={i}>
+                      <td className="nowrap muted">{m.quando}</td>
+                      <td><span className={`mov-dot ${m.tipo}`}>{m.tipo === "entrada" ? "↑" : "↓"}</span>{m.label}</td>
+                      <td className={`r mov-val ${m.tipo}`}>{m.tipo === "entrada" ? "+" : "−"}{brl(m.valor)}</td>
+                    </tr>
+                  ))}
+                  {movimentacoes.length === 0 && <tr><td colSpan={3} className="vazio">Sem movimentações ainda.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {movimentacoes.length > LIM_MOV && <div className="mov-mais">Mostrando as {LIM_MOV} mais recentes de {movimentacoes.length}.</div>}
           </div>
 
           <div className="card">
@@ -1514,29 +1533,6 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
                 </table>
               </div>
             ) : <div className="vazio pad">Escolha dois meses para comparar.</div>}
-          </div>
-
-          <div className="card no-pad">
-            <div className="card-head pad">
-              <h3>Movimentações recentes</h3>
-              <span className="hint">pagamentos recebidos (+) e custos (−) · {movimentacoes.length} no total</span>
-            </div>
-            <div className="scroll-x">
-              <table className="tab mov">
-                <thead><tr><th>Quando</th><th>Movimentação</th><th className="r">Valor</th></tr></thead>
-                <tbody>
-                  {movimentacoes.slice(0, LIM_MOV).map((m, i) => (
-                    <tr key={i}>
-                      <td className="nowrap muted">{m.quando}</td>
-                      <td><span className={`mov-dot ${m.tipo}`}>{m.tipo === "entrada" ? "↑" : "↓"}</span>{m.label}</td>
-                      <td className={`r mov-val ${m.tipo}`}>{m.tipo === "entrada" ? "+" : "−"}{brl(m.valor)}</td>
-                    </tr>
-                  ))}
-                  {movimentacoes.length === 0 && <tr><td colSpan={3} className="vazio">Sem movimentações ainda.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-            {movimentacoes.length > LIM_MOV && <div className="mov-mais">Mostrando as {LIM_MOV} mais recentes de {movimentacoes.length}.</div>}
           </div>
         </>
       )}
@@ -1646,9 +1642,9 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, alvoId, onAlvoUsa
                     {cheio ? "Lotado" : `${restantes} vaga${restantes > 1 ? "s" : ""}`}
                   </span>
                 </div>
-                <div className="pub-item-prog"><div className="pub-item-fill" style={{ width: `${pct}%`, background: cheio ? "#C56B91" : "#2C7DA0" }} /></div>
+                <div className="pub-item-prog"><div className="pub-item-fill" style={{ width: `${pct}%`, background: cheio ? "var(--danger)" : "var(--brand)" }} /></div>
                 <div className="pub-item-sub">
-                  <span className="chip-tipo sm" style={{ background: corTipo(t.tipo) }}>{t.tipo || "Artigo"}</span>
+                  <span className="chip-tipo sm" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo || "Artigo"}</span>
                   <span className="pub-item-ocup">{t.participantes.length}/{t.maxVagas}</span>
                 </div>
               </button>
@@ -1746,13 +1742,10 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
             <button className="mini" onClick={() => setEditandoNome(false)}>cancelar</button>
           </div>
         ) : (
-          <>
-            <h3 className="dp-nome">{t.nome} <button className="mini dp-edit-nome" onClick={() => { setNomeTmp(t.nome); setEditandoNome(true); }}>editar nome</button></h3>
-            <button className="mini del" onClick={onExcluir}>excluir</button>
-          </>
+          <h3 className="dp-nome">{t.nome} <button className="mini dp-edit-nome" onClick={() => { setNomeTmp(t.nome); setEditandoNome(true); }}>editar nome</button></h3>
         )}
       </div>
-      <div className="dp-prog"><div className="dp-prog-fill" style={{ width: `${pct}%`, background: cheio ? "#C56B91" : "#2C7DA0" }} /></div>
+      <div className="dp-prog"><div className="dp-prog-fill" style={{ width: `${pct}%`, background: cheio ? "var(--danger)" : "var(--brand)" }} /></div>
       <div className="dp-ocup">{t.participantes.length} de {t.maxVagas} vagas ocupadas{t.area ? ` · ${t.area}` : ""}</div>
 
       <div className="dp-fin">
@@ -1761,35 +1754,43 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
         <div className="dp-fin-item"><span>Lucro</span><b className={lucro >= 0 ? "pos" : "negv"}>{brl(lucro)}</b></div>
       </div>
 
-      <div className="dp-controles">
-        <label className="ep-campo">Tipo
-          <select className="max-inp wide" value={t.tipo || "Artigo"} onChange={(e) => onEdit(t.id, { tipo: e.target.value })}>
-            {tipos.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
-          </select>
-        </label>
-        <label className="ep-campo">Vagas
-          <input type="number" min="1" className="max-inp" value={t.maxVagas} onChange={(e) => onEdit(t.id, { maxVagas: parseInt(e.target.value, 10) || 1 })} />
-        </label>
-        <label className="check sm grad-check"><input type="checkbox" checked={!!t.requiresGrad} onChange={(e) => onEdit(t.id, { requiresGrad: e.target.checked })} /> exige graduado</label>
+      <div className="dp-config">
+        <div className="dp-sub">Dados da publicação</div>
+        <div className="dp-controles">
+          <label className="ep-campo">Tipo
+            <select className="max-inp wide" value={t.tipo || "Artigo"} onChange={(e) => onEdit(t.id, { tipo: e.target.value })}>
+              {tipos.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
+            </select>
+          </label>
+          <label className="ep-campo">Vagas
+            <input type="number" min="1" className="max-inp" value={t.maxVagas} onChange={(e) => onEdit(t.id, { maxVagas: parseInt(e.target.value, 10) || 1 })} />
+          </label>
+          <label className="check sm grad-check"><input type="checkbox" checked={!!t.requiresGrad} onChange={(e) => onEdit(t.id, { requiresGrad: e.target.checked })} /> exige graduado</label>
+        </div>
+
+        <div className="dp-local">
+          <span className="dp-local-lab">Onde será publicado</span>
+          <input className="inp sm" defaultValue={localPub} placeholder="Revista / evento (ex.: Revista Brasileira de Cardiologia)"
+            onBlur={(e) => { const v = e.target.value.trim(); if (onSetLocal && v !== (localPub || "")) onSetLocal(v); }} />
+        </div>
+
+        <div className="dp-taxa">
+          {t.taxaLancada ? (
+            <span className="dp-taxa-ok">Taxa de publicação: <b>{brl(t.taxa)}</b> · lançada no financeiro</span>
+          ) : (
+            <>
+              <span className="dp-taxa-lab">Taxa de publicação (custo único)</span>
+              <input className="inp sm dp-taxa-val" inputMode="decimal" placeholder="R$" value={taxaVal} onChange={(e) => setTaxaVal(e.target.value)} />
+              <input className="inp sm" type="date" value={taxaData} onChange={(e) => setTaxaData(e.target.value)} />
+              <button className="btn sm" onClick={lancar}>lançar no financeiro</button>
+            </>
+          )}
+        </div>
       </div>
 
-      <div className="dp-local">
-        <span className="dp-local-lab">Onde será publicado</span>
-        <input className="inp sm" defaultValue={localPub} placeholder="Revista / evento (ex.: Revista Brasileira de Cardiologia)"
-          onBlur={(e) => { const v = e.target.value.trim(); if (onSetLocal && v !== (localPub || "")) onSetLocal(v); }} />
-      </div>
-
-      <div className="dp-taxa">
-        {t.taxaLancada ? (
-          <span className="dp-taxa-ok">Taxa de publicação: <b>{brl(t.taxa)}</b> · lançada no financeiro</span>
-        ) : (
-          <>
-            <span className="dp-taxa-lab">Taxa de publicação (custo único)</span>
-            <input className="inp sm dp-taxa-val" inputMode="decimal" placeholder="R$" value={taxaVal} onChange={(e) => setTaxaVal(e.target.value)} />
-            <input className="inp sm" type="date" value={taxaData} onChange={(e) => setTaxaData(e.target.value)} />
-            <button className="btn sm" onClick={lancar}>lançar no financeiro</button>
-          </>
-        )}
+      <div className="dp-part-head">
+        <h4 className="dp-sub" style={{ margin: 0 }}>Participantes ({t.participantes.length})</h4>
+        {t.participantes.length > 0 && <button className="mini copiar-btn" onClick={copiarAutores}>{copiado ? "✓ copiado!" : "copiar autores"}</button>}
       </div>
 
       {semGraduado && (
@@ -1797,11 +1798,6 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
           ? <div className="aviso-grad erro">Lotada sem nenhum graduado — esta publicação exige pelo menos um participante graduado.</div>
           : <div className="aviso-grad">Exige graduado · ainda não há nenhum graduado entre os participantes.</div>
       )}
-
-      <div className="dp-part-head">
-        <h4 className="dp-sub" style={{ margin: 0 }}>Participantes ({t.participantes.length})</h4>
-        {t.participantes.length > 0 && <button className="mini copiar-btn" onClick={copiarAutores}>{copiado ? "✓ copiado!" : "copiar autores"}</button>}
-      </div>
       <ul className="parts">
         {t.participantes.map((p) => {
           const vd = vendaDoPart(p);
@@ -1856,6 +1852,10 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
         ) : (
           <p className="cert-hint">Suba o PDF do certificado pra liberar o envio pra cada participante pelo WhatsApp. (O “Enviar a todos” automático entra depois, quando o número/API estiver configurado.)</p>
         )}
+      </div>
+
+      <div className="dp-footer">
+        <button className="mini del" onClick={onExcluir}>excluir esta publicação</button>
       </div>
 
       {editP && (
@@ -1981,33 +1981,49 @@ function Estilos() {
     <style>{`
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root{
-  --ink:#1D3557; --brand:#2C7DA0; --brand-deep:#1D3557; --accent:#E8833A;
-  --bg:#F5F7FA; --surface:#FFFFFF; --soft:#F4F8FB; --hover:#FAFCFD; --track:#EEF3F4; --border:#E3E8EF; --muted:#5B6B73; --muted2:#8997A0;
+  --ink:#22334A; --brand:#2C7DA0; --brand-hover:#26708F; --brand-deep:#1D3557; --accent:#E8833A;
+  --bg:#F6F8FA; --surface:#FFFFFF; --soft:#F3F6F9; --hover:#F8FAFC; --track:#E9EEF3;
+  --border:#E4E9EF; --border-strong:#CFDAE3; --divider:#EDF1F5; --muted:#5A6B7E; --muted2:#6F7E90;
+  --brand-soft:rgba(44,125,160,.10); --ring:0 0 0 3px rgba(44,125,160,.20);
+  --ok:#17845C; --ok-soft:rgba(23,132,92,.10); --ok-border:rgba(23,132,92,.28);
+  --warn:#8F5E00; --warn-soft:rgba(224,169,59,.14); --warn-border:rgba(224,169,59,.40);
+  --danger:#B93A6C; --danger-soft:rgba(185,58,108,.10); --danger-border:rgba(185,58,108,.32);
+  --shadow-1:0 1px 2px rgba(16,24,40,.05);
+  --shadow-2:0 1px 2px rgba(16,24,40,.05), 0 4px 12px rgba(16,24,40,.07);
+  --shadow-3:0 4px 8px rgba(16,24,40,.06), 0 16px 40px rgba(16,24,40,.16);
+  --r-sm:6px; --r-md:10px; --r-lg:14px;
 }
 .root.dark{
-  --ink:#E7EEF4; --bg:#0E1620; --surface:#172230; --soft:#121C28; --hover:#1B2735; --track:#26333F;
-  --border:#2A3947; --muted:#9DB0BD; --muted2:#738390;
+  --ink:#E6EDF5; --brand:#3D8FB3; --brand-hover:#4A9CBF; --brand-deep:#8FC1DA;
+  --bg:#0F1520; --surface:#161E2B; --soft:#121926; --hover:#1C2634; --track:#232E3E;
+  --border:#263243; --border-strong:#334155; --divider:#1E2937; --muted:#98A8BA; --muted2:#8296AB;
+  --brand-soft:rgba(111,174,203,.13); --ring:0 0 0 3px rgba(111,174,203,.25);
+  --ok:#4CC38A; --ok-soft:rgba(76,195,138,.13); --ok-border:rgba(76,195,138,.30);
+  --warn:#E5B35D; --warn-soft:rgba(229,179,93,.13); --warn-border:rgba(229,179,93,.32);
+  --danger:#E58BB0; --danger-soft:rgba(229,139,176,.12); --danger-border:rgba(229,139,176,.30);
+  --shadow-1:0 1px 2px rgba(0,0,0,.32);
+  --shadow-2:0 2px 4px rgba(0,0,0,.35), 0 6px 16px rgba(0,0,0,.35);
+  --shadow-3:0 4px 12px rgba(0,0,0,.45), 0 20px 48px rgba(0,0,0,.55);
 }
-.root{ display:flex; min-height:100vh; background:var(--bg);
+.root{ display:flex; min-height:100vh; background:var(--bg); color-scheme:light;
   font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; color:var(--ink);
   font-size:14px; -webkit-font-smoothing:antialiased; }
-.root :is(table,td,th,.kpi-valor,.barra-val,.leg-val){ font-variant-numeric:tabular-nums; }
+.root.dark{ color-scheme:dark; }
+.root :is(table,td,th,.kpi-valor,.barra-val,.leg-val,.p-valor,.mov-val,.dp-fin-item b){ font-variant-numeric:tabular-nums; }
 
-/* SIDEBAR */
-.side{ width:236px; flex-shrink:0; background:linear-gradient(180deg,#244468 0%,#1D3557 55%,#16273C 100%); color:#CFE0E3; display:flex; flex-direction:column;
-  position:sticky; top:0; height:100vh; }
-.brand{ display:flex; flex-direction:column; align-items:flex-start; gap:7px; padding:24px 22px 18px; }
-.brand-mark{ width:38px; height:38px; border-radius:10px; background:linear-gradient(135deg,var(--brand),var(--brand-deep));
-  display:grid; place-items:center; font-weight:800; font-size:20px; color:#fff; }
-.brand-nome{ font-weight:700; font-size:16px; color:#fff; letter-spacing:.2px; }
-.brand-sub{ font-size:11px; color:#7E97A0; margin-top:1px; }
+/* SIDEBAR — âncora navy da marca nos dois temas */
+.side{ width:236px; flex-shrink:0; background:#1C3252; color:#CFE0E3; display:flex; flex-direction:column;
+  position:sticky; top:0; height:100vh; border-right:1px solid rgba(255,255,255,.06); }
+.brand{ display:flex; flex-direction:column; align-items:flex-start; gap:7px; padding:24px 22px 16px; }
+.brand-sub{ font-size:11px; color:#8FA3B0; margin-top:1px; }
 nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
-.nav{ display:flex; align-items:center; gap:11px; padding:10px 13px; border:none; background:transparent;
-  color:#A9C0C6; font-size:13.5px; border-radius:9px; cursor:pointer; text-align:left; width:100%; font-weight:500;
-  transition:.13s; font-family:inherit; }
-.nav:hover{ background:rgba(255,255,255,.06); color:#E6F1F3; }
-.nav.ativo{ background:var(--brand); color:#fff; }
-.nav-ic{ width:18px; text-align:center; font-size:13px; opacity:.9; }
+.nav{ display:flex; align-items:center; gap:10px; padding:9px 12px; border:none; background:transparent;
+  color:rgba(214,230,240,.72); font-size:13px; border-radius:8px; cursor:pointer; text-align:left; width:100%; font-weight:500;
+  transition:background .12s, color .12s; font-family:inherit; }
+.nav:hover{ background:rgba(255,255,255,.05); color:#E9F2F7; }
+.nav.ativo{ background:rgba(255,255,255,.10); color:#fff; font-weight:600; box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); }
+.nav.ativo .nav-ic{ color:#8FCBE8; opacity:1; }
+.nav-ic{ width:18px; text-align:center; font-size:13px; opacity:.85; }
 .side-foot{ margin-top:auto; padding:16px; }
 .persist{ font-size:11px; display:flex; align-items:center; gap:7px; color:#7E97A0; line-height:1.4; }
 .pdot{ width:7px; height:7px; border-radius:50%; flex-shrink:0; }
@@ -2016,7 +2032,7 @@ nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 
 /* topbar + sidebar-gaveta (só no celular; escondidos no desktop) */
 .topbar{ display:none; position:fixed; top:0; left:0; right:0; height:54px; z-index:30; align-items:center; gap:10px;
-  padding:0 8px; background:linear-gradient(90deg,#1D3557,#244468); box-shadow:0 2px 12px rgba(13,25,40,.18); }
+  padding:0 8px; background:#1C3252; box-shadow:0 2px 12px rgba(13,25,40,.22); }
 .topbar-tit{ color:#fff; font-weight:600; font-size:14.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hamb{ background:transparent; border:none; color:#fff; font-size:23px; line-height:1; cursor:pointer; padding:6px 10px; border-radius:9px; flex-shrink:0; }
 .hamb:active{ background:rgba(255,255,255,.14); }
@@ -2027,36 +2043,37 @@ nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 .side-close{ display:none; position:absolute; top:14px; right:12px; background:transparent; border:none; color:#A9C0C6; font-size:26px; line-height:1; cursor:pointer; }
 
 /* MAIN */
-.main{ flex:1; padding:32px 44px 70px; min-width:0; max-width:1840px; }
-.head{ display:flex; justify-content:space-between; align-items:flex-end; gap:16px; margin-bottom:28px; }
-.head h1{ font-size:28px; font-weight:700; letter-spacing:-.6px; }
+.main{ flex:1; padding:28px 40px 64px; min-width:0; max-width:1840px; }
+.head{ display:flex; justify-content:space-between; align-items:flex-end; gap:16px; margin-bottom:24px; }
+.head h1{ font-size:22px; font-weight:700; letter-spacing:-.02em; }
 .head-sub{ color:var(--muted); font-size:13px; margin-top:3px; }
 
 /* KPIs */
-.kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:18px; margin-bottom:22px; }
+.kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:20px; }
 .kpis-3{ grid-template-columns:repeat(3,1fr); }
 .kpis-4{ grid-template-columns:repeat(4,1fr); }
-.kpi{ background:var(--surface); border:1px solid var(--border); border-radius:16px; overflow:hidden;
-  display:flex; box-shadow:0 1px 2px rgba(29,53,87,.03); }
-.kpi-bar{ width:4px; flex-shrink:0; }
-.kpi-body{ padding:18px 20px; }
-.kpi-label{ font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.7px; }
-.kpi-valor{ font-size:28px; font-weight:700; margin-top:7px; letter-spacing:-.7px; }
-.kpi-sub{ font-size:11.5px; color:var(--muted2); margin-top:3px; }
-.kpi-click{ cursor:pointer; text-align:left; font-family:inherit; transition:.13s; }
-.kpi-click:hover{ box-shadow:0 3px 10px rgba(29,53,87,.08); transform:translateY(-1px); }
-.kpi-ativo{ outline:2px solid var(--brand); }
+.kpi{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden;
+  display:flex; box-shadow:var(--shadow-1); }
+.kpi-body{ padding:16px 18px; min-width:0; }
+.kpi-label{ font-size:11px; color:var(--muted2); font-weight:600; text-transform:uppercase; letter-spacing:.06em;
+  display:flex; align-items:center; gap:7px; }
+.kpi-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.kpi-valor{ font-size:26px; font-weight:700; margin-top:6px; letter-spacing:-.02em; }
+.kpi-sub{ font-size:12px; color:var(--muted2); margin-top:2px; }
+.kpi-click{ cursor:pointer; text-align:left; font-family:inherit; transition:box-shadow .12s, transform .12s, border-color .12s; }
+.kpi-click:hover{ border-color:var(--border-strong); box-shadow:var(--shadow-2); transform:translateY(-1px); }
+.kpi-ativo{ border-color:var(--brand); box-shadow:var(--ring); }
 
 /* CARDS */
-.card{ background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px 24px;
-  margin-bottom:20px; box-shadow:0 1px 2px rgba(29,53,87,.05), 0 6px 22px rgba(29,53,87,.05); }
+.card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:20px;
+  margin-bottom:16px; box-shadow:var(--shadow-1); }
 .card.no-pad{ padding:0; overflow:hidden; }
 .card-head{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:14px; }
-.card-head.pad{ padding:18px 20px 0; }
-.card-head h3{ font-size:15.5px; font-weight:700; letter-spacing:-.2px; }
-.hint{ font-size:11.5px; color:var(--muted2); font-style:italic; }
-.grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
-.nota{ font-size:11.5px; color:var(--muted2); margin-top:12px; line-height:1.5; border-top:1px solid var(--border); padding-top:11px; }
+.card-head.pad{ padding:16px 20px 0; }
+.card-head h3{ font-size:14px; font-weight:600; letter-spacing:-.01em; }
+.hint{ font-size:12px; color:var(--muted2); font-style:normal; }
+.grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.nota{ font-size:12px; color:var(--muted2); margin-top:12px; line-height:1.5; border-top:1px solid var(--divider); padding-top:11px; }
 
 /* DONUT */
 .donut-wrap{ display:flex; align-items:center; gap:8px; }
@@ -2070,36 +2087,39 @@ nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 .barras{ display:flex; flex-direction:column; gap:9px; }
 .barra-row{ display:grid; grid-template-columns:130px 1fr 38px; align-items:center; gap:10px; }
 .barra-lab{ font-size:12px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.barra-track{ background:#EEF3F4; border-radius:6px; height:9px; overflow:hidden; }
-.barra-fill{ height:100%; border-radius:6px; transition:width .4s; }
-.barra-val{ font-size:12px; font-weight:700; text-align:right; color:var(--muted); }
+.barra-track{ background:var(--track); border-radius:var(--r-sm); height:8px; overflow:hidden; }
+.barra-fill{ height:100%; border-radius:var(--r-sm); transition:width .4s; }
+.barra-val{ font-size:12px; font-weight:600; text-align:right; color:var(--muted); }
 
 /* DESTAQUES */
 .destaques{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-.destaque{ display:flex; gap:11px; background:var(--soft); border:1px solid var(--border); border-radius:11px; padding:13px 14px; }
-.dq-bar{ width:3px; border-radius:3px; flex-shrink:0; }
-.dq-rot{ font-size:10.5px; color:var(--muted2); text-transform:uppercase; font-weight:700; letter-spacing:.4px; }
-.dq-pri{ font-size:14.5px; font-weight:700; margin-top:3px; line-height:1.25; }
-.dq-det{ font-size:11.5px; color:var(--muted); margin-top:3px; }
+.destaque{ display:flex; flex-direction:column; background:var(--soft); border:1px solid var(--border); border-radius:var(--r-md); padding:12px 14px; }
+.dq-rot{ font-size:11px; color:var(--muted2); text-transform:uppercase; font-weight:600; letter-spacing:.06em; }
+.dq-pri{ font-size:14px; font-weight:600; margin-top:4px; line-height:1.3; }
+.dq-det{ font-size:12px; color:var(--muted); margin-top:2px; }
 
 /* FILTROS */
 .filtros{ display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
-.inp{ background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:9px 12px;
-  font-size:13px; color:var(--ink); font-family:inherit; outline:none; transition:.13s; }
-.inp:focus{ border-color:var(--brand); box-shadow:0 0 0 3px rgba(13,125,138,.12); }
+.inp{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 12px;
+  font-size:13px; color:var(--ink); font-family:inherit; outline:none; transition:border-color .12s, box-shadow .12s; }
+.inp::placeholder{ color:var(--muted2); }
+.inp:hover{ border-color:var(--border-strong); }
+.inp:focus{ border-color:var(--brand); box-shadow:var(--ring); }
 .inp.busca{ flex:1; min-width:230px; }
-.inp.sm{ padding:7px 10px; font-size:12.5px; }
+.inp.sm{ padding:6px 10px; font-size:12px; }
 select.inp{ cursor:pointer; }
-.resumo-filtro{ display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted); margin-bottom:10px; padding:0 2px; }
+.resumo-filtro{ display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:10px; padding:0 2px; }
+.resumo-filtro b{ color:var(--ink); font-size:13px; }
 .check{ display:flex; align-items:center; gap:7px; font-size:13px; color:var(--muted); cursor:pointer; }
 .check.sm{ font-size:12px; }
+.check input{ accent-color:var(--brand); }
 
 /* TABELAS */
 .scroll-x{ overflow-x:auto; }
 .tab{ width:100%; border-collapse:collapse; }
-.tab thead th{ text-align:left; font-size:11px; font-weight:700; color:var(--muted2); text-transform:uppercase;
-  letter-spacing:.4px; padding:11px 14px; border-bottom:1px solid var(--border); background:#FAFCFC; position:sticky; }
-.tab td{ padding:13px 18px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; }
+.tab thead th{ text-align:left; font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase;
+  letter-spacing:.05em; padding:10px 14px; border-bottom:1px solid var(--border); background:var(--soft); }
+.tab td{ padding:12px 14px; border-bottom:1px solid var(--divider); font-size:13px; vertical-align:middle; }
 .tab tbody tr:last-child td{ border-bottom:none; }
 .tab tbody tr:hover{ background:var(--hover); }
 .tab .r{ text-align:right; }
@@ -2111,196 +2131,210 @@ select.inp{ cursor:pointer; }
 .cel-titulo{ font-size:12.5px; max-width:560px; line-height:1.4; }
 .link-titulo{ background:transparent; border:none; padding:0; font:inherit; color:var(--brand); text-align:left; cursor:pointer; line-height:1.4; }
 .link-titulo:hover{ text-decoration:underline; color:var(--brand-deep); }
-.onde-pub{ font-size:11px; color:var(--muted); margin-top:3px; }
-.onde-chip{ display:inline-block; margin-top:5px; background:var(--soft); border:1px solid var(--border); border-radius:6px; padding:2px 9px; font-size:11px; color:var(--ink); cursor:pointer; font-family:inherit; max-width:440px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.onde-chip:hover{ border-color:var(--brand); }
-.onde-add{ display:inline-block; margin-top:5px; background:transparent; border:none; padding:0; font-size:11px; color:var(--muted2); cursor:pointer; font-family:inherit; }
-.onde-add:hover{ color:var(--brand); text-decoration:underline; }
-.onde-inp{ display:block; margin-top:5px; width:100%; max-width:440px; border:1px solid var(--brand); background:var(--surface); border-radius:6px; padding:3px 8px; font-size:11.5px; color:var(--ink); font-family:inherit; outline:none; }
-.dp-local{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:11px 13px; background:var(--soft); border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
-.dp-local-lab{ font-size:12px; font-weight:600; color:var(--muted); white-space:nowrap; }
-.dp-local .inp{ flex:1; min-width:240px; }
-.dp-cert{ margin-top:20px; padding:16px; background:var(--soft); border:1px solid var(--border); border-radius:12px; }
+.onde-chip{ display:inline-block; margin-top:5px; background:var(--soft); border:1px solid var(--border); border-radius:var(--r-sm); padding:2px 9px; font-size:11px; color:var(--muted); cursor:pointer; font-family:inherit; max-width:440px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.onde-chip:hover{ border-color:var(--border-strong); color:var(--ink); }
+.onde-add{ display:inline-block; margin-top:5px; background:transparent; border:none; padding:0; font-size:11px; color:var(--muted2); cursor:pointer; font-family:inherit; opacity:.8; }
+.onde-add:hover{ color:var(--brand); text-decoration:underline; opacity:1; }
+.onde-inp{ display:block; margin-top:5px; width:100%; max-width:440px; border:1px solid var(--brand); background:var(--surface); border-radius:var(--r-sm); padding:3px 8px; font-size:12px; color:var(--ink); font-family:inherit; outline:none; box-shadow:var(--ring); }
+.dp-local{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-top:12px; margin-top:12px; border-top:1px solid var(--divider); }
+.dp-local-lab{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; }
+.dp-local .inp{ flex:1; min-width:240px; background:var(--surface); }
+.dp-cert{ margin-top:20px; padding:14px 16px; background:var(--soft); border:1px solid var(--border); border-radius:var(--r-md); }
 .dp-cert-top{ display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
-.cert-status{ display:flex; align-items:center; gap:12px; font-size:12.5px; }
-.cert-status a{ color:var(--brand); }
+.cert-status{ display:flex; align-items:center; gap:12px; font-size:12px; }
+.cert-status a{ color:var(--brand); font-weight:600; }
 .cert-file{ position:relative; overflow:hidden; cursor:pointer; }
 .cert-file input[type=file]{ position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
 .cert-lista{ list-style:none; display:flex; flex-direction:column; gap:6px; }
-.cert-lista li{ display:flex; justify-content:space-between; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:8px 12px; }
+.cert-lista li{ display:flex; justify-content:space-between; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); padding:8px 12px; }
 .cert-nome{ font-size:13px; font-weight:600; color:var(--ink); }
-.wa-btn{ background:#25D366 !important; color:#fff !important; border:none; white-space:nowrap; text-decoration:none; }
+.wa-btn{ background:#25D366 !important; color:#0B3B24 !important; font-weight:700; border:none; white-space:nowrap; text-decoration:none; }
 .wa-btn:hover{ background:#1FB855 !important; }
 .cert-sem-tel{ font-size:11.5px; color:var(--muted2); }
 .cert-hint{ font-size:12px; color:var(--muted); line-height:1.5; }
 .p-orcid{ font-size:11px; margin-top:2px; }
 .p-orcid a{ color:var(--brand); text-decoration:none; }
 .p-orcid a:hover{ text-decoration:underline; }
-.uf-pill{ display:inline-block; min-width:30px; text-align:center; font-size:11px; font-weight:700; color:var(--brand-deep);
-  background:#E6F2F3; padding:2px 7px; border-radius:6px; }
-.tipo-pill{ display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; white-space:nowrap; }
+.uf-pill{ display:inline-block; min-width:30px; text-align:center; font-size:11px; font-weight:600; color:var(--muted);
+  background:var(--soft); border:1px solid var(--border); padding:2px 7px; border-radius:var(--r-sm); }
+.tipo-pill{ display:inline-block; font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap;
+  color:color-mix(in srgb, var(--tc,#6F7E90) 62%, #22334A); background:color-mix(in srgb, var(--tc,#8A98A8) 13%, transparent); }
+.root.dark .tipo-pill{ color:color-mix(in srgb, var(--tc,#8A98A8) 55%, #E6EDF5); }
 .row-click{ cursor:pointer; }
 .acoes{ white-space:nowrap; text-align:right; }
-.mini{ border:1px solid var(--border); background:var(--surface); color:var(--muted); font-size:11px; padding:4px 9px;
-  border-radius:6px; cursor:pointer; font-family:inherit; transition:.12s; }
-.mini:hover{ border-color:var(--brand); color:var(--brand); }
-.mini.del:hover{ border-color:#D9486B; color:#D9486B; }
-.mais{ padding:14px; text-align:center; border-top:1px solid var(--border); }
+.mini{ border:1px solid var(--border); background:var(--surface); color:var(--muted); font-size:11px; padding:4px 10px;
+  border-radius:var(--r-sm); cursor:pointer; font-family:inherit; transition:.12s; }
+.mini:hover{ border-color:var(--border-strong); color:var(--ink); background:var(--hover); }
+.mini.del:hover{ border-color:var(--danger-border); color:var(--danger); background:var(--danger-soft); }
+.mais{ padding:14px; text-align:center; border-top:1px solid var(--divider); }
 .vazio{ padding:40px; text-align:center; color:var(--muted2); font-size:13px; }
-.neg{ color:#B05; opacity:.85; }
+.neg{ color:var(--danger); opacity:.9; }
 .fin td{ font-size:12px; padding:9px 12px; }
 .row-zero td{ opacity:.42; }
-.row-total td{ background:#F4F8F9; font-weight:700; border-top:2px solid var(--border); }
+.row-total td{ background:var(--soft); font-weight:600; border-top:1px solid var(--border-strong); }
 .fat-real{ font-size:10px; color:var(--brand); margin-top:2px; font-weight:600; }
 .extra-desc{ font-size:10px; color:var(--muted2); font-weight:500; margin-top:2px; max-width:130px; margin-left:auto;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.pos{ color:#1F8F66; }
-.negv{ color:#C2477A; }
+.pos{ color:var(--ok); }
+.negv{ color:var(--danger); }
+/* Recharts nos dois temas */
+.recharts-default-tooltip{ border-radius:10px !important; box-shadow:var(--shadow-2); }
+.root.dark .recharts-cartesian-grid line{ stroke:#26323F; }
+.root.dark .recharts-cartesian-axis-tick text{ fill:#98A8BA; }
+.root.dark .recharts-default-tooltip{ background:#161E2B !important; border:1px solid #263243 !important; }
+.root.dark .recharts-default-tooltip .recharts-tooltip-label,
+.root.dark .recharts-default-tooltip .recharts-tooltip-item{ color:#E6EDF5 !important; }
+.root.dark .recharts-tooltip-cursor{ fill:rgba(255,255,255,.05); }
 
 /* BOTÕES */
-.btn{ background:var(--brand); color:#fff; border:none; padding:9px 16px; border-radius:9px; font-size:13px;
-  font-weight:600; cursor:pointer; font-family:inherit; transition:.13s; white-space:nowrap; }
-.btn:hover{ background:var(--brand-deep); }
-.btn.sm{ padding:7px 12px; font-size:12px; }
-.btn-ghost{ background:var(--surface); color:var(--muted); border:1px solid var(--border); padding:8px 14px; border-radius:9px;
-  font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:.13s; }
-.btn-ghost:hover{ border-color:var(--brand); color:var(--brand); }
-.link-mini{ background:none; border:none; color:var(--brand); font-size:11.5px; cursor:pointer; font-family:inherit;
-  padding:0; text-decoration:underline; }
-.status-sel{ border:1px solid; background:var(--surface); border-radius:7px; padding:5px 8px; font-size:11.5px; font-weight:600;
+.btn{ background:var(--brand); color:#fff; border:none; padding:8px 14px; border-radius:8px; font-size:13px;
+  font-weight:600; cursor:pointer; font-family:inherit; transition:background .12s; white-space:nowrap;
+  box-shadow:0 1px 2px rgba(16,24,40,.08); }
+.btn:hover{ background:var(--brand-hover); }
+.btn:focus-visible{ box-shadow:var(--ring); outline:none; }
+.root.dark .btn{ background:#2B7495; }
+.root.dark .btn:hover{ background:#33809F; }
+.btn.sm{ padding:6px 11px; font-size:12px; }
+.btn-ghost{ background:transparent; color:var(--muted); border:1px solid var(--border); padding:7px 13px; border-radius:8px;
+  font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:.12s; }
+.btn-ghost:hover{ background:var(--hover); border-color:var(--border-strong); color:var(--ink); }
+.status-sel{ border:1px solid color-mix(in srgb, var(--tc,#8A98A8) 40%, transparent); background:var(--surface);
+  border-radius:var(--r-sm); padding:5px 8px; font-size:11px; font-weight:600;
+  color:color-mix(in srgb, var(--tc,#6F7E90) 62%, #22334A);
   cursor:pointer; font-family:inherit; outline:none; }
+.root.dark .status-sel{ color:color-mix(in srgb, var(--tc,#8A98A8) 55%, #E6EDF5); }
 
 /* MODAL */
-.modal-bg{ position:fixed; inset:0; background:rgba(29,53,87,.42); display:grid; place-items:center; z-index:50; padding:20px;
-  backdrop-filter:blur(2px); }
-.modal{ background:var(--surface); border-radius:16px; width:100%; max-width:440px; max-height:90vh; overflow:auto;
-  box-shadow:0 20px 60px rgba(29,53,87,.3); }
+.modal-bg{ position:fixed; inset:0; background:rgba(15,23,42,.45); display:grid; place-items:center; z-index:70; padding:20px;
+  backdrop-filter:blur(4px); }
+.root.dark .modal-bg{ background:rgba(0,0,0,.55); }
+.modal{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); width:100%; max-width:440px; max-height:90vh; overflow:auto;
+  box-shadow:var(--shadow-3); animation:pop .16s cubic-bezier(.16,1,.3,1); }
+@keyframes pop{ from{ opacity:0; transform:scale(.98) translateY(4px); } }
 .modal-wide{ max-width:640px; }
-.modal-head{ display:flex; justify-content:space-between; align-items:center; padding:18px 22px; border-bottom:1px solid var(--border);
-  position:sticky; top:0; background:var(--surface); }
-.modal-head h3{ font-size:16px; font-weight:700; }
-.x{ background:none; border:none; font-size:24px; color:var(--muted2); cursor:pointer; line-height:1; }
-.modal-body{ padding:20px 22px 22px; }
+.modal-head{ display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border);
+  position:sticky; top:0; background:var(--surface); z-index:1; }
+.modal-head h3{ font-size:15px; font-weight:600; }
+.x{ background:none; border:none; font-size:22px; color:var(--muted2); cursor:pointer; line-height:1; }
+.x:hover{ color:var(--ink); }
+.modal-body{ padding:20px; }
 .campo{ display:flex; flex-direction:column; gap:5px; margin-bottom:13px; }
-.campo span{ font-size:12px; font-weight:600; color:var(--muted); }
+.campo span{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.05em; }
 .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:13px; }
 .form-grid .campo{ margin-bottom:0; }
 .form-acoes{ display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
-.resumo-mes{ display:flex; gap:24px; margin-top:16px; padding:14px 16px; background:var(--soft); border-radius:11px; border:1px solid var(--border); }
+.resumo-mes{ display:flex; gap:24px; margin-top:16px; padding:12px 14px; background:var(--soft); border-radius:var(--r-md); border:1px solid var(--border); }
 .resumo-mes div{ display:flex; flex-direction:column; gap:3px; }
-.resumo-mes span{ font-size:11px; color:var(--muted2); text-transform:uppercase; font-weight:600; }
-.resumo-mes b{ font-size:18px; }
+.resumo-mes span{ font-size:11px; color:var(--muted2); text-transform:uppercase; font-weight:600; letter-spacing:.05em; }
+.resumo-mes b{ font-size:18px; letter-spacing:-.01em; }
 
 /* CLIENTE DETALHE */
-.cli-info{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:18px; padding:14px 16px;
-  background:var(--soft); border-radius:11px; border:1px solid var(--border); }
+.cli-info{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:18px; padding:12px 14px;
+  background:var(--soft); border-radius:var(--r-md); border:1px solid var(--border); }
 .cli-info > div{ display:flex; flex-direction:column; gap:3px; font-size:13px; }
-.ci-lab{ font-size:10.5px; color:var(--muted2); text-transform:uppercase; font-weight:700; letter-spacing:.3px; }
-.sub-h{ font-size:13px; font-weight:700; color:var(--muted); margin-bottom:8px; }
+.ci-lab{ font-size:11px; color:var(--muted2); text-transform:uppercase; font-weight:600; letter-spacing:.05em; }
+.sub-h{ font-size:13px; font-weight:600; color:var(--muted); margin-bottom:8px; }
 
-/* TEMAS */
-.temas-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
-.tema-card{ background:var(--surface); border:1px solid var(--border); border-radius:13px; padding:15px 16px;
-  box-shadow:0 1px 2px rgba(29,53,87,.03); }
-.tema-card.cheio{ background:#FDF7F9; }
-.tema-top{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; cursor:pointer; }
-.tema-nome{ font-size:13px; font-weight:600; line-height:1.35; }
-.vagas-badge{ font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; flex-shrink:0; }
-.b-ok{ background:rgba(46,158,123,.16); color:#2FA980; }
-.b-quase{ background:rgba(224,169,59,.18); color:#E0A93B; }
-.b-cheio{ background:rgba(194,71,122,.18); color:#D76BA0; }
-.tema-prog{ height:6px; background:#EEF3F4; border-radius:5px; margin:11px 0 7px; overflow:hidden; }
-.tema-prog-fill{ height:100%; border-radius:5px; transition:width .4s; }
-.tema-meta{ display:flex; justify-content:space-between; align-items:center; font-size:11.5px; color:var(--muted); }
-.tema-chips{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:2px 0 9px; }
-.chip-tipo{ font-size:10px; font-weight:700; color:#fff; padding:2px 9px; border-radius:20px; letter-spacing:.2px; }
-.chip-grad{ font-size:10px; font-weight:700; background:#2E9E7B1F; color:#1F8F66; padding:2px 9px; border-radius:20px; border:1px solid #2E9E7B44; }
-.tema-det{ margin-top:13px; padding-top:13px; border-top:1px solid var(--border); }
-.edit-pub{ display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:13px; }
+/* PUBLICAÇÕES — badges e controles */
+.vagas-badge{ font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap; flex-shrink:0; }
+.b-ok{ background:var(--ok-soft); color:var(--ok); }
+.b-quase{ background:var(--warn-soft); color:var(--warn); }
+.b-cheio{ background:var(--danger-soft); color:var(--danger); }
+.chip-tipo{ font-size:10px; font-weight:600; padding:2px 9px; border-radius:999px; letter-spacing:.02em;
+  color:color-mix(in srgb, var(--tc,#6F7E90) 62%, #22334A); background:color-mix(in srgb, var(--tc,#8A98A8) 14%, transparent); }
+.root.dark .chip-tipo{ color:color-mix(in srgb, var(--tc,#8A98A8) 55%, #E6EDF5); }
 .ep-campo{ display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--muted); font-weight:600; }
 .grad-check{ align-self:center; }
 .max-inp.wide{ width:130px; }
 .pub-grad{ margin:4px 0 2px; }
-.max-row{ display:flex; align-items:center; gap:9px; font-size:12px; color:var(--muted); margin-bottom:11px; }
-.max-inp{ width:54px; border:1px solid var(--border); border-radius:7px; padding:5px 8px; font-size:12px; font-family:inherit; }
+.max-inp{ width:54px; border:1px solid var(--border); border-radius:var(--r-sm); padding:5px 8px; font-size:12px;
+  font-family:inherit; color:var(--ink); background:var(--surface); outline:none; }
+.max-inp:focus{ border-color:var(--brand); box-shadow:var(--ring); }
 .parts{ list-style:none; display:flex; flex-direction:column; gap:8px; }
 .parts li{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; background:var(--soft);
-  border-radius:9px; padding:9px 11px; }
-.p-nome{ font-size:12.5px; font-weight:600; }
+  border:1px solid var(--border); border-radius:var(--r-md); padding:9px 12px; }
+.p-nome{ font-size:13px; font-weight:600; }
 .p-fac{ font-size:11px; color:var(--muted2); margin-top:2px; }
 .p-vazio{ justify-content:center; color:var(--muted2); font-size:12px; padding:10px; }
-.tag-autor{ font-size:9.5px; font-weight:700; background:#E8833A22; color:#C26A1E; padding:1px 6px; border-radius:5px; margin-left:6px; }
-.tag-grad{ font-size:9.5px; font-weight:700; background:#2E9E7B22; color:#1F8F66; padding:1px 6px; border-radius:5px; margin-left:5px; }
+.tag-autor{ font-size:10px; font-weight:600; background:rgba(232,131,58,.14); color:#B4610F; padding:1px 7px; border-radius:999px; margin-left:6px; }
+.root.dark .tag-autor{ color:#F0A468; }
+.tag-grad{ font-size:10px; font-weight:600; background:var(--ok-soft); color:var(--ok); padding:1px 7px; border-radius:999px; margin-left:5px; }
 /* PERIODO BAR */
 .periodo-bar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--surface);
-  border:1px solid var(--border); border-radius:12px; padding:10px 14px; margin-bottom:18px; box-shadow:0 1px 2px rgba(29,53,87,.03); }
-.periodo-lab{ font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
-.periodo-bar .inp{ padding:8px 11px; font-size:13px; }
-.periodo-info{ margin-left:auto; font-size:12.5px; color:var(--muted); font-weight:600; }
+  border:1px solid var(--border); border-radius:var(--r-lg); padding:10px 14px; margin-bottom:16px; box-shadow:var(--shadow-1); }
+.periodo-lab{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; }
+.periodo-bar .inp{ padding:7px 11px; font-size:13px; }
 
 /* PUBLICACOES: lista + painel de detalhe */
 .pub-split{ display:grid; grid-template-columns:330px 1fr; gap:16px; align-items:start; }
 .pub-lista{ max-height:calc(100vh - 240px); overflow-y:auto; }
-.pub-item{ display:block; width:100%; text-align:left; background:transparent; border:none; border-bottom:1px solid var(--border);
+.pub-item{ display:block; width:100%; text-align:left; background:transparent; border:none; border-bottom:1px solid var(--divider);
   padding:12px 14px; cursor:pointer; font-family:inherit; transition:.12s; }
 .pub-item:hover{ background:var(--hover); }
-.pub-item.ativo{ background:rgba(44,125,160,.16); box-shadow:inset 3px 0 0 var(--brand); }
+.pub-item.ativo{ background:var(--brand-soft); box-shadow:inset 2px 0 0 var(--brand); }
 .pub-item-top{ display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
-.pub-item-nome{ font-size:12.5px; font-weight:600; line-height:1.35; color:var(--ink); }
-.pub-item-prog{ height:5px; background:var(--track); border-radius:4px; margin:8px 0 6px; overflow:hidden; }
-.pub-item-fill{ height:100%; border-radius:4px; }
+.pub-item-nome{ font-size:13px; font-weight:600; line-height:1.35; color:var(--ink); }
+.pub-item-prog{ height:5px; background:var(--track); border-radius:var(--r-sm); margin:8px 0 6px; overflow:hidden; }
+.pub-item-fill{ height:100%; border-radius:var(--r-sm); }
 .pub-item-sub{ display:flex; align-items:center; justify-content:space-between; }
-.pub-item-ocup{ font-size:11px; color:var(--muted); font-weight:700; }
-.chip-tipo.sm{ font-size:9.5px; padding:2px 8px; }
+.pub-item-ocup{ font-size:11px; color:var(--muted); font-weight:600; }
+.chip-tipo.sm{ font-size:10px; padding:2px 8px; }
 
 .pub-detalhe{ min-height:320px; }
 .pub-vazio-det{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; min-height:300px;
   color:var(--muted2); text-align:center; font-size:13px; padding:30px; line-height:1.5; }
-.pub-vazio-ic{ width:56px; height:56px; border-radius:15px; background:#EEF3F4; display:grid; place-items:center; font-size:26px; color:var(--brand); }
+.pub-vazio-ic{ width:56px; height:56px; border-radius:var(--r-lg); background:var(--track); display:grid; place-items:center; font-size:26px; color:var(--brand); }
 .dp-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
-.dp-nome{ font-size:16px; font-weight:700; line-height:1.3; }
+.dp-nome{ font-size:16px; font-weight:700; line-height:1.35; letter-spacing:-.01em; }
 .dp-edit-nome{ vertical-align:middle; margin-left:8px; font-weight:600; }
 .dp-nome-edit{ display:flex; gap:8px; align-items:center; flex:1; flex-wrap:wrap; }
 .dp-nome-edit .inp{ flex:1; min-width:220px; font-size:15px; font-weight:600; }
-.dp-prog{ height:8px; background:var(--track); border-radius:6px; margin:12px 0 6px; overflow:hidden; }
-.dp-prog-fill{ height:100%; border-radius:6px; transition:width .4s; }
-.dp-ocup{ font-size:12px; color:var(--muted); margin-bottom:14px; }
-.dp-controles{ display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; padding:13px 14px; background:var(--soft);
-  border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
-.dp-sub{ font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; margin-bottom:10px; }
-.dp-part-head{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
+.dp-prog{ height:7px; background:var(--track); border-radius:var(--r-sm); margin:12px 0 6px; overflow:hidden; }
+.dp-prog-fill{ height:100%; border-radius:var(--r-sm); transition:width .4s; }
+.dp-ocup{ font-size:12px; color:var(--muted); margin-bottom:16px; }
+/* caixa única "Dados da publicação" (tipo, vagas, graduado, onde publicar, taxa) */
+.dp-config{ background:var(--soft); border:1px solid var(--border); border-radius:var(--r-md); padding:14px 16px; margin-bottom:16px; }
+.dp-config .dp-sub{ margin-bottom:12px; }
+.dp-controles{ display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap; }
+.dp-controles .max-inp, .dp-controles select{ background:var(--surface); }
+.dp-sub{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; margin-bottom:10px; }
+.dp-part-head{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin:20px 0 10px; }
 .copiar-btn{ white-space:nowrap; }
-.dp-lotado{ font-size:12.5px; color:#D76BA0; background:rgba(194,71,122,.14); border-radius:9px; padding:11px 13px; margin-top:11px; }
-.dp-taxa{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:11px 13px; background:var(--soft); border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
-.dp-taxa-lab{ font-size:12px; font-weight:600; color:var(--muted); }
+.dp-lotado{ font-size:12px; color:var(--danger); background:var(--danger-soft); border:1px solid var(--danger-border); border-radius:var(--r-md); padding:10px 13px; margin-top:11px; }
+.dp-taxa{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-top:12px; margin-top:12px; border-top:1px solid var(--divider); }
+.dp-taxa .inp{ background:var(--surface); }
+.dp-taxa-lab{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.05em; }
 .dp-taxa-val{ max-width:110px; }
-.dp-taxa-ok{ font-size:12.5px; color:#1F8F66; font-weight:600; }
+.dp-taxa-ok{ font-size:12px; color:var(--ok); font-weight:600; }
 .dp-taxa .btn.sm{ margin-left:auto; }
+.dp-footer{ display:flex; justify-content:flex-end; margin-top:20px; padding-top:14px; border-top:1px solid var(--divider); }
 .p-acoes{ display:flex; gap:6px; align-items:center; flex-shrink:0; }
-.mov-dot{ display:inline-block; width:20px; font-weight:800; }
-.mov-dot.entrada{ color:#2E9E7B; }
-.mov-dot.saida{ color:#C2477A; }
-.mov-val{ font-weight:700; font-variant-numeric:tabular-nums; }
-.mov-val.entrada{ color:#2E9E7B; }
-.mov-val.saida{ color:#C2477A; }
-.mov-mais{ padding:11px 16px; font-size:12px; color:var(--muted); border-top:1px solid var(--border); }
+.mov-dot{ display:inline-block; width:20px; font-weight:700; }
+.mov-dot.entrada{ color:var(--ok); }
+.mov-dot.saida{ color:var(--danger); }
+.mov-val{ font-weight:600; }
+.mov-val.entrada{ color:var(--ok); }
+.mov-val.saida{ color:var(--danger); }
+.mov-mais{ padding:11px 16px; font-size:12px; color:var(--muted); border-top:1px solid var(--divider); }
 .cmp-pick{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:4px; }
 .cmp-pick .inp{ max-width:170px; }
-.cmp-vs{ color:var(--muted); font-weight:700; }
+.cmp-vs{ color:var(--muted2); font-weight:600; }
 .vazio.pad{ padding:18px 4px; }
-.dp-fin{ display:flex; gap:28px; flex-wrap:wrap; padding:13px 16px; background:var(--soft); border:1px solid var(--border); border-radius:11px; margin-bottom:16px; }
-.dp-fin-item{ display:flex; flex-direction:column; gap:2px; }
-.dp-fin-item span{ font-size:10.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-.dp-fin-item b{ font-size:18px; color:var(--ink); }
-.p-valor{ font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; margin-right:6px; white-space:nowrap; }
-.aviso-grad{ font-size:12.5px; color:#E0A93B; background:rgba(224,169,59,.13); border:1px solid rgba(224,169,59,.38); border-radius:9px; padding:10px 13px; margin-bottom:14px; }
-.aviso-grad.erro{ color:#D76BA0; background:rgba(194,71,122,.13); border-color:rgba(194,71,122,.4); font-weight:600; }
-.fatura-auto{ background:var(--soft); border:1px solid var(--border); border-radius:10px; padding:11px 13px; margin-bottom:14px; font-size:13.5px; color:var(--ink); }
-.fatura-auto b{ font-size:16px; }
+/* resumo financeiro da publicação — promovido a destaque */
+.dp-fin{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; padding:14px 16px; background:var(--soft); border:1px solid var(--border); border-radius:var(--r-md); margin-bottom:16px; }
+.dp-fin-item{ display:flex; flex-direction:column; gap:3px; }
+.dp-fin-item span{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; }
+.dp-fin-item b{ font-size:21px; color:var(--ink); letter-spacing:-.01em; }
+.p-valor{ font-weight:600; color:var(--ink); margin-right:6px; white-space:nowrap; }
+.aviso-grad{ font-size:12px; color:var(--warn); background:var(--warn-soft); border:1px solid var(--warn-border); border-radius:var(--r-md); padding:10px 13px; margin-bottom:12px; }
+.aviso-grad.erro{ color:var(--danger); background:var(--danger-soft); border-color:var(--danger-border); font-weight:600; }
+.fatura-auto{ background:var(--soft); border:1px solid var(--border); border-radius:var(--r-md); padding:11px 13px; margin-bottom:14px; font-size:13px; color:var(--ink); }
+.fatura-auto b{ font-size:15px; }
 
 /* FORM PARTICIPANTE (com venda) */
-.form-part{ margin-top:14px; padding-top:14px; border-top:1px dashed var(--border); }
-.fp-titulo{ font-size:12.5px; font-weight:700; color:var(--brand-deep); margin-bottom:10px; }
+.form-part{ margin-top:14px; padding:14px 16px; background:var(--soft); border:1px solid var(--border); border-radius:var(--r-md); }
+.form-part .inp{ background:var(--surface); }
+.fp-titulo{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; margin-bottom:10px; }
 .fp-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .fp-grid .inp{ width:100%; }
 .fp-opts{ display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-top:11px; }
@@ -2308,12 +2342,13 @@ select.inp{ cursor:pointer; }
 
 /* LOADING / TOAST */
 .loading{ display:grid; place-items:center; min-height:100vh; gap:14px; color:var(--muted); font-size:13px;
-  font-family:system-ui,sans-serif; background:var(--bg); }
-.spin{ width:34px; height:34px; border:3px solid #DCE6E8; border-top-color:var(--brand); border-radius:50%; animation:sp 1s linear infinite; }
+  font-family:"Inter",system-ui,sans-serif; background:var(--bg); }
+.spin{ width:34px; height:34px; border:3px solid var(--track); border-top-color:var(--brand); border-radius:50%; animation:sp 1s linear infinite; }
 @keyframes sp{ to{ transform:rotate(360deg); } }
-.toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff;
-  padding:11px 20px; border-radius:10px; font-size:13px; font-weight:500; z-index:80; box-shadow:0 8px 24px rgba(29,53,87,.3);
+.toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#1D3557; color:#fff;
+  padding:10px 18px; border-radius:var(--r-md); font-size:13px; font-weight:500; z-index:90; box-shadow:var(--shadow-3);
   animation:up .2s ease; }
+.root.dark .toast{ background:#22304A; color:#E6EDF5; border:1px solid rgba(255,255,255,.10); }
 @keyframes up{ from{ opacity:0; transform:translate(-50%,8px); } }
 
 @media (max-width:900px){
@@ -2326,10 +2361,12 @@ select.inp{ cursor:pointer; }
   .side-backdrop{ display:block; }
   .main{ padding:70px 16px 54px; }
   .head{ flex-direction:column; align-items:flex-start; gap:6px; margin-bottom:18px; }
-  .head h1{ font-size:23px; }
-  .kpis,.kpis-3,.kpis-4,.grid-2,.temas-grid,.pub-split,.fp-grid,.destaques,.cli-info,.form-grid{ grid-template-columns:1fr; }
+  .head h1{ font-size:20px; }
+  .kpis,.kpis-3,.kpis-4,.grid-2,.pub-split,.fp-grid,.destaques,.cli-info,.form-grid,.dp-fin{ grid-template-columns:1fr; }
   .pub-lista{ max-height:none; }
   .periodo-bar{ flex-wrap:wrap; }
+  .dp-fin{ gap:12px; }
+  .dp-fin-item b{ font-size:18px; }
 }
     `}</style>
   );
