@@ -57,6 +57,7 @@ const pubDe = (p) => ({
   requiresGrad: !!p.requer_graduado,
   taxa: Number(p.taxa) || 0,
   taxaLancada: !!p.taxa_lancada,
+  taxaData: p.taxa_data || null,
   certificadoUrl: p.certificado_url || '',
   participantes: (p.participantes || []).map(partDe),
 });
@@ -217,6 +218,7 @@ export async function atualizarPublicacao(id, campos) {
   if ('nome' in campos) row.tema = campos.nome;
   if ('taxa' in campos) row.taxa = campos.taxa;
   if ('taxaLancada' in campos) row.taxa_lancada = campos.taxaLancada;
+  if ('taxaData' in campos) row.taxa_data = campos.taxaData;
   if ('certificadoUrl' in campos) row.certificado_url = campos.certificadoUrl;
   if (Object.keys(row).length === 0) return;
   const { error } = await supabase.from('publicacoes').update(row).eq('id', id);

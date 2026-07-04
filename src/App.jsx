@@ -369,10 +369,42 @@ export default function App() {
       return nova;
     } catch (e) { aviso("Erro: " + e.message); }
   };
-  const remPublicacao = async (id) => {
-    const antes = temas; setTemas((ts) => ts.filter((t) => t.id !== id));
-    try { await db.removerPublicacao(id); aviso("Publicação removida"); }
-    catch (e) { aviso("Erro: " + e.message); setTemas(antes); }
+  // estorna uma taxa lançada: tira do mês do lançamento; se não achar, procura o mês mais recente com taxa suficiente
+  const estornarTaxaFinanceiro = async (valor, dataIso) => {
+    let alvo = null;
+    if (dataIso) {
+      const ano = anoDeIso(dataIso), mesIdx = mesDeIso(dataIso);
+      alvo = financeiro.find((f) => f.ano === ano && f.ordem === mesIdx && (f.taxaPublicacao || 0) >= valor - 0.005);
+    }
+    if (!alvo) {
+      alvo = [...financeiro].sort((a, b) => (b.ano - a.ano) || (b.ordem - a.ordem))
+        .find((f) => (f.taxaPublicacao || 0) >= valor - 0.005);
+    }
+    if (!alvo) return false;
+    const atualizado = { ...alvo, taxaPublicacao: Math.max(0, (alvo.taxaPublicacao || 0) - valor) };
+    await db.atualizarFinanceiro(alvo.id, atualizado);
+    setFinanceiro((fs) => fs.map((f) => (f.id === alvo.id ? atualizado : f)));
+    return true;
+  };
+  // excluir publicação -> remove também o trabalho vinculado (mesmo título) e estorna a taxa do Financeiro
+  const remPublicacao = async (tema) => {
+    const antesT = temas, antesTr = trabalhos;
+    setTemas((ts) => ts.filter((t) => t.id !== tema.id));
+    try {
+      await db.removerPublicacao(tema.id);
+      const acoes = ["Publicação removida"];
+      const trab = trabalhos.find((x) => x.titulo === tema.nome);
+      if (trab) {
+        await db.removerTrabalho(trab.id);
+        setTrabalhos((tr) => tr.filter((x) => x.id !== trab.id));
+        acoes.push("trabalho removido");
+      }
+      if (tema.taxaLancada && (tema.taxa || 0) > 0) {
+        const ok = await estornarTaxaFinanceiro(tema.taxa, tema.taxaData);
+        acoes.push(ok ? `taxa de ${brl(tema.taxa)} estornada do financeiro` : "⚠️ não achei o mês da taxa — ajuste no Financeiro");
+      }
+      aviso(acoes.join(" · "));
+    } catch (e) { aviso("Erro: " + e.message); setTemas(antesT); setTrabalhos(antesTr); }
   };
   const editPublicacao = async (id, campos) => {
     const antes = temas; setTemas((ts) => ts.map((t) => (t.id === id ? { ...t, ...campos } : t)));
@@ -471,8 +503,8 @@ export default function App() {
     if (tema.taxaLancada) { aviso("Taxa já lançada para esta publicação"); return; }
     try {
       await lancarTaxaFinanceiro(data, valor);
-      await db.atualizarPublicacao(tema.id, { taxa: valor, taxaLancada: true });
-      setTemas((ts) => ts.map((t) => (t.id === tema.id ? { ...t, taxa: valor, taxaLancada: true } : t)));
+      await db.atualizarPublicacao(tema.id, { taxa: valor, taxaLancada: true, taxaData: data });
+      setTemas((ts) => ts.map((t) => (t.id === tema.id ? { ...t, taxa: valor, taxaLancada: true, taxaData: data } : t)));
       aviso("Taxa lançada no financeiro");
     } catch (e) { aviso("Erro: " + e.message); }
   };
@@ -1616,7 +1648,14 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, alvoId, onAlvoUsa
   const totalPart = temas.reduce((s, t) => s + t.participantes.length, 0);
 
   const criar = (d) => { onAdd(d); setModalTema(false); };
-  const excluir = (t) => { if (confirm("Remover esta publicação?")) { onRem(t.id); if (selId === t.id) setSelId(null); } };
+  const excluir = (t) => {
+    const extras = ["o trabalho vinculado na aba Trabalhos"];
+    if (t.taxaLancada && (t.taxa || 0) > 0) extras.push(`a taxa de ${brl(t.taxa)} lançada no Financeiro (estorno)`);
+    if (confirm(`Remover esta publicação?\n\nSerão removidos junto: ${extras.join(" e ")}.`)) {
+      onRem(t);
+      if (selId === t.id) setSelId(null);
+    }
+  };
 
   return (
     <>

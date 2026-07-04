@@ -56,6 +56,7 @@ create table if not exists public.publicacoes (
   requer_graduado  boolean     not null default false,
   taxa             numeric(10,2) not null default 0,
   taxa_lancada     boolean     not null default false,
+  taxa_data        date,
   certificado_url  text        not null default '',
   criado_em        timestamptz not null default now()
 );
