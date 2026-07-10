@@ -354,9 +354,40 @@ export default function App() {
     const alvo = (titulo || "").trim().toLowerCase();
     const pub = temas.find((t) => (t.nome || "").trim().toLowerCase() === alvo);
     if (!pub) { aviso("Esse trabalho não tem publicação vinculada."); return; }
-    setPubAlvo(pub.id);
-    setTab("temas");
+    const destino = "#pub=" + encodeURIComponent(pub.nome);
+    if (window.location.hash === destino) { setPubAlvo(pub.id); setTab("temas"); }
+    else window.location.hash = destino; // vira entrada no histórico; o hashchange abre a publicação
   };
+  // hash da URL ⇄ navegação: a aba atual e a publicação aberta ficam no histórico do navegador,
+  // então as setas voltar/avançar e "abrir em nova guia" funcionam
+  const aplicarHash = () => {
+    if (!pronto) return;
+    const h = window.location.hash || "";
+    const mPub = h.match(/^#pub=(.+)$/);
+    if (mPub) {
+      let titulo = mPub[1];
+      try { titulo = decodeURIComponent(titulo); } catch (e) {}
+      const alvo = titulo.trim().toLowerCase();
+      const pub = temas.find((t) => (t.nome || "").trim().toLowerCase() === alvo);
+      if (!pub) { aviso("Esse trabalho não tem publicação vinculada."); return; }
+      setPubAlvo(pub.id);
+      setTab("temas");
+      return;
+    }
+    const id = h.replace(/^#/, "");
+    if (["overview", "vendas", "clientes", "trabalhos", "financeiro", "temas"].includes(id)) setTab(id);
+    else if (!h) setTab("overview");
+  };
+  const irPara = (id) => {
+    setMenuAberto(false);
+    if (window.location.hash === "#" + id) setTab(id);
+    else window.location.hash = id;
+  };
+  useEffect(() => {
+    window.addEventListener("hashchange", aplicarHash);
+    return () => window.removeEventListener("hashchange", aplicarHash);
+  });
+  useEffect(() => { if (pronto) aplicarHash(); }, [pronto]); // aplica o hash inicial (deep link / F5)
   /* ---------- publicacoes / participantes (granular, com venda junto) ---------- */
   const addPublicacao = async (dados) => {
     try {
@@ -433,6 +464,15 @@ export default function App() {
     const antes = trabalhos;
     setTrabalhos((tr) => tr.map((x) => (x.id === trabId ? { ...x, localPublicacao: local } : x)));
     try { await db.atualizarLocalTrabalho(trabId, local); }
+    catch (e) { aviso("Erro: " + e.message); setTrabalhos(antes); }
+  };
+  // altera o status de um trabalho a partir do painel da publicação (reflete na aba Trabalhos)
+  const setStatusTrabalho = async (trabId, status) => {
+    const antes = trabalhos;
+    const alvo = trabalhos.find((x) => x.id === trabId);
+    if (!alvo) return;
+    setTrabalhos((tr) => tr.map((x) => (x.id === trabId ? { ...x, status } : x)));
+    try { await db.atualizarTrabalho(trabId, { ...alvo, status }); }
     catch (e) { aviso("Erro: " + e.message); setTrabalhos(antes); }
   };
   // soma a taxa de publicação no mês correspondente do Financeiro (cria o ano se faltar)
@@ -603,7 +643,7 @@ export default function App() {
         </div>
         <nav>
           {navItens.map(([id, lab, ic]) => (
-            <button key={id} className={"nav " + (tab === id ? "ativo" : "")} onClick={() => { setTab(id); setMenuAberto(false); }}>
+            <button key={id} className={"nav " + (tab === id ? "ativo" : "")} onClick={() => irPara(id)}>
               <span className="nav-ic">{ic}</span>{lab}
             </button>
           ))}
@@ -635,7 +675,7 @@ export default function App() {
           <Financeiro financeiro={financeiro} salvar={salvarFinanceiro} vendas={vendas} aviso={aviso} onCriarAno={criarAnoFin} />
         )}
         {tab === "temas" && (
-          <Temas temas={temas} vendas={vendas} trabalhos={trabalhos} onSetLocalTrabalho={setLocalTrabalho} alvoId={pubAlvo} onAlvoUsado={() => setPubAlvo(null)}
+          <Temas temas={temas} vendas={vendas} trabalhos={trabalhos} onSetLocalTrabalho={setLocalTrabalho} onSetStatusTrabalho={setStatusTrabalho} alvoId={pubAlvo} onAlvoUsado={() => setPubAlvo(null)}
             onAdd={addPublicacao} onRem={remPublicacao} onEdit={editPublicacao} onEditNome={editNomePublicacao}
             onAddPart={addParticipante} onEditPart={editParticipante} onRemPart={remParticipante}
             onLancarTaxa={lancarTaxaPub} aviso={aviso} />
@@ -1294,7 +1334,8 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
             {filtrados.map((t) => (
               <tr key={t.id}>
                 <td className="cel-titulo">
-                  <button className="link-titulo" onClick={() => onAbrirPublicacao(t.titulo)} title="Ver em Publicações e vagas">{t.titulo}</button>
+                  <a className="link-titulo" href={`#pub=${encodeURIComponent(t.titulo)}`} title="Ver em Publicações e vagas"
+                    onClick={(e) => { e.preventDefault(); onAbrirPublicacao(t.titulo); }}>{t.titulo}</a>
                   {editLocalId === t.id ? (
                     <input className="onde-inp" autoFocus defaultValue={t.localPublicacao || ""} placeholder="Revista / evento…"
                       onBlur={(e) => { mudarLocal(t.id, e.target.value.trim()); setEditLocalId(null); }}
@@ -1631,7 +1672,7 @@ function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
 /* ============================================================
    TEMAS E VAGAS
    ============================================================ */
-function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, aviso }) {
+function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabalho, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, aviso }) {
   const [busca, setBusca] = useState("");
   const [soComVaga, setSoComVaga] = useState(false);
   const [selId, setSelId] = useState(null);
@@ -1686,7 +1727,8 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, alvoId, onAlvoUsa
             const cheio = restantes <= 0;
             const pct = Math.min(100, (t.participantes.length / t.maxVagas) * 100);
             return (
-              <button key={t.id} className={"pub-item" + (selId === t.id ? " ativo" : "")} onClick={() => setSelId(t.id)}>
+              <button key={t.id} className={"pub-item" + (selId === t.id ? " ativo" : "")}
+                onClick={() => { setSelId(t.id); window.history.replaceState(null, "", "#pub=" + encodeURIComponent(t.nome)); }}>
                 <div className="pub-item-top">
                   <span className="pub-item-nome">{t.nome}</span>
                   <span className={"vagas-badge " + (cheio ? "b-cheio" : restantes <= 2 ? "b-quase" : "b-ok")}>
@@ -1713,6 +1755,7 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, alvoId, onAlvoUsa
           ) : (
             <DetalhePub key={sel.id} t={sel} vendas={vendas}
               localPub={trabLink ? trabLink.localPublicacao : ""} onSetLocal={(local) => trabLink && onSetLocalTrabalho(trabLink.id, local)}
+              statusTrab={trabLink ? (trabLink.status || "A fazer") : null} onSetStatus={(s) => trabLink && onSetStatusTrabalho(trabLink.id, s)}
               onEdit={onEdit} onEditNome={onEditNome} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa} onExcluir={() => excluir(sel)} />
           )}
         </div>
@@ -1723,8 +1766,8 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, alvoId, onAlvoUsa
   );
 }
 
-function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onExcluir }) {
-  const { tipos } = useContext(ListasCtx);
+function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, statusTrab = null, onSetStatus, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onExcluir }) {
+  const { tipos, status: statusDisp } = useContext(ListasCtx);
   const restantes = t.maxVagas - t.participantes.length;
   const cheio = restantes <= 0;
   const pct = Math.min(100, (t.participantes.length / t.maxVagas) * 100);
@@ -1776,7 +1819,7 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
   };
   const copiarAutores = () => {
     const txt = t.participantes.map((p) => {
-      const nome = p.nome + (p.autorPrincipal ? " (autor principal)" : "");
+      const nome = p.nome + (p.autorPrincipal ? " (autor principal)" : "") + (p.graduado ? " (graduado)" : "");
       return `Nome: ${nome}\nFaculdade: ${p.faculdade || ""}\nEmail: ${p.email || ""}`;
     }).join("\n\n");
     const ok = () => { setCopiado(true); setTimeout(() => setCopiado(false), 1600); };
@@ -1817,6 +1860,15 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, onEdit, onEditN
             <input type="number" min="1" className="max-inp" value={t.maxVagas} onChange={(e) => onEdit(t.id, { maxVagas: parseInt(e.target.value, 10) || 1 })} />
           </label>
           <label className="check sm grad-check"><input type="checkbox" checked={!!t.requiresGrad} onChange={(e) => onEdit(t.id, { requiresGrad: e.target.checked })} /> exige graduado</label>
+          {statusTrab != null && (
+            <label className="ep-campo">Status do trabalho
+              <select className="status-sel" style={{ "--tc": corStatus(statusTrab) }} value={statusTrab}
+                onChange={(e) => { if (e.target.value === "__novo") { const s = prompt("Nome do novo status:"); if (s && s.trim()) onSetStatus(s.trim()); } else onSetStatus(e.target.value); }}>
+                {statusDisp.map((s) => <option key={s} value={s}>{s}</option>)}
+                <option value="__novo">➕ Novo status…</option>
+              </select>
+            </label>
+          )}
         </div>
 
         <div className="dp-local">
@@ -2180,7 +2232,7 @@ select.inp{ cursor:pointer; }
 .cel-tema{ font-size:11px; color:var(--muted2); margin-top:2px; max-width:330px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cel-fac{ font-size:12px; color:var(--muted); max-width:200px; }
 .cel-titulo{ font-size:12.5px; max-width:560px; line-height:1.4; }
-.link-titulo{ background:transparent; border:none; padding:0; font:inherit; color:var(--brand); text-align:left; cursor:pointer; line-height:1.4; }
+.link-titulo{ background:transparent; border:none; padding:0; font:inherit; color:var(--brand); text-align:left; cursor:pointer; line-height:1.4; text-decoration:none; display:inline; }
 .link-titulo:hover{ text-decoration:underline; color:var(--brand-deep); }
 .onde-chip{ display:inline-block; margin-top:5px; background:var(--soft); border:1px solid var(--border); border-radius:var(--r-sm); padding:2px 9px; font-size:11px; color:var(--muted); cursor:pointer; font-family:inherit; max-width:440px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .onde-chip:hover{ border-color:var(--border-strong); color:var(--ink); }
