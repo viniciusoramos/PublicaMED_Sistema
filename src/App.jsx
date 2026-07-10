@@ -765,8 +765,20 @@ function Overview({ vendas, financeiro, trabalhos }) {
     return f;
   }, [financeiro, anoSel, mes]);
 
-  const lucroTotal = finFiltrado.reduce((s, f) => s + ((f.faturamento || 0) - (f.taxaPublicacao || 0) - (f.custoAds || 0) - (f.custoFixo || 0) - (f.custoExtra || 0)), 0);
+  // mesma regra do Financeiro: faturamento = vendas pagas no período + ajuste manual do mês
+  const ajusteTotal = finFiltrado.reduce((s, f) => s + (f.faturamentoAjuste || 0), 0);
+  const fatTotal = m.totalFat + ajusteTotal;
   const custoTotal = finFiltrado.reduce((s, f) => s + (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0), 0);
+  const lucroTotal = fatTotal - custoTotal;
+
+  const porMesChart = useMemo(() => {
+    const ajusteMes = Array(12).fill(0);
+    finFiltrado.forEach((f) => { if (f.ordem != null && ajusteMes[f.ordem] !== undefined) ajusteMes[f.ordem] += (f.faturamentoAjuste || 0); });
+    return MESES.map((nome, i) => {
+      const v = m.porMes.find((x) => x.idx === i);
+      return { mes: nome, mesAbrev: nome.slice(0, 3), idx: i, total: (v?.total || 0) + ajusteMes[i], qtd: v?.qtd || 0 };
+    }).filter((x) => x.qtd > 0 || x.total !== 0);
+  }, [m, finFiltrado]);
 
   const tipoTop = m.porTipo[0];
   const ufTop = m.porUF.filter((u) => u.uf !== "N/I")[0];
@@ -800,8 +812,8 @@ function Overview({ vendas, financeiro, trabalhos }) {
       </div>
 
       <div className="kpis">
-        <KPI label="Faturamento (vendas)" valor={brl(m.totalFat)} sub={`${num(m.nVendas)} vendas no período`} cor="#2C7DA0" />
-        <KPI label="Lucro líquido" valor={brl(lucroTotal)} sub={`Custos: ${brl(custoTotal)}`} cor="#2E9E7B" />
+        <KPI label="Faturamento" valor={brl(fatTotal)} sub={`${num(m.nVendas)} vendas no período` + (ajusteTotal ? ` · inclui ajustes ${brl(ajusteTotal)}` : "")} cor="#2C7DA0" />
+        <KPI label="Lucro líquido" valor={brl(lucroTotal)} sub={`Custos: ${brl(custoTotal)}` + (fatTotal ? ` · Margem ${Math.round((lucroTotal / fatTotal) * 100)}%` : "")} cor="#2E9E7B" />
         <KPI label="Clientes únicos" valor={num(m.clientes.length)} sub={`Ticket médio ${brl(m.ticket)}`} cor="#6366A8" />
         <KPI label="Certificados emitidos" valor={num(certEmitido)} sub={`${num(pendentes)} pendentes`} cor="#E8833A" />
       </div>
@@ -810,7 +822,7 @@ function Overview({ vendas, financeiro, trabalhos }) {
         <div className="card">
           <div className="card-head"><h3>Faturamento por mês</h3></div>
           <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={m.porMes} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+            <BarChart data={porMesChart} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EAEFF1" />
               <XAxis dataKey="mesAbrev" tick={{ fontSize: 12, fill: "#5B6B73" }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: "#5B6B73" }} axisLine={false} tickLine={false}
