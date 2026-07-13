@@ -42,17 +42,19 @@ const UF_NOME = {
 const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
 const TIPOS = ["Artigo","Capítulo","Apresentação","Combo","Artigo PSU","Outro"];
+// Paleta categórica validada (CVD ΔE 16.2 claro / 14.7 escuro, croma e contraste ≥3:1 nas duas superfícies)
+// mantendo as matizes que os usuários já associam a cada tipo
 const TIPO_COR = {
-  "Artigo":"#2C7DA0","Capítulo":"#6366A8","Apresentação":"#E8833A",
-  "Combo":"#C2477A","Artigo PSU":"#2E9E7B","Outro":"#8B97A0",
+  "Artigo":"#1878B8","Capítulo":"#6D5DD3","Apresentação":"#DD6B20",
+  "Combo":"#D8315E","Artigo PSU":"#0B9B80","Outro":"#9C6B10",
 };
 const STATUS = ["A fazer","Aguardando certificado","Concluído","Certificado emitido"];
 const STATUS_COR = {
-  "A fazer":"#9AA5AB","Aguardando certificado":"#E0A93B",
-  "Concluído":"#3B92C2","Certificado emitido":"#2E9E7B",
+  "A fazer":"#64748B","Aguardando certificado":"#A16207",
+  "Concluído":"#0E7490","Certificado emitido":"#12805C",
 };
 // cores para tipos/status criados pelo usuário (fora dos padrões): paleta estável por hash
-const PALETA = ["#2C7DA0","#C2477A","#2E9E7B","#E8833A","#6366A8","#0E8A8A","#B5651D","#7E57C2"];
+const PALETA = ["#1878B8","#D8315E","#0B9B80","#DD6B20","#6D5DD3","#0E7490","#9C6B10","#7E57C2"];
 const hashCor = (s) => PALETA[[...String(s || "")].reduce((a, c) => a + c.charCodeAt(0), 0) % PALETA.length];
 const corTipo = (v) => TIPO_COR[v] || hashCor(v);
 const corStatus = (v) => STATUS_COR[v] || hashCor(v);
@@ -241,12 +243,17 @@ function BarrasH({ data, max, fmt, cor }) {
 }
 
 function Modal({ titulo, onClose, children, wide }) {
+  useEffect(() => {
+    const esc = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className={"modal " + (wide ? "modal-wide" : "")} onClick={(e) => e.stopPropagation()}>
+      <div className={"modal " + (wide ? "modal-wide" : "")} role="dialog" aria-modal="true" aria-label={titulo} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>{titulo}</h3>
-          <button className="x" onClick={onClose}>×</button>
+          <button className="x" onClick={onClose} aria-label="Fechar">×</button>
         </div>
         <div className="modal-body">{children}</div>
       </div>
@@ -643,7 +650,7 @@ export default function App() {
         </div>
         <nav>
           {navItens.map(([id, lab, ic]) => (
-            <button key={id} className={"nav " + (tab === id ? "ativo" : "")} onClick={() => irPara(id)}>
+            <button key={id} className={"nav " + (tab === id ? "ativo" : "")} aria-current={tab === id ? "page" : undefined} onClick={() => irPara(id)}>
               <span className="nav-ic">{ic}</span>{lab}
             </button>
           ))}
@@ -654,7 +661,7 @@ export default function App() {
             Conectado ao Supabase
           </div>
           {sessao && sessao.user && (
-            <div style={{ fontSize: 11, color: "#7E97A0", marginTop: 10, wordBreak: "break-all" }}>{sessao.user.email}</div>
+            <div style={{ fontSize: 11, color: "#8FA6B8", marginTop: 10, wordBreak: "break-all" }}>{sessao.user.email}</div>
           )}
           <button className="tema-btn" onClick={toggleTema}>{dark ? "☀️ Modo claro" : "🌙 Modo escuro"}</button>
           <button className="tema-btn" onClick={sair}>Sair</button>
@@ -663,7 +670,7 @@ export default function App() {
 
       {/* CONTEÚDO */}
       <main className="main">
-        {tab === "overview" && <Overview vendas={vendas} financeiro={financeiro} trabalhos={trabalhos} />}
+        {tab === "overview" && <Overview vendas={vendas} financeiro={financeiro} trabalhos={trabalhos} dark={dark} />}
         {tab === "vendas" && (
           <Vendas vendas={vendas} salvar={salvarVendas} aviso={aviso} temasExist={temas} />
         )}
@@ -672,7 +679,7 @@ export default function App() {
           <Trabalhos trabalhos={trabalhos} salvar={salvarTrabalhos} aviso={aviso} onAbrirPublicacao={abrirPublicacao} />
         )}
         {tab === "financeiro" && (
-          <Financeiro financeiro={financeiro} salvar={salvarFinanceiro} vendas={vendas} aviso={aviso} onCriarAno={criarAnoFin} />
+          <Financeiro financeiro={financeiro} salvar={salvarFinanceiro} vendas={vendas} aviso={aviso} onCriarAno={criarAnoFin} dark={dark} />
         )}
         {tab === "temas" && (
           <Temas temas={temas} vendas={vendas} trabalhos={trabalhos} onSetLocalTrabalho={setLocalTrabalho} onSetStatusTrabalho={setStatusTrabalho} alvoId={pubAlvo} onAlvoUsado={() => setPubAlvo(null)}
@@ -682,7 +689,7 @@ export default function App() {
         )}
       </main>
 
-      {toast && <div className="toast">{toast}</div>}
+      {toast && <div className={"toast" + (/^erro/i.test(toast) ? " erro" : "")} role="status" aria-live="polite">{toast}</div>}
     </div>
     </ListasCtx.Provider>
   );
@@ -778,7 +785,9 @@ function construirTemas(vendas) {
 /* ============================================================
    VISÃO GERAL
    ============================================================ */
-function Overview({ vendas, financeiro, trabalhos }) {
+function Overview({ vendas, financeiro, trabalhos, dark }) {
+  // série única dos gráficos: azul da marca calibrado por superfície (Recharts não lê var() no fill)
+  const corSerie = dark ? "#5AA7CC" : "#2C7DA0";
   const anos = useMemo(() => {
     const set = new Set();
     vendas.forEach((v) => { const a = anoDeIso(v.data); if (a) set.add(a); });
@@ -828,7 +837,7 @@ function Overview({ vendas, financeiro, trabalhos }) {
   const donut = m.porTipo.map((t) => ({ name: t.tipo, value: t.total, cor: corTipo(t.tipo) }));
   const maxUF = Math.max(...m.porUF.filter((u) => u.uf !== "N/I").map((u) => u.qtd), 1);
   const ufData = m.porUF.filter((u) => u.uf !== "N/I").slice(0, 8)
-    .map((u) => ({ label: `${u.uf} · ${UF_NOME[u.uf]}`, value: u.qtd, cor: "#2C7DA0" }));
+    .map((u) => ({ label: `${u.uf} · ${UF_NOME[u.uf]}`, value: u.qtd, cor: "var(--brand)" }));
 
   const certEmitido = trabalhos.filter((t) => t.status === "Certificado emitido").length;
   const pendentes = trabalhos.filter((t) => t.status !== "Certificado emitido").length;
@@ -852,10 +861,10 @@ function Overview({ vendas, financeiro, trabalhos }) {
       </div>
 
       <div className="kpis">
-        <KPI label="Faturamento" valor={brl(fatTotal)} sub={`${num(m.nVendas)} vendas no período` + (ajusteTotal ? ` · inclui ajustes ${brl(ajusteTotal)}` : "")} cor="#2C7DA0" />
-        <KPI label="Lucro líquido" valor={brl(lucroTotal)} sub={`Custos: ${brl(custoTotal)}` + (fatTotal ? ` · Margem ${Math.round((lucroTotal / fatTotal) * 100)}%` : "")} cor="#2E9E7B" />
-        <KPI label="Clientes únicos" valor={num(m.clientes.length)} sub={`Ticket médio ${brl(m.ticket)}`} cor="#6366A8" />
-        <KPI label="Certificados emitidos" valor={num(certEmitido)} sub={`${num(pendentes)} pendentes`} cor="#E8833A" />
+        <KPI label="Faturamento" valor={brl(fatTotal)} sub={`${num(m.nVendas)} vendas no período` + (ajusteTotal ? ` · inclui ajustes ${brl(ajusteTotal)}` : "")} cor="var(--brand)" />
+        <KPI label="Lucro líquido" valor={brl(lucroTotal)} sub={`Custos: ${brl(custoTotal)}` + (fatTotal ? ` · Margem ${Math.round((lucroTotal / fatTotal) * 100)}%` : "")} cor="var(--ok)" />
+        <KPI label="Clientes únicos" valor={num(m.clientes.length)} sub={`Ticket médio ${brl(m.ticket)}`} cor="#6D5DD3" />
+        <KPI label="Certificados emitidos" valor={num(certEmitido)} sub={`${num(pendentes)} pendentes`} cor="var(--accent)" />
       </div>
 
       <div className="grid-2">
@@ -868,7 +877,7 @@ function Overview({ vendas, financeiro, trabalhos }) {
               <YAxis tick={{ fontSize: 11, fill: "#5B6B73" }} axisLine={false} tickLine={false}
                 tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
               <Tooltip formatter={(v) => brl(v)} cursor={{ fill: "#F0F4F5" }} />
-              <Bar dataKey="total" fill="#2C7DA0" radius={[5, 5, 0, 0]} maxBarSize={46} />
+              <Bar dataKey="total" fill={corSerie} radius={[5, 5, 0, 0]} maxBarSize={46} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -893,13 +902,13 @@ function Overview({ vendas, financeiro, trabalhos }) {
           <div className="card-head"><h3>Destaques</h3></div>
           <div className="destaques">
             <Destaque rotulo="Produto campeão" principal={tipoTop?.tipo || "—"}
-              detalhe={tipoTop ? `${brl(tipoTop.total)} · ${tipoTop.qtd} vendas` : ""} cor={corTipo(tipoTop?.tipo)} />
+              detalhe={tipoTop ? `${brl(tipoTop.total)} · ${tipoTop.qtd} vendas` : ""} />
             <Destaque rotulo="Estado líder" principal={ufTop ? UF_NOME[ufTop.uf] : "—"}
-              detalhe={ufTop ? `${ufTop.qtd} compras · ${brl(ufTop.total)}` : ""} cor="#2C7DA0" />
+              detalhe={ufTop ? `${ufTop.qtd} compras · ${brl(ufTop.total)}` : ""} />
             <Destaque rotulo="Faculdade líder" principal={facTop?.faculdade || "—"}
-              detalhe={facTop ? `${facTop.qtd} compras` : ""} cor="#6366A8" />
+              detalhe={facTop ? `${facTop.qtd} compras` : ""} />
             <Destaque rotulo="Melhor cliente" principal={cliTop?.nome || "—"}
-              detalhe={cliTop ? `${brl(cliTop.total)} · ${cliTop.qtd} trabalhos` : ""} cor="#E8833A" />
+              detalhe={cliTop ? `${brl(cliTop.total)} · ${cliTop.qtd} trabalhos` : ""} />
           </div>
         </div>
       </div>
@@ -907,7 +916,7 @@ function Overview({ vendas, financeiro, trabalhos }) {
       <div className="card">
         <div className="card-head"><h3>Faculdades que mais compram</h3><span className="hint">top 10</span></div>
         <table className="tab">
-          <thead><tr><th>#</th><th>Faculdade</th><th className="r">Compras</th><th className="r">Faturamento</th></tr></thead>
+          <thead><tr><th scope="col">#</th><th scope="col">Faculdade</th><th scope="col" className="r">Compras</th><th scope="col" className="r">Faturamento</th></tr></thead>
           <tbody>
             {m.porFaculdade.slice(0, 10).map((f, i) => (
               <tr key={i}>
@@ -999,16 +1008,21 @@ function Vendas({ vendas, salvar, aviso, temasExist }) {
         acao={<button className="btn" onClick={() => { setEditando(null); setModal(true); }}>+ Nova venda</button>} />
 
       <div className="filtros">
-        <input className="inp busca" placeholder="Buscar por nome, email, faculdade ou tema…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-        <select className="inp" value={fTipo} onChange={(e) => setFTipo(e.target.value)}>
+        <div className="busca-wrap">
+          <span className="busca-ic" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          </span>
+          <input className="inp busca" placeholder="Buscar por nome, email, faculdade ou tema…" aria-label="Buscar venda" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        </div>
+        <select className="inp" aria-label="Filtrar por tipo" value={fTipo} onChange={(e) => setFTipo(e.target.value)}>
           <option value="">Todos os tipos</option>
           {tipos.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        <select className="inp" value={fUF} onChange={(e) => setFUF(e.target.value)}>
+        <select className="inp" aria-label="Filtrar por estado" value={fUF} onChange={(e) => setFUF(e.target.value)}>
           <option value="">Todos os estados</option>
           {ufsDisponiveis.map((u) => <option key={u} value={u}>{u}</option>)}
         </select>
-        <select className="inp" value={fMes} onChange={(e) => setFMes(e.target.value)}>
+        <select className="inp" aria-label="Filtrar por mês" value={fMes} onChange={(e) => setFMes(e.target.value)}>
           <option value="">Todos os meses</option>
           {MESES.map((mez, i) => <option key={i} value={i}>{mez}</option>)}
         </select>
@@ -1022,7 +1036,7 @@ function Vendas({ vendas, salvar, aviso, temasExist }) {
       <div className="card no-pad">
         <table className="tab">
           <thead>
-            <tr><th>Data</th><th>Cliente</th><th>Faculdade</th><th>UF</th><th>Tipo</th><th className="r">Valor</th><th></th></tr>
+            <tr><th scope="col">Data</th><th scope="col">Cliente</th><th scope="col">Faculdade</th><th scope="col">UF</th><th scope="col">Tipo</th><th scope="col" className="r">Valor</th><th scope="col"><span className="sr-only">Ações</span></th></tr>
           </thead>
           <tbody>
             {filtradas.slice(0, limite).map((v) => (
@@ -1037,8 +1051,8 @@ function Vendas({ vendas, salvar, aviso, temasExist }) {
                 <td><span className="tipo-pill" style={{ "--tc": corTipo(v.tipo) }}>{v.tipo}</span></td>
                 <td className="r"><b>{brl(v.valor)}</b></td>
                 <td className="acoes">
-                  <button className="mini" onClick={() => { setEditando(v); setModal(true); }}>editar</button>
-                  <button className="mini del" onClick={() => remover(v.id)}>×</button>
+                  <button className="mini" onClick={() => { setEditando(v); setModal(true); }} aria-label={`Editar venda de ${v.nome || "cliente sem nome"}`}>editar</button>
+                  <button className="mini del" onClick={() => remover(v.id)} aria-label={`Remover venda de ${v.nome || "cliente sem nome"}`} title="Remover venda">×</button>
                 </td>
               </tr>
             ))}
@@ -1047,7 +1061,13 @@ function Vendas({ vendas, salvar, aviso, temasExist }) {
         {filtradas.length > limite && (
           <div className="mais"><button className="btn-ghost" onClick={() => setLimite((l) => l + 60)}>Mostrar mais ({num(filtradas.length - limite)} restantes)</button></div>
         )}
-        {filtradas.length === 0 && <div className="vazio">Nenhuma venda encontrada com esses filtros.</div>}
+        {filtradas.length === 0 && (
+          <div className="vazio">
+            {vendas.length === 0
+              ? "Sem vendas registradas — clique em + Nova venda para começar."
+              : "Nenhuma venda encontrada com esses filtros."}
+          </div>
+        )}
       </div>
 
       {modal && (
@@ -1150,14 +1170,19 @@ function Clientes({ m, vendas, salvarCliente }) {
       <Header titulo="Clientes" sub={`${num(m.clientes.length)} clientes · ${num(recorrentes)} compraram mais de uma vez`} />
 
       <div className="kpis kpis-3">
-        <KPI label="Clientes únicos" valor={num(m.clientes.length)} cor="#6366A8" />
-        <KPI label="Recorrentes (2+ compras)" valor={num(recorrentes)} sub={`${m.clientes.length ? Math.round((recorrentes / m.clientes.length) * 100) : 0}% da base`} cor="#2C7DA0" />
-        <KPI label="Gasto médio por cliente" valor={brl(m.clientes.length ? m.totalFat / m.clientes.length : 0)} cor="#E8833A" />
+        <KPI label="Clientes únicos" valor={num(m.clientes.length)} cor="#6D5DD3" />
+        <KPI label="Recorrentes (2+ compras)" valor={num(recorrentes)} sub={`${m.clientes.length ? Math.round((recorrentes / m.clientes.length) * 100) : 0}% da base`} cor="var(--brand)" />
+        <KPI label="Gasto médio por cliente" valor={brl(m.clientes.length ? m.totalFat / m.clientes.length : 0)} cor="var(--accent)" />
       </div>
 
       <div className="filtros">
-        <input className="inp busca" placeholder="Buscar cliente…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-        <select className="inp" value={ordem} onChange={(e) => setOrdem(e.target.value)}>
+        <div className="busca-wrap">
+          <span className="busca-ic" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          </span>
+          <input className="inp busca" placeholder="Buscar cliente…" aria-label="Buscar cliente" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        </div>
+        <select className="inp sel-ordem" aria-label="Ordenação da lista" value={ordem} onChange={(e) => setOrdem(e.target.value)}>
           <option value="total">Ordenar por total gasto</option>
           <option value="qtd">Ordenar por nº de trabalhos</option>
           <option value="nome">Ordenar por nome</option>
@@ -1166,13 +1191,13 @@ function Clientes({ m, vendas, salvarCliente }) {
 
       <div className="card no-pad">
         <table className="tab">
-          <thead><tr><th>#</th><th>Cliente</th><th>Faculdade</th><th>UF</th><th className="r">Trabalhos</th><th className="r">Total gasto</th><th></th></tr></thead>
+          <thead><tr><th scope="col">#</th><th scope="col">Cliente</th><th scope="col">Faculdade</th><th scope="col">UF</th><th scope="col" className="r">Trabalhos</th><th scope="col" className="r">Total gasto</th><th scope="col"><span className="sr-only">Detalhes</span></th></tr></thead>
           <tbody>
             {lista.slice(0, limite).map((c, i) => (
               <tr key={c.chave} className="row-click" onClick={() => abrir(c)}>
                 <td className="muted">{i + 1}</td>
                 <td>
-                  <div className="cel-nome">{c.nome || "—"}</div>
+                  <button className="link-titulo" onClick={(e) => { e.stopPropagation(); abrir(c); }} title="Ver detalhes do cliente">{c.nome || "—"}</button>
                   <div className="cel-tema">{c.email}</div>
                 </td>
                 <td className="cel-fac">{c.faculdade || "—"}</td>
@@ -1186,6 +1211,13 @@ function Clientes({ m, vendas, salvarCliente }) {
         </table>
         {lista.length > limite && (
           <div className="mais"><button className="btn-ghost" onClick={() => setLimite((l) => l + 50)}>Mostrar mais ({num(lista.length - limite)} restantes)</button></div>
+        )}
+        {lista.length === 0 && (
+          <div className="vazio">
+            {m.clientes.length === 0
+              ? "Sem clientes ainda — eles aparecem aqui conforme as vendas são lançadas."
+              : "Nenhum cliente encontrado com essa busca."}
+          </div>
         )}
       </div>
 
@@ -1207,7 +1239,7 @@ function Clientes({ m, vendas, salvarCliente }) {
               </div>
               <h4 className="sub-h">Histórico de compras</h4>
               <table className="tab">
-                <thead><tr><th>Data</th><th>Tipo</th><th>Tema</th><th className="r">Valor</th></tr></thead>
+                <thead><tr><th scope="col">Data</th><th scope="col">Tipo</th><th scope="col">Tema</th><th scope="col" className="r">Valor</th></tr></thead>
                 <tbody>
                   {sel.compras.sort((a, b) => (b.data || "").localeCompare(a.data || "")).map((v) => (
                     <tr key={v.id}>
@@ -1298,69 +1330,86 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
 
   return (
     <>
-      <Header titulo="Trabalhos" sub={`${num(trabalhos.length)} trabalhos no controle de produção · clique num cartão de status para filtrar`}
+      <Header titulo="Trabalhos" sub={`${num(trabalhos.length)} trabalhos no controle de produção`}
         acao={<button className="btn" onClick={() => setModal(true)}>+ Novo trabalho</button>} />
 
-      <div className="kpis kpis-4">
+      <div className="status-filtros" role="group" aria-label="Filtrar por status">
         {contagem.map(({ s, n }) => (
-          <button key={s} className={"kpi kpi-click " + (fStatus === s ? "kpi-ativo" : "")} onClick={() => setFStatus(fStatus === s ? "" : s)}>
-            <div className="kpi-body">
-              <div className="kpi-label"><span className="kpi-dot" style={{ background: corStatus(s) }} />{s}</div>
-              <div className="kpi-valor">{n}</div>
-            </div>
+          <button key={s} className={"chip-filtro" + (fStatus === s ? " ativo" : "")} aria-pressed={fStatus === s}
+            title={fStatus === s ? "Clique para limpar o filtro" : `Filtrar por ${s}`}
+            onClick={() => setFStatus(fStatus === s ? "" : s)}>
+            <span className="cf-dot" style={{ background: corStatus(s) }} />{s}<b>{n}</b>
           </button>
         ))}
       </div>
 
       <div className="filtros">
-        <input className="inp busca" placeholder="Buscar trabalho pelo título…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-        <select className="inp" value={fTipo} onChange={(e) => setFTipo(e.target.value)}>
+        <div className="busca-wrap">
+          <span className="busca-ic" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          </span>
+          <input className="inp busca" placeholder="Buscar trabalho pelo título…" aria-label="Buscar trabalho pelo título" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        </div>
+        <select className="inp" aria-label="Filtrar por tipo" value={fTipo} onChange={(e) => setFTipo(e.target.value)}>
           <option value="">Todos os tipos</option>
           {tipos.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        <select className="inp" value={ordem} onChange={(e) => setOrdem(e.target.value)}>
+        <select className="inp sel-ordem" aria-label="Ordenação da lista" value={ordem} onChange={(e) => setOrdem(e.target.value)}>
           <option value="recentes">Mais recentes primeiro</option>
           <option value="antigos">Mais antigos primeiro</option>
           <option value="status">Ordenar por status</option>
           <option value="titulo">Ordenar por título</option>
         </select>
-        {fStatus && <button className="btn-ghost" onClick={() => setFStatus("")}>Limpar status: {fStatus}</button>}
       </div>
 
       <div className="card no-pad">
-        <table className="tab">
-          <thead><tr><th>Título</th><th>Tipo</th><th>Adicionado</th><th>Status</th><th></th></tr></thead>
+        <table className="tab tab-trab">
+          <thead><tr>
+            <th scope="col">Título</th><th scope="col">Adicionado</th><th scope="col">Status</th>
+            <th scope="col"><span className="sr-only">Ações</span></th>
+          </tr></thead>
           <tbody>
             {filtrados.map((t) => (
               <tr key={t.id}>
                 <td className="cel-titulo">
                   <a className="link-titulo" href={`#pub=${encodeURIComponent(t.titulo)}`} title="Ver em Publicações e vagas"
                     onClick={(e) => { e.preventDefault(); onAbrirPublicacao(t.titulo); }}>{t.titulo}</a>
-                  {editLocalId === t.id ? (
-                    <input className="onde-inp" autoFocus defaultValue={t.localPublicacao || ""} placeholder="Revista / evento…"
-                      onBlur={(e) => { mudarLocal(t.id, e.target.value.trim()); setEditLocalId(null); }}
-                      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); else if (e.key === "Escape") setEditLocalId(null); }} />
-                  ) : t.localPublicacao ? (
-                    <button className="onde-chip" onClick={() => setEditLocalId(t.id)} title="Editar local de publicação">📍 {t.localPublicacao}</button>
-                  ) : (
-                    <button className="onde-add" onClick={() => setEditLocalId(t.id)}>+ definir onde será publicado</button>
-                  )}
+                  <div className="titulo-meta">
+                    <span className="tipo-pill" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo}</span>
+                    {editLocalId === t.id ? (
+                      <input className="onde-inp" autoFocus defaultValue={t.localPublicacao || ""} placeholder="Revista / evento…"
+                        onBlur={(e) => { mudarLocal(t.id, e.target.value.trim()); setEditLocalId(null); }}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); else if (e.key === "Escape") setEditLocalId(null); }} />
+                    ) : t.localPublicacao ? (
+                      <button className="onde-chip" onClick={() => setEditLocalId(t.id)} title="Editar local de publicação">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                        {t.localPublicacao}
+                      </button>
+                    ) : (
+                      <button className="onde-add" onClick={() => setEditLocalId(t.id)}>+ definir onde será publicado</button>
+                    )}
+                  </div>
                 </td>
-                <td><span className="tipo-pill" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo}</span></td>
-                <td className="nowrap muted">{t.criadoEm ? fmtData(t.criadoEm.slice(0, 10)) : "—"}</td>
+                <td className="nowrap cel-data">{t.criadoEm ? fmtData(t.criadoEm.slice(0, 10)) : "—"}</td>
                 <td>
-                  <select className="status-sel" style={{ "--tc": corStatus(t.status) }}
+                  <select className="status-sel" style={{ "--tc": corStatus(t.status) }} aria-label={`Status do trabalho ${t.titulo}`}
                     value={t.status} onChange={(e) => { if (e.target.value === "__novo") { const s = prompt("Nome do novo status:"); if (s && s.trim()) mudarStatus(t.id, s.trim()); } else mudarStatus(t.id, e.target.value); }}>
                     {statusDisp.map((s) => <option key={s} value={s}>{s}</option>)}
-                    <option value="__novo">➕ Novo status…</option>
+                    <option value="__novo">Criar novo status…</option>
                   </select>
                 </td>
-                <td className="acoes"><button className="mini del" onClick={() => remover(t.id)}>×</button></td>
+                <td className="acoes"><button className="mini del" onClick={() => remover(t.id)} aria-label={`Remover trabalho ${t.titulo}`} title="Remover trabalho">×</button></td>
               </tr>
             ))}
           </tbody>
         </table>
-        {filtrados.length === 0 && <div className="vazio">Nenhum trabalho encontrado.</div>}
+        {filtrados.length === 0 && (
+          <div className="vazio">
+            {trabalhos.length === 0
+              ? "Sem trabalhos cadastrados — clique em + Novo trabalho para começar."
+              : "Nenhum trabalho encontrado com esses filtros."}
+          </div>
+        )}
       </div>
 
       {modal && <FormTrabalho onSalvar={addTrab} onClose={() => setModal(false)} />}
@@ -1390,7 +1439,10 @@ function FormTrabalho({ onSalvar, onClose }) {
 /* ============================================================
    FINANCEIRO
    ============================================================ */
-function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
+function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
+  // séries dos gráficos calibradas por superfície (Recharts não lê var() no fill)
+  const corSerie = dark ? "#5AA7CC" : "#2C7DA0";
+  const corLucro = dark ? "#3FB380" : "#2E9E7B";
   const anos = useMemo(() => [...new Set(financeiro.map((f) => f.ano))].sort((a, b) => b - a), [financeiro]);
   const [ano, setAno] = useState(null);
   // abre no ano que tem dados (evita cair num ano recém-criado e vazio)
@@ -1497,7 +1549,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
 
       <div className="periodo-bar">
         <span className="periodo-lab">Ano</span>
-        <select className="inp" value={anoSel ?? ""} onChange={(e) => setAno(Number(e.target.value))}>
+        <select className="inp" aria-label="Ano do fechamento" value={anoSel ?? ""} onChange={(e) => setAno(Number(e.target.value))}>
           {anos.length === 0 && <option value="">—</option>}
           {anos.map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
@@ -1508,9 +1560,9 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
       ) : (
         <>
           <div className="kpis kpis-3">
-            <KPI label="Faturamento no ano" valor={brl(tot.faturamento)} cor="#2C7DA0" />
-            <KPI label="Custo total no ano" valor={brl(tot.custoTotal)} sub={`Publicação ${brl(tot.taxaPublicacao)} · Ads ${brl(tot.custoAds)}`} cor="#C2477A" />
-            <KPI label="Lucro líquido no ano" valor={brl(tot.lucro)} sub={tot.faturamento ? `Margem ${Math.round((tot.lucro / tot.faturamento) * 100)}%` : ""} cor="#2E9E7B" />
+            <KPI label="Faturamento no ano" valor={brl(tot.faturamento)} cor="var(--brand)" />
+            <KPI label="Custo total no ano" valor={brl(tot.custoTotal)} sub={`Publicação ${brl(tot.taxaPublicacao)} · Ads ${brl(tot.custoAds)}`} cor="var(--danger)" />
+            <KPI label="Lucro líquido no ano" valor={brl(tot.lucro)} sub={tot.faturamento ? `Margem ${Math.round((tot.lucro / tot.faturamento) * 100)}%` : ""} cor="var(--ok)" />
           </div>
 
           <div className="card">
@@ -1521,8 +1573,8 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
                 <XAxis dataKey="mes" tick={{ fontSize: 12, fill: "#5B6B73" }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: "#5B6B73" }} axisLine={false} tickLine={false} tickFormatter={(v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
                 <Tooltip formatter={(v) => brl(v)} cursor={{ fill: "#F0F4F5" }} />
-                <Bar dataKey="Faturamento" fill="#2C7DA0" radius={[4, 4, 0, 0]} maxBarSize={26} />
-                <Bar dataKey="Lucro" fill="#2E9E7B" radius={[4, 4, 0, 0]} maxBarSize={26} />
+                <Bar dataKey="Faturamento" fill={corSerie} radius={[4, 4, 0, 0]} maxBarSize={26} />
+                <Bar dataKey="Lucro" fill={corLucro} radius={[4, 4, 0, 0]} maxBarSize={26} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -1533,9 +1585,9 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
               <table className="tab fin">
                 <thead>
                   <tr>
-                    <th>Mês</th><th className="r">Faturamento</th><th className="r">Taxa public.</th>
-                    <th className="r">Ads</th><th className="r">Custo fixo</th><th className="r">Extra</th>
-                    <th className="r">Custo total</th><th className="r">Lucro</th><th></th>
+                    <th scope="col">Mês</th><th scope="col" className="r">Faturamento</th><th scope="col" className="r">Taxa public.</th>
+                    <th scope="col" className="r">Ads</th><th scope="col" className="r">Custo fixo</th><th scope="col" className="r">Extra</th>
+                    <th scope="col" className="r">Custo total</th><th scope="col" className="r">Lucro</th><th scope="col"><span className="sr-only">Ações</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1551,7 +1603,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
                       <td className="r muted">{brl(l.custoExtra)}{l.custoExtraDesc ? <div className="extra-desc" title={l.custoExtraDesc}>{l.custoExtraDesc}</div> : null}</td>
                       <td className="r neg"><b>{brl(l.custoTotal)}</b></td>
                       <td className="r"><b className={l.lucro >= 0 ? "pos" : "negv"}>{brl(l.lucro)}</b></td>
-                      <td className="acoes"><button className="mini" onClick={() => setEditId(l.id)}>editar</button></td>
+                      <td className="acoes"><button className="mini" onClick={() => setEditId(l.id)} aria-label={`Editar fechamento de ${l.mes}`}>editar</button></td>
                     </tr>
                   ))}
                   <tr className="row-total">
@@ -1562,7 +1614,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
                     <td className="r">{brl(tot.custoFixo)}</td>
                     <td className="r">{brl(tot.custoExtra)}</td>
                     <td className="r">{brl(tot.custoTotal)}</td>
-                    <td className="r"><b className="pos">{brl(tot.lucro)}</b></td>
+                    <td className="r"><b className={tot.lucro >= 0 ? "pos" : "negv"}>{brl(tot.lucro)}</b></td>
                     <td></td>
                   </tr>
                 </tbody>
@@ -1577,7 +1629,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
             </div>
             <div className="scroll-x">
               <table className="tab mov">
-                <thead><tr><th>Quando</th><th>Movimentação</th><th className="r">Valor</th></tr></thead>
+                <thead><tr><th scope="col">Quando</th><th scope="col">Movimentação</th><th scope="col" className="r">Valor</th></tr></thead>
                 <tbody>
                   {movimentacoes.slice(0, LIM_MOV).map((m, i) => (
                     <tr key={i}>
@@ -1596,12 +1648,12 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
           <div className="card">
             <div className="card-head"><h3>Comparar meses</h3><span className="hint">escolha dois meses (de qualquer ano)</span></div>
             <div className="cmp-pick">
-              <select className="inp" value={cmpA} onChange={(e) => setCmpA(e.target.value)}>
+              <select className="inp" aria-label="Primeiro mês da comparação" value={cmpA} onChange={(e) => setCmpA(e.target.value)}>
                 <option value="">Mês A…</option>
                 {mesesComp.map((m) => <option key={m.key} value={m.key}>{m.rot}</option>)}
               </select>
               <span className="cmp-vs">vs</span>
-              <select className="inp" value={cmpB} onChange={(e) => setCmpB(e.target.value)}>
+              <select className="inp" aria-label="Segundo mês da comparação" value={cmpB} onChange={(e) => setCmpB(e.target.value)}>
                 <option value="">Mês B…</option>
                 {mesesComp.map((m) => <option key={m.key} value={m.key}>{m.rot}</option>)}
               </select>
@@ -1609,7 +1661,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno }) {
             {rA && rB ? (
               <div className="scroll-x">
                 <table className="tab cmp">
-                  <thead><tr><th></th><th className="r">{rA.rot}</th><th className="r">{rB.rot}</th><th className="r">Diferença</th></tr></thead>
+                  <thead><tr><th scope="col"><span className="sr-only">Métrica</span></th><th scope="col" className="r">{rA.rot}</th><th scope="col" className="r">{rB.rot}</th><th scope="col" className="r">Diferença</th></tr></thead>
                   <tbody>
                     <tr><td>Entrou (faturamento)</td><td className="r">{brl(rA.entrou)}</td><td className="r">{brl(rB.entrou)}</td><td className="r">{difCell(rA.entrou, rB.entrou, true)}</td></tr>
                     <tr><td>Saiu (custos)</td><td className="r neg">{brl(rA.saiu)}</td><td className="r neg">{brl(rB.saiu)}</td><td className="r">{difCell(rA.saiu, rB.saiu, false)}</td></tr>
@@ -1716,7 +1768,12 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
         acao={<button className="btn" onClick={() => setModalTema(true)}>+ Nova publicação</button>} />
 
       <div className="filtros">
-        <input className="inp busca" placeholder="Buscar publicação…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        <div className="busca-wrap">
+          <span className="busca-ic" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          </span>
+          <input className="inp busca" placeholder="Buscar publicação…" aria-label="Buscar publicação" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        </div>
         <label className="check"><input type="checkbox" checked={soComVaga} onChange={(e) => setSoComVaga(e.target.checked)} /> só com vaga aberta</label>
       </div>
 
@@ -1725,7 +1782,6 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
           {lista.map((t) => {
             const restantes = t.maxVagas - t.participantes.length;
             const cheio = restantes <= 0;
-            const pct = Math.min(100, (t.participantes.length / t.maxVagas) * 100);
             return (
               <button key={t.id} className={"pub-item" + (selId === t.id ? " ativo" : "")}
                 onClick={() => { setSelId(t.id); window.history.replaceState(null, "", "#pub=" + encodeURIComponent(t.nome)); }}>
@@ -1735,15 +1791,20 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
                     {cheio ? "Lotado" : `${restantes} vaga${restantes > 1 ? "s" : ""}`}
                   </span>
                 </div>
-                <div className="pub-item-prog"><div className="pub-item-fill" style={{ width: `${pct}%`, background: cheio ? "var(--danger)" : "var(--brand)" }} /></div>
-                <div className="pub-item-sub">
-                  <span className="chip-tipo sm" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo || "Artigo"}</span>
-                  <span className="pub-item-ocup">{t.participantes.length}/{t.maxVagas}</span>
+                <div className="pub-item-meta">
+                  <span className="tipo-pill" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo || "Artigo"}</span>
+                  <span className="pub-item-ocup">{t.participantes.length}/{t.maxVagas} ocupadas</span>
                 </div>
               </button>
             );
           })}
-          {lista.length === 0 && <div className="vazio">Nenhuma publicação encontrada.</div>}
+          {lista.length === 0 && (
+            <div className="vazio">
+              {temas.length === 0
+                ? "Sem publicações ainda — clique em + Nova publicação para começar."
+                : "Nenhuma publicação encontrada com esses filtros."}
+            </div>
+          )}
         </div>
 
         <div className="pub-detalhe card" ref={detalheRef}>
@@ -1770,7 +1831,6 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, statusTrab = nu
   const { tipos, status: statusDisp } = useContext(ListasCtx);
   const restantes = t.maxVagas - t.participantes.length;
   const cheio = restantes <= 0;
-  const pct = Math.min(100, (t.participantes.length / t.maxVagas) * 100);
   const [editandoNome, setEditandoNome] = useState(false);
   const [nomeTmp, setNomeTmp] = useState("");
   const [editP, setEditP] = useState(null);
@@ -1839,60 +1899,66 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, statusTrab = nu
           <h3 className="dp-nome">{t.nome} <button className="mini dp-edit-nome" onClick={() => { setNomeTmp(t.nome); setEditandoNome(true); }}>editar nome</button></h3>
         )}
       </div>
-      <div className="dp-prog"><div className="dp-prog-fill" style={{ width: `${pct}%`, background: cheio ? "var(--danger)" : "var(--brand)" }} /></div>
-      <div className="dp-ocup">{t.participantes.length} de {t.maxVagas} vagas ocupadas{t.area ? ` · ${t.area}` : ""}</div>
+      <div className="dp-meta">
+        <span className={"vagas-badge " + (cheio ? "b-cheio" : restantes <= 2 ? "b-quase" : "b-ok")}>
+          {cheio ? "Lotado" : `${restantes} vaga${restantes > 1 ? "s" : ""}`}
+        </span>
+        <span className="tipo-pill" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo || "Artigo"}</span>
+        <span className="dp-meta-txt">{t.participantes.length}/{t.maxVagas} ocupadas{t.area ? ` · ${t.area}` : ""}</span>
+      </div>
 
       <div className="dp-fin">
         <div className="dp-fin-item"><span>Faturamento</span><b>{brl(faturamento)}</b></div>
         <div className="dp-fin-item"><span>Taxa de publicação</span><b className={(t.taxa || 0) > 0 ? "negv" : ""}>{brl(t.taxa || 0)}</b></div>
-        <div className="dp-fin-item"><span>Lucro</span><b className={lucro >= 0 ? "pos" : "negv"}>{brl(lucro)}</b></div>
+        <div className="dp-fin-lucro"><span>Lucro</span><b className={lucro >= 0 ? "pos" : "negv"}>{brl(lucro)}</b></div>
       </div>
 
-      <div className="dp-config">
-        <div className="dp-sub">Dados da publicação</div>
-        <div className="dp-controles">
-          <label className="ep-campo">Tipo
-            <select className="max-inp wide" value={t.tipo || "Artigo"} onChange={(e) => onEdit(t.id, { tipo: e.target.value })}>
-              {tipos.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
-            </select>
-          </label>
-          <label className="ep-campo">Vagas
-            <input type="number" min="1" className="max-inp" value={t.maxVagas} onChange={(e) => onEdit(t.id, { maxVagas: parseInt(e.target.value, 10) || 1 })} />
-          </label>
-          <label className="check sm grad-check"><input type="checkbox" checked={!!t.requiresGrad} onChange={(e) => onEdit(t.id, { requiresGrad: e.target.checked })} /> exige graduado</label>
-          {statusTrab != null && (
-            <label className="ep-campo">Status do trabalho
-              <select className="status-sel" style={{ "--tc": corStatus(statusTrab) }} value={statusTrab}
-                onChange={(e) => { if (e.target.value === "__novo") { const s = prompt("Nome do novo status:"); if (s && s.trim()) onSetStatus(s.trim()); } else onSetStatus(e.target.value); }}>
-                {statusDisp.map((s) => <option key={s} value={s}>{s}</option>)}
-                <option value="__novo">➕ Novo status…</option>
-              </select>
-            </label>
-          )}
+      <div className="dp-props">
+        <div className="dp-prop">
+          <span className="dp-prop-lab" id={`lab-tipo-${t.id}`}>Tipo</span>
+          <select className="max-inp wide" aria-labelledby={`lab-tipo-${t.id}`} value={t.tipo || "Artigo"} onChange={(e) => onEdit(t.id, { tipo: e.target.value })}>
+            {tipos.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
+          </select>
         </div>
-
-        <div className="dp-local">
-          <span className="dp-local-lab">Onde será publicado</span>
-          <input className="inp sm" defaultValue={localPub} placeholder="Revista / evento (ex.: Revista Brasileira de Cardiologia)"
+        <div className="dp-prop">
+          <span className="dp-prop-lab" id={`lab-vagas-${t.id}`}>Vagas</span>
+          <input type="number" min="1" className="max-inp" aria-labelledby={`lab-vagas-${t.id}`} value={t.maxVagas} onChange={(e) => onEdit(t.id, { maxVagas: parseInt(e.target.value, 10) || 1 })} />
+        </div>
+        <div className="dp-prop">
+          <span className="dp-prop-lab">Graduado</span>
+          <label className="check sm"><input type="checkbox" checked={!!t.requiresGrad} onChange={(e) => onEdit(t.id, { requiresGrad: e.target.checked })} /> exige um graduado</label>
+        </div>
+        {statusTrab != null && (
+          <div className="dp-prop">
+            <span className="dp-prop-lab" id={`lab-status-${t.id}`}>Status do trabalho</span>
+            <select className="status-sel" style={{ "--tc": corStatus(statusTrab) }} aria-labelledby={`lab-status-${t.id}`} value={statusTrab}
+              onChange={(e) => { if (e.target.value === "__novo") { const s = prompt("Nome do novo status:"); if (s && s.trim()) onSetStatus(s.trim()); } else onSetStatus(e.target.value); }}>
+              {statusDisp.map((s) => <option key={s} value={s}>{s}</option>)}
+              <option value="__novo">Criar novo status…</option>
+            </select>
+          </div>
+        )}
+        <div className="dp-prop full">
+          <span className="dp-prop-lab" id={`lab-local-${t.id}`}>Onde será publicado</span>
+          <input className="inp sm dp-prop-flex" aria-labelledby={`lab-local-${t.id}`} defaultValue={localPub} placeholder="Revista / evento (ex.: Revista Brasileira de Cardiologia)"
             onBlur={(e) => { const v = e.target.value.trim(); if (onSetLocal && v !== (localPub || "")) onSetLocal(v); }} />
         </div>
-
-        <div className="dp-taxa">
+        <div className="dp-prop full">
+          <span className="dp-prop-lab">Taxa de publicação</span>
           {t.taxaLancada ? (
-            <span className="dp-taxa-ok">Taxa de publicação: <b>{brl(t.taxa)}</b> · lançada no financeiro</span>
+            <span className="dp-taxa-ok">{brl(t.taxa)} · lançada no financeiro</span>
           ) : (
-            <>
-              <span className="dp-taxa-lab">Taxa de publicação (custo único)</span>
-              <input className="inp sm dp-taxa-val" inputMode="decimal" placeholder="R$" value={taxaVal} onChange={(e) => setTaxaVal(e.target.value)} />
-              <input className="inp sm" type="date" value={taxaData} onChange={(e) => setTaxaData(e.target.value)} />
+            <span className="dp-taxa-form">
+              <input className="inp sm dp-taxa-val" inputMode="decimal" placeholder="R$" aria-label="Valor da taxa de publicação" value={taxaVal} onChange={(e) => setTaxaVal(e.target.value)} />
+              <input className="inp sm" type="date" aria-label="Data da taxa" value={taxaData} onChange={(e) => setTaxaData(e.target.value)} />
               <button className="btn sm" onClick={lancar}>lançar no financeiro</button>
-            </>
+            </span>
           )}
         </div>
       </div>
 
-      <div className="dp-part-head">
-        <h4 className="dp-sub" style={{ margin: 0 }}>Participantes ({t.participantes.length})</h4>
+      <div className="dp-sec-head">
+        <h4 className="dp-sub">Participantes ({t.participantes.length})</h4>
         {t.participantes.length > 0 && <button className="mini copiar-btn" onClick={copiarAutores}>{copiado ? "✓ copiado!" : "copiar autores"}</button>}
       </div>
 
@@ -1928,34 +1994,32 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, statusTrab = nu
         ? <div className="dp-lotado">Publicação lotada ({t.maxVagas}/{t.maxVagas}). Aumente as vagas para adicionar mais pessoas.</div>
         : <FormPart tema={t} onAdd={(d) => onAddPart(t, d)} />}
 
-      <div className="dp-cert">
-        <div className="dp-cert-top">
-          <h4 className="dp-sub" style={{ margin: 0 }}>Certificados</h4>
-          {t.certificadoUrl ? (
-            <span className="cert-status">
-              <a href={t.certificadoUrl} target="_blank" rel="noreferrer">ver PDF</a>
-              <label className="mini cert-file">{subindoCert ? "enviando…" : "trocar"}<input type="file" accept="application/pdf" onChange={enviarCert} /></label>
-            </span>
-          ) : (
-            <label className="btn sm cert-file">{subindoCert ? "enviando…" : "Subir certificado (PDF)"}<input type="file" accept="application/pdf" onChange={enviarCert} /></label>
-          )}
-        </div>
+      <div className="dp-sec-head">
+        <h4 className="dp-sub">Certificados</h4>
         {t.certificadoUrl ? (
-          <ul className="cert-lista">
-            {t.participantes.map((p) => (
-              <li key={p.id}>
-                <span className="cert-nome">{p.nome}</span>
-                {p.telefone
-                  ? <a className="btn sm wa-btn" href={linkWhats(p)} target="_blank" rel="noreferrer">📲 Enviar no WhatsApp</a>
-                  : <span className="cert-sem-tel">sem telefone — adicione no “editar”</span>}
-              </li>
-            ))}
-            {t.participantes.length === 0 && <li className="cert-sem-tel">Sem participantes ainda.</li>}
-          </ul>
+          <span className="cert-status">
+            <a href={t.certificadoUrl} target="_blank" rel="noreferrer">ver PDF</a>
+            <label className="mini cert-file">{subindoCert ? "enviando…" : "trocar"}<input type="file" accept="application/pdf" onChange={enviarCert} /></label>
+          </span>
         ) : (
-          <p className="cert-hint">Suba o PDF do certificado pra liberar o envio pra cada participante pelo WhatsApp. (O “Enviar a todos” automático entra depois, quando o número/API estiver configurado.)</p>
+          <label className="btn sm cert-file">{subindoCert ? "enviando…" : "Subir certificado (PDF)"}<input type="file" accept="application/pdf" onChange={enviarCert} /></label>
         )}
       </div>
+      {t.certificadoUrl ? (
+        <ul className="cert-lista">
+          {t.participantes.map((p) => (
+            <li key={p.id}>
+              <span className="cert-nome">{p.nome}</span>
+              {p.telefone
+                ? <a className="btn sm wa-btn" href={linkWhats(p)} target="_blank" rel="noreferrer">Enviar no WhatsApp</a>
+                : <span className="cert-sem-tel">sem telefone — adicione no “editar”</span>}
+            </li>
+          ))}
+          {t.participantes.length === 0 && <li className="cert-sem-tel">Sem participantes ainda.</li>}
+        </ul>
+      ) : (
+        <p className="cert-hint">Suba o PDF do certificado pra liberar o envio pra cada participante pelo WhatsApp. (O “Enviar a todos” automático entra depois, quando o número/API estiver configurado.)</p>
+      )}
 
       <div className="dp-footer">
         <button className="mini del" onClick={onExcluir}>excluir esta publicação</button>
@@ -2083,42 +2147,54 @@ function Estilos() {
   return (
     <style>{`
 * { box-sizing: border-box; margin: 0; padding: 0; }
+/* ============ TOKENS · PublicaMED UI 2.0 ============
+   Tinta: ink > muted > muted2 (3 níveis, AA garantido)
+   Cor de marca: --brand p/ texto e links (AA em 13px), --brand-solid p/ fundos com texto branco
+   Sombra: cartões = borda hairline (sem sombra); sombra só em elementos flutuantes
+   Escala tipo: 11 overline · 12 meta · 13 corpo · 14 ênfase · 16 seção · 20 página · 24 stat
+   Ritmo: base 4px (4/8/12/16/20/24/32/40) · Raios: 6/8/12/999 */
 :root{
-  --ink:#22334A; --brand:#2C7DA0; --brand-hover:#26708F; --brand-deep:#1D3557; --accent:#E8833A;
-  --bg:#F6F8FA; --surface:#FFFFFF; --soft:#F3F6F9; --hover:#F8FAFC; --track:#E9EEF3;
-  --border:#E4E9EF; --border-strong:#CFDAE3; --divider:#EDF1F5; --muted:#5A6B7E; --muted2:#6F7E90;
-  --brand-soft:rgba(44,125,160,.10); --ring:0 0 0 3px rgba(44,125,160,.20);
-  --ok:#17845C; --ok-soft:rgba(23,132,92,.10); --ok-border:rgba(23,132,92,.28);
-  --warn:#8F5E00; --warn-soft:rgba(224,169,59,.14); --warn-border:rgba(224,169,59,.40);
-  --danger:#B93A6C; --danger-soft:rgba(185,58,108,.10); --danger-border:rgba(185,58,108,.32);
+  --ink:#17222E; --muted:#4D5D6D; --muted2:#5D6D7D;
+  --brand:#256E93; --brand-hover:#1E5F82; --brand-deep:#173A56; --accent:#DD6B20;
+  --brand-solid:#256E93; --brand-solid-hover:#1E5F82;
+  --bg:#F7F8FA; --surface:#FFFFFF; --soft:#F2F5F8; --hover:#F6F8FA; --track:#E8EDF2;
+  --border:#E3E8EE; --border-strong:#C9D3DD; --divider:#EDF1F5;
+  --brand-soft:rgba(37,110,147,.09); --ring:0 0 0 3px rgba(37,110,147,.25);
+  --ok:#0F7A4D; --ok-soft:rgba(15,122,77,.09); --ok-border:rgba(15,122,77,.28);
+  --warn:#8F5E00; --warn-soft:rgba(180,124,10,.12); --warn-border:rgba(180,124,10,.38);
+  --danger:#B03063; --danger-soft:rgba(176,48,99,.09); --danger-border:rgba(176,48,99,.30);
   --shadow-1:0 1px 2px rgba(16,24,40,.05);
-  --shadow-2:0 1px 2px rgba(16,24,40,.05), 0 4px 12px rgba(16,24,40,.07);
+  --shadow-2:0 2px 4px rgba(16,24,40,.04), 0 6px 16px rgba(16,24,40,.08);
   --shadow-3:0 4px 8px rgba(16,24,40,.06), 0 16px 40px rgba(16,24,40,.16);
-  --r-sm:6px; --r-md:10px; --r-lg:14px;
+  --r-sm:6px; --r-md:8px; --r-lg:12px; --r-full:999px;
+  --sel-chevron:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%235D6D7D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
 }
 .root.dark{
-  --ink:#E6EDF5; --brand:#3D8FB3; --brand-hover:#4A9CBF; --brand-deep:#8FC1DA;
-  --bg:#0F1520; --surface:#161E2B; --soft:#121926; --hover:#1C2634; --track:#232E3E;
-  --border:#263243; --border-strong:#334155; --divider:#1E2937; --muted:#98A8BA; --muted2:#8296AB;
-  --brand-soft:rgba(111,174,203,.13); --ring:0 0 0 3px rgba(111,174,203,.25);
-  --ok:#4CC38A; --ok-soft:rgba(76,195,138,.13); --ok-border:rgba(76,195,138,.30);
-  --warn:#E5B35D; --warn-soft:rgba(229,179,93,.13); --warn-border:rgba(229,179,93,.32);
-  --danger:#E58BB0; --danger-soft:rgba(229,139,176,.12); --danger-border:rgba(229,139,176,.30);
+  --ink:#E7EDF3; --muted:#A7B4C2; --muted2:#8B99A9;
+  --brand:#5AA7CC; --brand-hover:#74B7D8; --brand-deep:#A8CFE3; --accent:#E8833A;
+  --brand-solid:#27719A; --brand-solid-hover:#2E80AC;
+  --bg:#0E141C; --surface:#151C26; --soft:#11171F; --hover:#1A222D; --track:#222D3A;
+  --border:#28323F; --border-strong:#3A4654; --divider:#1E2833;
+  --brand-soft:rgba(90,167,204,.13); --ring:0 0 0 3px rgba(90,167,204,.30);
+  --ok:#3FB380; --ok-soft:rgba(63,179,128,.13); --ok-border:rgba(63,179,128,.30);
+  --warn:#D9A84E; --warn-soft:rgba(217,168,78,.13); --warn-border:rgba(217,168,78,.32);
+  --danger:#E2739E; --danger-soft:rgba(226,115,158,.12); --danger-border:rgba(226,115,158,.30);
   --shadow-1:0 1px 2px rgba(0,0,0,.32);
   --shadow-2:0 2px 4px rgba(0,0,0,.35), 0 6px 16px rgba(0,0,0,.35);
   --shadow-3:0 4px 12px rgba(0,0,0,.45), 0 20px 48px rgba(0,0,0,.55);
+  --sel-chevron:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%238B99A9" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
 }
 .root{ display:flex; min-height:100vh; background:var(--bg); color-scheme:light;
   font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; color:var(--ink);
-  font-size:14px; -webkit-font-smoothing:antialiased; }
+  font-size:14px; line-height:1.45; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
 .root.dark{ color-scheme:dark; }
-.root :is(table,td,th,.kpi-valor,.barra-val,.leg-val,.p-valor,.mov-val,.dp-fin-item b){ font-variant-numeric:tabular-nums; }
+.root :is(table,td,th,.kpi-valor,.barra-val,.leg-val,.p-valor,.mov-val,.dp-fin-item b,.dp-fin-lucro b){ font-variant-numeric:tabular-nums; }
 
 /* SIDEBAR — âncora navy da marca nos dois temas */
 .side{ width:236px; flex-shrink:0; background:#1C3252; color:#CFE0E3; display:flex; flex-direction:column;
   position:sticky; top:0; height:100vh; border-right:1px solid rgba(255,255,255,.06); }
 .brand{ display:flex; flex-direction:column; align-items:flex-start; gap:7px; padding:24px 22px 16px; }
-.brand-sub{ font-size:11px; color:#8FA3B0; margin-top:1px; }
+.brand-sub{ font-size:11px; color:#93A9B9; margin-top:1px; letter-spacing:.01em; }
 nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 .nav{ display:flex; align-items:center; gap:10px; padding:9px 12px; border:none; background:transparent;
   color:rgba(214,230,240,.72); font-size:13px; border-radius:8px; cursor:pointer; text-align:left; width:100%; font-weight:500;
@@ -2128,7 +2204,7 @@ nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 .nav.ativo .nav-ic{ color:#8FCBE8; opacity:1; }
 .nav-ic{ width:18px; text-align:center; font-size:13px; opacity:.85; }
 .side-foot{ margin-top:auto; padding:16px; }
-.persist{ font-size:11px; display:flex; align-items:center; gap:7px; color:#7E97A0; line-height:1.4; }
+.persist{ font-size:11px; display:flex; align-items:center; gap:8px; color:#8FA6B8; line-height:1.4; }
 .pdot{ width:7px; height:7px; border-radius:50%; flex-shrink:0; }
 .persist.on .pdot{ background:#3FBF8F; box-shadow:0 0 0 3px rgba(63,191,143,.18); }
 .persist.off .pdot{ background:var(--accent); }
@@ -2136,11 +2212,11 @@ nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 /* topbar + sidebar-gaveta (só no celular; escondidos no desktop) */
 .topbar{ display:none; position:fixed; top:0; left:0; right:0; height:54px; z-index:30; align-items:center; gap:10px;
   padding:0 8px; background:#1C3252; box-shadow:0 2px 12px rgba(13,25,40,.22); }
-.topbar-tit{ color:#fff; font-weight:600; font-size:14.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.topbar-tit{ color:#fff; font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hamb{ background:transparent; border:none; color:#fff; font-size:23px; line-height:1; cursor:pointer; padding:6px 10px; border-radius:9px; flex-shrink:0; }
 .hamb:active{ background:rgba(255,255,255,.14); }
 .tema-top{ margin-left:auto; font-size:17px; }
-.tema-btn{ width:100%; margin-top:10px; background:transparent; color:#A9C0C6; border:1px solid rgba(255,255,255,.15); border-radius:8px; padding:8px 10px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit; }
+.tema-btn{ width:100%; margin-top:10px; background:transparent; color:#A9C0C6; border:1px solid rgba(255,255,255,.15); border-radius:var(--r-md); padding:8px 10px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; transition:background .14s ease; }
 .tema-btn:hover{ background:rgba(255,255,255,.06); }
 .side-backdrop{ display:none; position:fixed; inset:0; background:rgba(13,25,40,.5); z-index:55; }
 .side-close{ display:none; position:absolute; top:14px; right:12px; background:transparent; border:none; color:#A9C0C6; font-size:26px; line-height:1; cursor:pointer; }
@@ -2148,28 +2224,29 @@ nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 /* MAIN */
 .main{ flex:1; padding:28px 40px 64px; min-width:0; max-width:1840px; }
 .head{ display:flex; justify-content:space-between; align-items:flex-end; gap:16px; margin-bottom:24px; }
-.head h1{ font-size:22px; font-weight:700; letter-spacing:-.02em; }
-.head-sub{ color:var(--muted); font-size:13px; margin-top:3px; }
+.head h1{ font-size:20px; font-weight:600; letter-spacing:-.02em; line-height:1.2; }
+.head-sub{ color:var(--muted); font-size:13px; margin-top:4px; }
 
 /* KPIs */
 .kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:20px; }
 .kpis-3{ grid-template-columns:repeat(3,1fr); }
 .kpis-4{ grid-template-columns:repeat(4,1fr); }
 .kpi{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden;
-  display:flex; box-shadow:var(--shadow-1); }
+  display:flex; }
 .kpi-body{ padding:16px 18px; min-width:0; }
-.kpi-label{ font-size:11px; color:var(--muted2); font-weight:600; text-transform:uppercase; letter-spacing:.06em;
-  display:flex; align-items:center; gap:7px; }
+.kpi-label{ font-size:11px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.06em;
+  display:flex; align-items:center; gap:8px; }
 .kpi-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-.kpi-valor{ font-size:26px; font-weight:700; margin-top:6px; letter-spacing:-.02em; }
-.kpi-sub{ font-size:12px; color:var(--muted2); margin-top:2px; }
-.kpi-click{ cursor:pointer; text-align:left; font-family:inherit; transition:box-shadow .12s, transform .12s, border-color .12s; }
-.kpi-click:hover{ border-color:var(--border-strong); box-shadow:var(--shadow-2); transform:translateY(-1px); }
+.kpi-valor{ font-size:24px; font-weight:600; margin-top:8px; letter-spacing:-.02em; line-height:1.15; }
+.kpi-sub{ font-size:12px; color:var(--muted2); margin-top:3px; }
+.kpi-click{ cursor:pointer; text-align:left; font-family:inherit; transition:border-color .14s ease, background .14s ease; }
+.kpi-click:hover{ border-color:var(--border-strong); background:var(--hover); }
+.kpi-click:focus-visible{ box-shadow:var(--ring); outline:none; }
 .kpi-ativo{ border-color:var(--brand); box-shadow:var(--ring); }
 
 /* CARDS */
 .card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:20px;
-  margin-bottom:16px; box-shadow:var(--shadow-1); }
+  margin-bottom:16px; }
 .card.no-pad{ padding:0; overflow:hidden; }
 .card-head{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:14px; }
 .card-head.pad{ padding:16px 20px 0; }
@@ -2181,7 +2258,7 @@ nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 /* DONUT */
 .donut-wrap{ display:flex; align-items:center; gap:8px; }
 .donut-legend{ flex:1; display:flex; flex-direction:column; gap:7px; }
-.leg{ display:flex; align-items:center; gap:8px; font-size:12.5px; }
+.leg{ display:flex; align-items:center; gap:8px; font-size:12px; }
 .dot{ width:9px; height:9px; border-radius:3px; flex-shrink:0; }
 .leg-name{ flex:1; color:var(--ink); }
 .leg-val{ font-weight:700; color:var(--muted); }
@@ -2203,11 +2280,13 @@ nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 
 /* FILTROS */
 .filtros{ display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
-.inp{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 12px;
-  font-size:13px; color:var(--ink); font-family:inherit; outline:none; transition:border-color .12s, box-shadow .12s; }
+.inp{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); padding:8px 12px;
+  font-size:13px; color:var(--ink); font-family:inherit; outline:none; transition:border-color .14s ease, box-shadow .14s ease; }
 .inp::placeholder{ color:var(--muted2); }
 .inp:hover{ border-color:var(--border-strong); }
 .inp:focus{ border-color:var(--brand); box-shadow:var(--ring); }
+select.inp{ appearance:none; background-image:var(--sel-chevron); background-repeat:no-repeat;
+  background-position:right 10px center; padding-right:30px; }
 .inp.busca{ flex:1; min-width:230px; }
 .inp.sm{ padding:6px 10px; font-size:12px; }
 select.inp{ cursor:pointer; }
@@ -2220,54 +2299,68 @@ select.inp{ cursor:pointer; }
 /* TABELAS */
 .scroll-x{ overflow-x:auto; }
 .tab{ width:100%; border-collapse:collapse; }
-.tab thead th{ text-align:left; font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase;
-  letter-spacing:.05em; padding:10px 14px; border-bottom:1px solid var(--border); background:var(--soft); }
+.tab thead th{ text-align:left; font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase;
+  letter-spacing:.06em; padding:10px 14px; border-bottom:1px solid var(--border); background:var(--soft); }
 .tab td{ padding:12px 14px; border-bottom:1px solid var(--divider); font-size:13px; vertical-align:middle; }
 .tab tbody tr:last-child td{ border-bottom:none; }
 .tab tbody tr:hover{ background:var(--hover); }
+/* Trabalhos: grid de colunas estável + hierarquia por linha */
+.tab-trab th:nth-child(2){ width:116px; } .tab-trab th:nth-child(3){ width:228px; }
+.tab-trab th:nth-child(4){ width:48px; }
+.tab-trab td.cel-data{ font-size:12px; color:var(--muted2); }
+.tab-trab .status-sel{ width:100%; }
+/* linha de metadados sob o título: tipo + local de publicação */
+.titulo-meta{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:7px; }
+.titulo-meta .onde-chip, .titulo-meta .onde-add, .titulo-meta .onde-inp{ margin-top:0; }
+.titulo-meta .onde-inp{ flex:1; min-width:220px; }
+.tab .mini.del{ width:28px; height:28px; padding:0; font-size:16px; line-height:1; display:inline-grid; place-items:center; border-color:transparent; }
 .tab .r{ text-align:right; }
 .muted{ color:var(--muted2); }
 .nowrap{ white-space:nowrap; }
 .cel-nome{ font-weight:600; }
 .cel-tema{ font-size:11px; color:var(--muted2); margin-top:2px; max-width:330px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cel-fac{ font-size:12px; color:var(--muted); max-width:200px; }
-.cel-titulo{ font-size:12.5px; max-width:560px; line-height:1.4; }
-.link-titulo{ background:transparent; border:none; padding:0; font:inherit; color:var(--brand); text-align:left; cursor:pointer; line-height:1.4; text-decoration:none; display:inline; }
-.link-titulo:hover{ text-decoration:underline; color:var(--brand-deep); }
-.onde-chip{ display:inline-block; margin-top:5px; background:var(--soft); border:1px solid var(--border); border-radius:var(--r-sm); padding:2px 9px; font-size:11px; color:var(--muted); cursor:pointer; font-family:inherit; max-width:440px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cel-titulo{ font-size:13px; max-width:560px; line-height:1.45; }
+.link-titulo{ background:transparent; border:none; padding:0; font:inherit; font-weight:600; color:var(--ink); text-align:left; cursor:pointer; line-height:1.45; text-decoration:none; display:inline; transition:color .14s ease; }
+.link-titulo:hover{ text-decoration:underline; text-underline-offset:3px; color:var(--brand); }
+.link-titulo:focus-visible{ box-shadow:var(--ring); outline:none; border-radius:3px; }
+.onde-chip{ display:flex; width:fit-content; align-items:center; gap:5px; margin-top:7px; background:transparent; border:1px solid var(--border); border-radius:var(--r-full); padding:2px 9px; font-size:11px; color:var(--muted2); cursor:pointer; font-family:inherit; max-width:440px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; transition:border-color .14s ease, color .14s ease; }
 .onde-chip:hover{ border-color:var(--border-strong); color:var(--ink); }
-.onde-add{ display:inline-block; margin-top:5px; background:transparent; border:none; padding:0; font-size:11px; color:var(--muted2); cursor:pointer; font-family:inherit; opacity:.8; }
-.onde-add:hover{ color:var(--brand); text-decoration:underline; opacity:1; }
-.onde-inp{ display:block; margin-top:5px; width:100%; max-width:440px; border:1px solid var(--brand); background:var(--surface); border-radius:var(--r-sm); padding:3px 8px; font-size:12px; color:var(--ink); font-family:inherit; outline:none; box-shadow:var(--ring); }
-.dp-local{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-top:12px; margin-top:12px; border-top:1px solid var(--divider); }
-.dp-local-lab{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; }
-.dp-local .inp{ flex:1; min-width:240px; background:var(--surface); }
-.dp-cert{ margin-top:20px; padding:14px 16px; background:var(--soft); border:1px solid var(--border); border-radius:var(--r-md); }
-.dp-cert-top{ display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+.onde-chip svg{ flex-shrink:0; opacity:.7; }
+.onde-add{ display:block; margin-top:7px; background:transparent; border:none; padding:0; font-size:11px; color:var(--muted2); cursor:pointer; font-family:inherit; opacity:0; transition:opacity .14s ease; }
+.tab tbody tr:hover .onde-add, .onde-add:focus-visible{ opacity:1; }
+.onde-add:hover{ color:var(--brand); text-decoration:underline; }
+.onde-inp{ display:block; margin-top:6px; width:100%; max-width:440px; border:1px solid var(--brand); background:var(--surface); border-radius:var(--r-sm); padding:3px 8px; font-size:12px; color:var(--ink); font-family:inherit; outline:none; }
+.onde-inp:focus{ box-shadow:var(--ring); }
 .cert-status{ display:flex; align-items:center; gap:12px; font-size:12px; }
 .cert-status a{ color:var(--brand); font-weight:600; }
 .cert-file{ position:relative; overflow:hidden; cursor:pointer; }
 .cert-file input[type=file]{ position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
-.cert-lista{ list-style:none; display:flex; flex-direction:column; gap:6px; }
-.cert-lista li{ display:flex; justify-content:space-between; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); padding:8px 12px; }
+.cert-lista{ list-style:none; display:flex; flex-direction:column; }
+.cert-lista li{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 6px; border-bottom:1px solid var(--divider); }
+.cert-lista li:last-child{ border-bottom:none; }
 .cert-nome{ font-size:13px; font-weight:600; color:var(--ink); }
 .wa-btn{ background:#25D366 !important; color:#0B3B24 !important; font-weight:700; border:none; white-space:nowrap; text-decoration:none; }
 .wa-btn:hover{ background:#1FB855 !important; }
-.cert-sem-tel{ font-size:11.5px; color:var(--muted2); }
+.cert-sem-tel{ font-size:11px; color:var(--muted2); }
 .cert-hint{ font-size:12px; color:var(--muted); line-height:1.5; }
 .p-orcid{ font-size:11px; margin-top:2px; }
 .p-orcid a{ color:var(--brand); text-decoration:none; }
 .p-orcid a:hover{ text-decoration:underline; }
 .uf-pill{ display:inline-block; min-width:30px; text-align:center; font-size:11px; font-weight:600; color:var(--muted);
   background:var(--soft); border:1px solid var(--border); padding:2px 7px; border-radius:var(--r-sm); }
-.tipo-pill{ display:inline-block; font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap;
-  color:color-mix(in srgb, var(--tc,#6F7E90) 62%, #22334A); background:color-mix(in srgb, var(--tc,#8A98A8) 13%, transparent); }
-.root.dark .tipo-pill{ color:color-mix(in srgb, var(--tc,#8A98A8) 55%, #E6EDF5); }
+/* badge de tipo: dot colorido (identidade) + texto neutro — metadado, não grito */
+.tipo-pill{ display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:500; padding:2px 9px 2px 8px;
+  border-radius:var(--r-full); white-space:nowrap; color:var(--muted); background:var(--soft); border:1px solid var(--border); }
+.tipo-pill::before{ content:""; width:6px; height:6px; border-radius:50%; background:var(--tc,var(--muted2)); flex-shrink:0; }
 .row-click{ cursor:pointer; }
 .acoes{ white-space:nowrap; text-align:right; }
 .mini{ border:1px solid var(--border); background:var(--surface); color:var(--muted); font-size:11px; padding:4px 10px;
-  border-radius:var(--r-sm); cursor:pointer; font-family:inherit; transition:.12s; }
+  border-radius:var(--r-sm); cursor:pointer; font-family:inherit; transition:background .14s ease, border-color .14s ease, color .14s ease; }
 .mini:hover{ border-color:var(--border-strong); color:var(--ink); background:var(--hover); }
+.mini:active{ background:var(--soft); }
+.mini:focus-visible{ box-shadow:var(--ring); outline:none; }
+.mini:disabled{ opacity:.55; cursor:not-allowed; }
 .mini.del:hover{ border-color:var(--danger-border); color:var(--danger); background:var(--danger-soft); }
 .mais{ padding:14px; text-align:center; border-top:1px solid var(--divider); }
 .vazio{ padding:40px; text-align:center; color:var(--muted2); font-size:13px; }
@@ -2290,22 +2383,29 @@ select.inp{ cursor:pointer; }
 .root.dark .recharts-tooltip-cursor{ fill:rgba(255,255,255,.05); }
 
 /* BOTÕES */
-.btn{ background:var(--brand); color:#fff; border:none; padding:8px 14px; border-radius:8px; font-size:13px;
-  font-weight:600; cursor:pointer; font-family:inherit; transition:background .12s; white-space:nowrap;
-  box-shadow:0 1px 2px rgba(16,24,40,.08); }
-.btn:hover{ background:var(--brand-hover); }
+.btn{ background:var(--brand-solid); color:#fff; border:none; padding:8px 14px; border-radius:var(--r-md); font-size:13px;
+  font-weight:600; cursor:pointer; font-family:inherit; transition:background .14s ease, transform .08s ease; white-space:nowrap; }
+.btn:hover{ background:var(--brand-solid-hover); }
+.btn:active{ transform:translateY(1px); }
 .btn:focus-visible{ box-shadow:var(--ring); outline:none; }
-.root.dark .btn{ background:#2B7495; }
-.root.dark .btn:hover{ background:#33809F; }
-.btn.sm{ padding:6px 11px; font-size:12px; }
-.btn-ghost{ background:transparent; color:var(--muted); border:1px solid var(--border); padding:7px 13px; border-radius:8px;
-  font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:.12s; }
+.btn:disabled{ opacity:.55; cursor:not-allowed; transform:none; }
+.btn.sm{ padding:6px 12px; font-size:12px; }
+.btn-ghost{ background:transparent; color:var(--muted); border:1px solid var(--border); padding:7px 12px; border-radius:var(--r-md);
+  font-size:13px; font-weight:500; cursor:pointer; font-family:inherit; transition:background .14s ease, border-color .14s ease, color .14s ease; }
 .btn-ghost:hover{ background:var(--hover); border-color:var(--border-strong); color:var(--ink); }
-.status-sel{ border:1px solid color-mix(in srgb, var(--tc,#8A98A8) 40%, transparent); background:var(--surface);
-  border-radius:var(--r-sm); padding:5px 8px; font-size:11px; font-weight:600;
-  color:color-mix(in srgb, var(--tc,#6F7E90) 62%, #22334A);
-  cursor:pointer; font-family:inherit; outline:none; }
-.root.dark .status-sel{ color:color-mix(in srgb, var(--tc,#8A98A8) 55%, #E6EDF5); }
+.btn-ghost:focus-visible{ box-shadow:var(--ring); outline:none; }
+.btn-ghost:disabled{ opacity:.55; cursor:not-allowed; }
+/* select de status: controle de verdade — dot de estado + chevron, hover e foco visíveis */
+.status-sel{ appearance:none; border:1px solid color-mix(in srgb, var(--tc,#5D6D7D) 45%, transparent); background-color:var(--surface);
+  background-image:radial-gradient(circle, var(--tc,var(--muted2)) 0 3px, transparent 3.5px), var(--sel-chevron);
+  background-repeat:no-repeat; background-position:10px center, right 8px center; background-size:8px 8px, 12px 12px;
+  border-radius:var(--r-md); padding:5px 26px 5px 24px; font-size:12px; font-weight:500;
+  color:color-mix(in srgb, var(--tc,#5D6D7D) 45%, #17222E);
+  cursor:pointer; font-family:inherit; outline:none; transition:border-color .14s ease, background-color .14s ease; }
+.status-sel:hover{ border-color:color-mix(in srgb, var(--tc,#5D6D7D) 70%, transparent); background-color:var(--hover); }
+.status-sel:focus-visible{ border-color:var(--brand); box-shadow:var(--ring); }
+.root.dark .status-sel{ color:color-mix(in srgb, var(--tc,#8B99A9) 55%, #E7EDF3); border-color:color-mix(in srgb, var(--tc,#8B99A9) 55%, transparent); }
+.root.dark .status-sel:hover{ border-color:color-mix(in srgb, var(--tc,#8B99A9) 80%, transparent); }
 
 /* MODAL */
 .modal-bg{ position:fixed; inset:0; background:rgba(15,23,42,.45); display:grid; place-items:center; z-index:70; padding:20px;
@@ -2338,33 +2438,34 @@ select.inp{ cursor:pointer; }
 .ci-lab{ font-size:11px; color:var(--muted2); text-transform:uppercase; font-weight:600; letter-spacing:.05em; }
 .sub-h{ font-size:13px; font-weight:600; color:var(--muted); margin-bottom:8px; }
 
-/* PUBLICAÇÕES — badges e controles */
-.vagas-badge{ font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap; flex-shrink:0; }
+/* PUBLICAÇÕES — badge de vagas é o código primário de ocupação (única codificação) */
+.vagas-badge{ font-size:11px; font-weight:600; padding:3px 9px; border-radius:var(--r-full); white-space:nowrap; flex-shrink:0; }
 .b-ok{ background:var(--ok-soft); color:var(--ok); }
 .b-quase{ background:var(--warn-soft); color:var(--warn); }
 .b-cheio{ background:var(--danger-soft); color:var(--danger); }
-.chip-tipo{ font-size:10px; font-weight:600; padding:2px 9px; border-radius:999px; letter-spacing:.02em;
-  color:color-mix(in srgb, var(--tc,#6F7E90) 62%, #22334A); background:color-mix(in srgb, var(--tc,#8A98A8) 14%, transparent); }
-.root.dark .chip-tipo{ color:color-mix(in srgb, var(--tc,#8A98A8) 55%, #E6EDF5); }
-.ep-campo{ display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--muted); font-weight:600; }
-.grad-check{ align-self:center; }
-.max-inp.wide{ width:130px; }
 .pub-grad{ margin:4px 0 2px; }
-.max-inp{ width:54px; border:1px solid var(--border); border-radius:var(--r-sm); padding:5px 8px; font-size:12px;
-  font-family:inherit; color:var(--ink); background:var(--surface); outline:none; }
+.max-inp{ width:64px; border:1px solid var(--border); border-radius:var(--r-sm); padding:5px 8px; font-size:12px;
+  font-family:inherit; color:var(--ink); background:var(--surface); outline:none; transition:border-color .14s ease; }
+.max-inp.wide{ width:150px; }
+.max-inp:hover{ border-color:var(--border-strong); }
 .max-inp:focus{ border-color:var(--brand); box-shadow:var(--ring); }
-.parts{ list-style:none; display:flex; flex-direction:column; gap:8px; }
-.parts li{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; background:var(--soft);
-  border:1px solid var(--border); border-radius:var(--r-md); padding:9px 12px; }
+/* participantes em linhas planas: divisor hairline, ações reveladas no hover */
+.parts{ list-style:none; display:flex; flex-direction:column; }
+.parts li{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; padding:10px 6px;
+  border-bottom:1px solid var(--divider); border-radius:var(--r-sm); transition:background .14s ease; }
+.parts li:last-child{ border-bottom:none; }
+.parts li:hover{ background:var(--hover); }
+.p-acoes .mini{ opacity:0; transition:opacity .14s ease; }
+.parts li:hover .p-acoes .mini, .p-acoes .mini:focus-visible{ opacity:1; }
 .p-nome{ font-size:13px; font-weight:600; }
 .p-fac{ font-size:11px; color:var(--muted2); margin-top:2px; }
-.p-vazio{ justify-content:center; color:var(--muted2); font-size:12px; padding:10px; }
+.p-vazio{ justify-content:center; color:var(--muted2); font-size:12px; padding:14px 6px; }
 .tag-autor{ font-size:10px; font-weight:600; background:rgba(232,131,58,.14); color:#B4610F; padding:1px 7px; border-radius:999px; margin-left:6px; }
 .root.dark .tag-autor{ color:#F0A468; }
 .tag-grad{ font-size:10px; font-weight:600; background:var(--ok-soft); color:var(--ok); padding:1px 7px; border-radius:999px; margin-left:5px; }
 /* PERIODO BAR */
 .periodo-bar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--surface);
-  border:1px solid var(--border); border-radius:var(--r-lg); padding:10px 14px; margin-bottom:16px; box-shadow:var(--shadow-1); }
+  border:1px solid var(--border); border-radius:var(--r-lg); padding:10px 14px; margin-bottom:16px; }
 .periodo-lab{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; }
 .periodo-bar .inp{ padding:7px 11px; font-size:13px; }
 
@@ -2377,40 +2478,47 @@ select.inp{ cursor:pointer; }
 .pub-item.ativo{ background:var(--brand-soft); box-shadow:inset 2px 0 0 var(--brand); }
 .pub-item-top{ display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
 .pub-item-nome{ font-size:13px; font-weight:600; line-height:1.35; color:var(--ink); }
-.pub-item-prog{ height:5px; background:var(--track); border-radius:var(--r-sm); margin:8px 0 6px; overflow:hidden; }
-.pub-item-fill{ height:100%; border-radius:var(--r-sm); }
-.pub-item-sub{ display:flex; align-items:center; justify-content:space-between; }
-.pub-item-ocup{ font-size:11px; color:var(--muted); font-weight:600; }
-.chip-tipo.sm{ font-size:10px; padding:2px 8px; }
+.pub-item-meta{ display:flex; align-items:center; gap:8px; margin-top:7px; }
+.pub-item-ocup{ font-size:11px; color:var(--muted2); }
 
 .pub-detalhe{ min-height:320px; }
 .pub-vazio-det{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; min-height:300px;
   color:var(--muted2); text-align:center; font-size:13px; padding:30px; line-height:1.5; }
 .pub-vazio-ic{ width:56px; height:56px; border-radius:var(--r-lg); background:var(--track); display:grid; place-items:center; font-size:26px; color:var(--brand); }
+/* painel estilo Notion: título dominante, meta sob ele, propriedades planas, seções por divisor */
 .dp-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
-.dp-nome{ font-size:16px; font-weight:700; line-height:1.35; letter-spacing:-.01em; }
-.dp-edit-nome{ vertical-align:middle; margin-left:8px; font-weight:600; }
+.dp-nome{ font-size:16px; font-weight:600; line-height:1.35; letter-spacing:-.01em; }
+.dp-edit-nome{ vertical-align:middle; margin-left:8px; font-weight:600; opacity:0; transition:opacity .14s ease; }
+.dp-head:hover .dp-edit-nome, .dp-edit-nome:focus-visible{ opacity:1; }
 .dp-nome-edit{ display:flex; gap:8px; align-items:center; flex:1; flex-wrap:wrap; }
 .dp-nome-edit .inp{ flex:1; min-width:220px; font-size:15px; font-weight:600; }
-.dp-prog{ height:7px; background:var(--track); border-radius:var(--r-sm); margin:12px 0 6px; overflow:hidden; }
-.dp-prog-fill{ height:100%; border-radius:var(--r-sm); transition:width .4s; }
-.dp-ocup{ font-size:12px; color:var(--muted); margin-bottom:16px; }
-/* caixa única "Dados da publicação" (tipo, vagas, graduado, onde publicar, taxa) */
-.dp-config{ background:var(--soft); border:1px solid var(--border); border-radius:var(--r-md); padding:14px 16px; margin-bottom:16px; }
-.dp-config .dp-sub{ margin-bottom:12px; }
-.dp-controles{ display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap; }
-.dp-controles .max-inp, .dp-controles select{ background:var(--surface); }
-.dp-sub{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; margin-bottom:10px; }
-.dp-part-head{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin:20px 0 10px; }
+.dp-meta{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:9px; }
+.dp-meta-txt{ font-size:12px; color:var(--muted); }
+/* financeiro plano: o Lucro é o número — faturamento e taxa recuam */
+.dp-fin{ display:flex; align-items:flex-end; gap:36px; padding:16px 2px; margin:16px 0 6px;
+  border-top:1px solid var(--divider); border-bottom:1px solid var(--divider); }
+.dp-fin-lucro{ display:flex; flex-direction:column; gap:4px; }
+.dp-fin-lucro span{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; }
+.dp-fin-lucro b{ font-size:24px; font-weight:600; letter-spacing:-.02em; line-height:1.1; }
+.dp-fin-item{ display:flex; flex-direction:column; gap:4px; padding-bottom:2px; }
+.dp-fin-item span{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; }
+.dp-fin-item b{ font-size:14px; font-weight:600; color:var(--muted); letter-spacing:-.01em; }
+/* propriedades: rótulo em coluna fixa à esquerda, controle à direita — 2 colunas p/ compactar */
+.dp-props{ display:grid; grid-template-columns:1fr 1fr; gap:0 28px; margin:6px 0 4px; }
+.dp-prop{ display:flex; align-items:center; gap:12px; min-height:34px; }
+.dp-prop.full{ grid-column:1 / -1; }
+.dp-prop-lab{ width:132px; flex-shrink:0; font-size:12px; color:var(--muted2); }
+.dp-prop .inp{ background:var(--surface); }
+.dp-prop-flex{ flex:1; max-width:430px; }
+.dp-taxa-form{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.dp-taxa-val{ max-width:100px; }
+.dp-taxa-ok{ font-size:12px; color:var(--ok); font-weight:600; }
+.dp-sub{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; }
+.dp-sec-head{ display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
+  margin:22px 0 6px; padding-top:16px; border-top:1px solid var(--divider); }
 .copiar-btn{ white-space:nowrap; }
 .dp-lotado{ font-size:12px; color:var(--danger); background:var(--danger-soft); border:1px solid var(--danger-border); border-radius:var(--r-md); padding:10px 13px; margin-top:11px; }
-.dp-taxa{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-top:12px; margin-top:12px; border-top:1px solid var(--divider); }
-.dp-taxa .inp{ background:var(--surface); }
-.dp-taxa-lab{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.05em; }
-.dp-taxa-val{ max-width:110px; }
-.dp-taxa-ok{ font-size:12px; color:var(--ok); font-weight:600; }
-.dp-taxa .btn.sm{ margin-left:auto; }
-.dp-footer{ display:flex; justify-content:flex-end; margin-top:20px; padding-top:14px; border-top:1px solid var(--divider); }
+.dp-footer{ display:flex; justify-content:flex-end; margin-top:22px; padding-top:14px; border-top:1px solid var(--divider); }
 .p-acoes{ display:flex; gap:6px; align-items:center; flex-shrink:0; }
 .mov-dot{ display:inline-block; width:20px; font-weight:700; }
 .mov-dot.entrada{ color:var(--ok); }
@@ -2423,11 +2531,6 @@ select.inp{ cursor:pointer; }
 .cmp-pick .inp{ max-width:170px; }
 .cmp-vs{ color:var(--muted2); font-weight:600; }
 .vazio.pad{ padding:18px 4px; }
-/* resumo financeiro da publicação — promovido a destaque */
-.dp-fin{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; padding:14px 16px; background:var(--soft); border:1px solid var(--border); border-radius:var(--r-md); margin-bottom:16px; }
-.dp-fin-item{ display:flex; flex-direction:column; gap:3px; }
-.dp-fin-item span{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; }
-.dp-fin-item b{ font-size:21px; color:var(--ink); letter-spacing:-.01em; }
 .p-valor{ font-weight:600; color:var(--ink); margin-right:6px; white-space:nowrap; }
 .aviso-grad{ font-size:12px; color:var(--warn); background:var(--warn-soft); border:1px solid var(--warn-border); border-radius:var(--r-md); padding:10px 13px; margin-bottom:12px; }
 .aviso-grad.erro{ color:var(--danger); background:var(--danger-soft); border-color:var(--danger-border); font-weight:600; }
@@ -2448,11 +2551,50 @@ select.inp{ cursor:pointer; }
   font-family:"Inter",system-ui,sans-serif; background:var(--bg); }
 .spin{ width:34px; height:34px; border:3px solid var(--track); border-top-color:var(--brand); border-radius:50%; animation:sp 1s linear infinite; }
 @keyframes sp{ to{ transform:rotate(360deg); } }
-.toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#1D3557; color:#fff;
+.toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#17222E; color:#fff;
   padding:10px 18px; border-radius:var(--r-md); font-size:13px; font-weight:500; z-index:90; box-shadow:var(--shadow-3);
   animation:up .2s ease; }
-.root.dark .toast{ background:#22304A; color:#E6EDF5; border:1px solid rgba(255,255,255,.10); }
+.toast.erro{ background:var(--danger); }
+.root.dark .toast{ background:#1E2833; color:#E7EDF3; border:1px solid rgba(255,255,255,.10); }
+.root.dark .toast.erro{ background:#8C2A50; }
 @keyframes up{ from{ opacity:0; transform:translate(-50%,8px); } }
+
+/* ============ PRIMITIVOS DO SISTEMA ============ */
+/* filter-chips (Trabalhos): filtro parece filtro, não estatística */
+.status-filtros{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.chip-filtro{ display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 12px;
+  border:1px solid var(--border); background:var(--surface); border-radius:var(--r-full);
+  font-size:12px; font-weight:500; color:var(--muted); cursor:pointer; font-family:inherit;
+  transition:border-color .14s ease, background .14s ease, color .14s ease; }
+.chip-filtro b{ font-weight:600; font-size:12px; color:var(--ink); font-variant-numeric:tabular-nums; }
+.cf-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.chip-filtro:hover{ border-color:var(--border-strong); background:var(--hover); }
+.chip-filtro:focus-visible{ box-shadow:var(--ring); outline:none; }
+.chip-filtro.ativo{ background:var(--brand-soft); border-color:var(--brand); color:var(--brand); }
+.chip-filtro.ativo b{ color:inherit; }
+.chip-filtro.ativo::after{ content:"×"; font-size:13px; line-height:1; opacity:.65; margin-left:-2px; }
+/* busca com ícone */
+.busca-wrap{ position:relative; flex:1; min-width:230px; display:flex; }
+.busca-wrap .inp.busca{ width:100%; padding-left:32px; min-width:0; }
+.busca-ic{ position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--muted2); pointer-events:none; display:flex; }
+.sel-ordem{ margin-left:auto; }
+/* skeleton de carregamento */
+.skel{ background:linear-gradient(90deg, var(--soft) 25%, var(--hover) 37%, var(--soft) 63%);
+  background-size:400% 100%; animation:skel 1.4s ease infinite; border-radius:var(--r-sm); color:transparent; }
+@keyframes skel{ 0%{ background-position:100% 0; } 100%{ background-position:0 0; } }
+/* acessibilidade */
+.sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.pub-item:focus-visible, .x:focus-visible, .onde-chip:focus-visible, .tema-btn:focus-visible, .hamb:focus-visible{ box-shadow:var(--ring); outline:none; }
+.nav:focus-visible{ box-shadow:inset 0 0 0 2px #8FCBE8; outline:none; }
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{ animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+  .spin{ animation-duration:1s !important; animation-iteration-count:infinite !important; }
+}
+/* scrollbar discreta */
+*::-webkit-scrollbar{ width:10px; height:10px; }
+*::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:var(--r-full); border:3px solid transparent; background-clip:content-box; }
+*::-webkit-scrollbar-thumb:hover{ background-color:var(--muted2); }
+*::-webkit-scrollbar-track{ background:transparent; }
 
 @media (max-width:900px){
   .topbar{ display:flex; }
@@ -2464,12 +2606,15 @@ select.inp{ cursor:pointer; }
   .side-backdrop{ display:block; }
   .main{ padding:70px 16px 54px; }
   .head{ flex-direction:column; align-items:flex-start; gap:6px; margin-bottom:18px; }
-  .head h1{ font-size:20px; }
-  .kpis,.kpis-3,.kpis-4,.grid-2,.pub-split,.fp-grid,.destaques,.cli-info,.form-grid,.dp-fin{ grid-template-columns:1fr; }
+  .head h1{ font-size:18px; }
+  .kpis,.kpis-3,.kpis-4,.grid-2,.pub-split,.fp-grid,.destaques,.cli-info,.form-grid,.dp-props{ grid-template-columns:1fr; }
   .pub-lista{ max-height:none; }
   .periodo-bar{ flex-wrap:wrap; }
-  .dp-fin{ gap:12px; }
-  .dp-fin-item b{ font-size:18px; }
+  .dp-fin{ flex-wrap:wrap; gap:14px 28px; }
+  .dp-fin-lucro b{ font-size:20px; }
+  .dp-prop{ flex-wrap:wrap; row-gap:4px; padding:4px 0; }
+  .dp-prop-lab{ width:100%; }
+  .dp-edit-nome, .p-acoes .mini{ opacity:1; }
 }
     `}</style>
   );
