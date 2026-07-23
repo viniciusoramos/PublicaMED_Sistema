@@ -1752,6 +1752,28 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
   const comVaga = temas.filter((t) => t.participantes.length < t.maxVagas).length;
   const totalPart = temas.reduce((s, t) => s + t.participantes.length, 0);
 
+  // cadastro unificado de pessoas conhecidas (vendas + participantes de qualquer publicação),
+  // para preencher os dados de quem já comprou sem redigitar
+  const pessoas = useMemo(() => {
+    const map = new Map();
+    const upsert = (dados, data) => {
+      const k = (dados.nome || "").trim().toLowerCase();
+      if (!k) return;
+      const atual = map.get(k);
+      if (!atual) { map.set(k, { ...dados, nome: dados.nome.trim(), _data: data || "" }); return; }
+      const maisNovo = (data || "") >= (atual._data || "");
+      for (const c of ["email", "faculdade", "orcid", "telefone"]) {
+        if (dados[c] && (maisNovo || !atual[c])) atual[c] = dados[c];
+      }
+      if (dados.graduado) atual.graduado = true;
+      if (maisNovo) atual._data = data || "";
+    };
+    vendas.forEach((v) => upsert({ nome: v.nome || "", email: v.email || "", faculdade: v.faculdade || "" }, v.data));
+    temas.forEach((tm) => tm.participantes.forEach((p) =>
+      upsert({ nome: p.nome || "", email: p.email || "", faculdade: p.faculdade || "", orcid: p.orcid || "", telefone: p.telefone || "", graduado: !!p.graduado }, "")));
+    return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [vendas, temas]);
+
   const criar = (d) => { onAdd(d); setModalTema(false); };
   const excluir = (t) => {
     const extras = ["o trabalho vinculado na aba Trabalhos"];
@@ -1814,7 +1836,7 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
               <p>Selecione uma publicação na lista para ver os participantes e lançar pessoas (com o valor pago).</p>
             </div>
           ) : (
-            <DetalhePub key={sel.id} t={sel} vendas={vendas}
+            <DetalhePub key={sel.id} t={sel} vendas={vendas} pessoas={pessoas}
               localPub={trabLink ? trabLink.localPublicacao : ""} onSetLocal={(local) => trabLink && onSetLocalTrabalho(trabLink.id, local)}
               statusTrab={trabLink ? (trabLink.status || "A fazer") : null} onSetStatus={(s) => trabLink && onSetStatusTrabalho(trabLink.id, s)}
               onEdit={onEdit} onEditNome={onEditNome} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa} onExcluir={() => excluir(sel)} />
@@ -1827,7 +1849,7 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
   );
 }
 
-function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, statusTrab = null, onSetStatus, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onExcluir }) {
+function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, statusTrab = null, onSetStatus, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onExcluir }) {
   const { tipos, status: statusDisp } = useContext(ListasCtx);
   const restantes = t.maxVagas - t.participantes.length;
   const cheio = restantes <= 0;
@@ -1992,7 +2014,7 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, statusTrab = nu
 
       {cheio
         ? <div className="dp-lotado">Publicação lotada ({t.maxVagas}/{t.maxVagas}). Aumente as vagas para adicionar mais pessoas.</div>
-        : <FormPart tema={t} onAdd={(d) => onAddPart(t, d)} />}
+        : <FormPart tema={t} pessoas={pessoas} onAdd={(d) => onAddPart(t, d)} />}
 
       <div className="dp-sec-head">
         <h4 className="dp-sub">Certificados</h4>
@@ -2034,21 +2056,36 @@ function DetalhePub({ t, vendas = [], localPub = "", onSetLocal, statusTrab = nu
   );
 }
 
-function FormPart({ tema, onAdd }) {
+function FormPart({ tema, pessoas = [], onAdd }) {
   const vazio = { nome: "", faculdade: "", email: "", orcid: "", telefone: "", autorPrincipal: false, graduado: false, valor: "", data: hojeIso(), lancarVenda: true };
   const [p, setP] = useState(vazio);
+  const [reconhecida, setReconhecida] = useState(null);
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
+  // nome bateu com alguém da base? preenche o que estiver vazio (sem sobrescrever o que foi digitado)
+  const aoMudarNome = (v) => {
+    const ph = pessoas.find((x) => x.nome.toLowerCase() === v.trim().toLowerCase());
+    setReconhecida(ph ? ph.nome : null);
+    setP((x) => ph ? {
+      ...x, nome: ph.nome,
+      faculdade: x.faculdade || ph.faculdade || "",
+      email: x.email || ph.email || "",
+      orcid: x.orcid || ph.orcid || "",
+      telefone: x.telefone || ph.telefone || "",
+      graduado: x.graduado || !!ph.graduado,
+    } : { ...x, nome: v });
+  };
   const enviar = () => {
     if (!p.nome.trim()) { alert("Informe o nome."); return; }
     const valor = numBR(p.valor);
     onAdd({ ...p, valor });
     setP({ ...vazio, data: p.data });
+    setReconhecida(null);
   };
   return (
     <div className="form-part">
       <div className="fp-titulo">Adicionar pessoa{p.lancarVenda ? " + lançar venda" : ""}</div>
       <div className="fp-grid">
-        <input className="inp sm" placeholder="Nome" value={p.nome} onChange={(e) => set("nome", e.target.value)} />
+        <input className="inp sm" placeholder="Nome (digite p/ buscar quem já comprou)" list="pessoas-datalist" value={p.nome} onChange={(e) => aoMudarNome(e.target.value)} />
         <input className="inp sm" placeholder="Faculdade" list="fac-datalist" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
         <input className="inp sm" placeholder="Email" value={p.email} onChange={(e) => set("email", e.target.value)} />
         <input className="inp sm" placeholder="ORCID (opcional)" value={p.orcid} onChange={(e) => set("orcid", e.target.value)} />
@@ -2057,6 +2094,8 @@ function FormPart({ tema, onAdd }) {
         <input className="inp sm" type="date" value={p.data} onChange={(e) => set("data", e.target.value)} />
       </div>
       <datalist id="fac-datalist">{FAC_BASE.nomes.map((n) => <option key={n} value={n} />)}</datalist>
+      <datalist id="pessoas-datalist">{pessoas.map((x) => <option key={x.nome} value={x.nome}>{x.faculdade || x.email || ""}</option>)}</datalist>
+      {reconhecida && <div className="fp-reconhecida" role="status">✓ {reconhecida} já está na base — dados preenchidos, confira e ajuste se precisar.</div>}
       <div className="fp-opts">
         <label className="check sm"><input type="checkbox" checked={p.lancarVenda} onChange={(e) => set("lancarVenda", e.target.checked)} /> lançar venda ({tema.tipo})</label>
         <label className="check sm"><input type="checkbox" checked={p.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> autor principal</label>
@@ -2545,6 +2584,7 @@ select.inp{ cursor:pointer; }
 .fp-grid .inp{ width:100%; }
 .fp-opts{ display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-top:11px; }
 .fp-opts .btn{ margin-left:auto; }
+.fp-reconhecida{ font-size:12px; font-weight:600; color:var(--ok); margin-top:9px; }
 
 /* LOADING / TOAST */
 .loading{ display:grid; place-items:center; min-height:100vh; gap:14px; color:var(--muted); font-size:13px;
