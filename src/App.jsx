@@ -1456,6 +1456,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
     return best;
   }, [financeiro, anos]);
   const anoSel = ano ?? anoPadrao;
+  const [mes, setMes] = useState("");
   const [editId, setEditId] = useState(null);
   const [cmpA, setCmpA] = useState("");
   const [cmpB, setCmpB] = useState("");
@@ -1466,7 +1467,8 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
     return arr;
   }, [vendas, anoSel]);
 
-  const linhas = financeiro
+  // linhas do ano (base do gráfico) e o recorte do período selecionado (KPIs, tabela e totais)
+  const linhasAno = financeiro
     .filter((f) => f.ano === anoSel)
     .sort((a, b) => a.ordem - b.ordem)
     .map((f) => {
@@ -1475,6 +1477,9 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
       const custoTotal = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0);
       return { ...f, faturamento, custoTotal, lucro: faturamento - custoTotal };
     });
+  const linhas = mes === "" ? linhasAno : linhasAno.filter((l) => l.ordem === Number(mes));
+  const noMes = mes !== "";
+  const sufixoPeriodo = noMes ? `em ${MESES[Number(mes)]}` : "no ano";
   const tot = linhas.reduce((a, l) => ({
     faturamento: a.faturamento + (l.faturamento || 0),
     taxaPublicacao: a.taxaPublicacao + (l.taxaPublicacao || 0),
@@ -1495,18 +1500,22 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
     if (anos.includes(a)) { setAno(a); aviso("Esse ano já existe"); return; }
     await onCriarAno(a); setAno(a);
   };
-  const editLinha = linhas.find((l) => l.id === editId) || null;
-  const chart = linhas.map((l) => ({ mes: l.mes.slice(0, 3), Faturamento: l.faturamento, Lucro: l.lucro }));
+  const editLinha = linhasAno.find((l) => l.id === editId) || null;
+  // o gráfico mantém o ano inteiro como contexto; o mês escolhido fica em destaque
+  const chart = linhasAno.map((l) => ({ mes: l.mes.slice(0, 3), ordem: l.ordem, Faturamento: l.faturamento, Lucro: l.lucro }));
 
   // ---- movimentações: entradas = pagamentos recebidos (vendas); saídas = custos do financeiro ----
   const movimentacoes = useMemo(() => {
-    const ent = vendas.filter((v) => v.data && (v.valor || 0) > 0).map((v) => ({
-      data: v.data, quando: fmtData(v.data), tipo: "entrada",
-      label: "Pagamento recebido" + (v.nome ? ` · ${v.nome}` : (v.tema ? ` · ${v.tema}` : "")),
-      valor: v.valor || 0,
-    }));
+    const noPeriodo = (a, o) => a === anoSel && (mes === "" || o === Number(mes));
+    const ent = vendas
+      .filter((v) => v.data && (v.valor || 0) > 0 && noPeriodo(anoDeIso(v.data), mesDeIso(v.data)))
+      .map((v) => ({
+        data: v.data, quando: fmtData(v.data), tipo: "entrada",
+        label: "Pagamento recebido" + (v.nome ? ` · ${v.nome}` : (v.tema ? ` · ${v.tema}` : "")),
+        valor: v.valor || 0,
+      }));
     const said = [];
-    financeiro.forEach((f) => {
+    financeiro.filter((f) => noPeriodo(f.ano, f.ordem)).forEach((f) => {
       const dataMes = `${f.ano}-${String((f.ordem ?? 0) + 1).padStart(2, "0")}-15`;
       const quando = `${f.mes}/${f.ano}`;
       if ((f.taxaPublicacao || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Taxa de publicação", valor: f.taxaPublicacao });
@@ -1515,7 +1524,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
       if ((f.custoExtra || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Custo extra" + (f.custoExtraDesc ? ` · ${f.custoExtraDesc}` : ""), valor: f.custoExtra });
     });
     return [...ent, ...said].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
-  }, [vendas, financeiro]);
+  }, [vendas, financeiro, anoSel, mes]);
   const LIM_MOV = 60;
 
   // ---- comparar meses (usa o fechamento mensal) ----
@@ -1544,14 +1553,18 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
 
   return (
     <>
-      <Header titulo="Financeiro" sub="Fechamento mensal por ano: faturamento, custos e lucro"
+      <Header titulo="Financeiro" sub={`Fechamento ${noMes ? `de ${MESES[Number(mes)]} de ${anoSel}` : `mensal · ${anoSel ?? "—"}`}: faturamento, custos e lucro`}
         acao={<button className="btn-ghost" onClick={novoAno}>+ Novo ano</button>} />
 
       <div className="periodo-bar">
-        <span className="periodo-lab">Ano</span>
+        <span className="periodo-lab">Período</span>
         <select className="inp" aria-label="Ano do fechamento" value={anoSel ?? ""} onChange={(e) => setAno(Number(e.target.value))}>
           {anos.length === 0 && <option value="">—</option>}
           {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select className="inp" aria-label="Mês do fechamento" value={mes} onChange={(e) => setMes(e.target.value)}>
+          <option value="">Ano inteiro</option>
+          {MESES.map((nm, i) => <option key={i} value={i}>{nm}</option>)}
         </select>
       </div>
 
@@ -1560,9 +1573,9 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
       ) : (
         <>
           <div className="kpis kpis-3">
-            <KPI label="Faturamento no ano" valor={brl(tot.faturamento)} cor="var(--brand)" />
-            <KPI label="Custo total no ano" valor={brl(tot.custoTotal)} sub={`Publicação ${brl(tot.taxaPublicacao)} · Ads ${brl(tot.custoAds)}`} cor="var(--danger)" />
-            <KPI label="Lucro líquido no ano" valor={brl(tot.lucro)} sub={tot.faturamento ? `Margem ${Math.round((tot.lucro / tot.faturamento) * 100)}%` : ""} cor="var(--ok)" />
+            <KPI label={`Faturamento ${sufixoPeriodo}`} valor={brl(tot.faturamento)} cor="var(--brand)" />
+            <KPI label={`Custo total ${sufixoPeriodo}`} valor={brl(tot.custoTotal)} sub={`Publicação ${brl(tot.taxaPublicacao)} · Ads ${brl(tot.custoAds)}`} cor="var(--danger)" />
+            <KPI label={`Lucro líquido ${sufixoPeriodo}`} valor={brl(tot.lucro)} sub={tot.faturamento ? `Margem ${Math.round((tot.lucro / tot.faturamento) * 100)}%` : ""} cor="var(--ok)" />
           </div>
 
           <div className="card">
@@ -1573,14 +1586,18 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
                 <XAxis dataKey="mes" tick={{ fontSize: 12, fill: "#5B6B73" }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: "#5B6B73" }} axisLine={false} tickLine={false} tickFormatter={(v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
                 <Tooltip formatter={(v) => brl(v)} cursor={{ fill: "#F0F4F5" }} />
-                <Bar dataKey="Faturamento" fill={corSerie} radius={[4, 4, 0, 0]} maxBarSize={26} />
-                <Bar dataKey="Lucro" fill={corLucro} radius={[4, 4, 0, 0]} maxBarSize={26} />
+                <Bar dataKey="Faturamento" fill={corSerie} radius={[4, 4, 0, 0]} maxBarSize={26}>
+                  {chart.map((c) => <Cell key={c.ordem} fillOpacity={noMes && c.ordem !== Number(mes) ? .28 : 1} />)}
+                </Bar>
+                <Bar dataKey="Lucro" fill={corLucro} radius={[4, 4, 0, 0]} maxBarSize={26}>
+                  {chart.map((c) => <Cell key={c.ordem} fillOpacity={noMes && c.ordem !== Number(mes) ? .28 : 1} />)}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
 
           <div className="card no-pad">
-            <div className="card-head pad"><h3>Fechamento mensal · {anoSel}</h3><span className="hint">Faturamento = soma das vendas pagas no mês · “editar” ajusta os custos</span></div>
+            <div className="card-head pad"><h3>Fechamento {noMes ? `· ${MESES[Number(mes)]} de ${anoSel}` : `mensal · ${anoSel}`}</h3><span className="hint">Faturamento = soma das vendas pagas no mês · “editar” ajusta os custos</span></div>
             <div className="scroll-x">
               <table className="tab fin">
                 <thead>
@@ -1606,6 +1623,8 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
                       <td className="acoes"><button className="mini" onClick={() => setEditId(l.id)} aria-label={`Editar fechamento de ${l.mes}`}>editar</button></td>
                     </tr>
                   ))}
+                  {linhas.length === 0 && <tr><td colSpan={9} className="vazio">Sem fechamento para este mês.</td></tr>}
+                  {linhas.length > 1 && (
                   <tr className="row-total">
                     <td>TOTAL</td>
                     <td className="r">{brl(tot.faturamento)}</td>
@@ -1617,6 +1636,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
                     <td className="r"><b className={tot.lucro >= 0 ? "pos" : "negv"}>{brl(tot.lucro)}</b></td>
                     <td></td>
                   </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1624,8 +1644,8 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
 
           <div className="card no-pad">
             <div className="card-head pad">
-              <h3>Movimentações recentes</h3>
-              <span className="hint">pagamentos recebidos (+) e custos (−) · {movimentacoes.length} no total</span>
+              <h3>Movimentações {noMes ? `· ${MESES[Number(mes)]} de ${anoSel}` : `· ${anoSel}`}</h3>
+              <span className="hint">pagamentos recebidos (+) e custos (−) · {movimentacoes.length} no período</span>
             </div>
             <div className="scroll-x">
               <table className="tab mov">
@@ -1638,7 +1658,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
                       <td className={`r mov-val ${m.tipo}`}>{m.tipo === "entrada" ? "+" : "−"}{brl(m.valor)}</td>
                     </tr>
                   ))}
-                  {movimentacoes.length === 0 && <tr><td colSpan={3} className="vazio">Sem movimentações ainda.</td></tr>}
+                  {movimentacoes.length === 0 && <tr><td colSpan={3} className="vazio">Sem movimentações neste período.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -2507,6 +2527,8 @@ select.inp{ cursor:pointer; }
   border:1px solid var(--border); border-radius:var(--r-lg); padding:10px 14px; margin-bottom:16px; }
 .periodo-lab{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; }
 .periodo-bar .inp{ padding:7px 11px; font-size:13px; }
+/* select precisa manter o espaço à direita do chevron, senão a seta some sob o texto */
+.periodo-bar select.inp{ padding-right:30px; }
 
 /* PUBLICACOES: lista + painel de detalhe */
 .pub-split{ display:grid; grid-template-columns:330px 1fr; gap:16px; align-items:start; }
