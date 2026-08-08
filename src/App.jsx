@@ -638,7 +638,7 @@ export default function App() {
     ["trabalhos", "Trabalhos", "✓"],
     ["financeiro", "Financeiro", "$"],
     ["temas", "Publicações e vagas", "≡"],
-    ["planejamento", "Planejamento", "▤"],
+    ["planejamento", "Calendário", "▤"],
   ];
 
   return (
