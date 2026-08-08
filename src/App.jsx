@@ -3,6 +3,7 @@ import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, LineChart, Line,
 } from "recharts";
+import { PLANEJAMENTOS } from "./planejamento";
 import * as db from "./lib/db.js";
 import Login from "./components/Login.jsx";
 import Logo from "./components/Logo.jsx";
@@ -356,10 +357,16 @@ export default function App() {
     try { for (const f of nf) { const old = antes.find((x) => x.id === f.id); if (old && finMudou(old, f)) await db.atualizarFinanceiro(f.id, f); } }
     catch (e) { aviso("Erro ao salvar: " + e.message); setFinanceiro(antes); }
   };
+  // acha a publicação pelo título: exato e, se falhar, ignorando acento/pontuação/espaço
+  // (o mesmo trabalho costuma estar escrito com pequenas diferenças em cada tela)
+  const acharPubPorTitulo = (titulo) => {
+    const alvo = (titulo || "").trim().toLowerCase();
+    return temas.find((t) => (t.nome || "").trim().toLowerCase() === alvo)
+      || temas.find((t) => chaveTitulo(t.nome) === chaveTitulo(titulo));
+  };
   // clicar num trabalho abre a publicação correspondente em "Publicações e vagas" (liga pelo título = nome)
   const abrirPublicacao = (titulo) => {
-    const alvo = (titulo || "").trim().toLowerCase();
-    const pub = temas.find((t) => (t.nome || "").trim().toLowerCase() === alvo);
+    const pub = acharPubPorTitulo(titulo);
     if (!pub) { aviso("Esse trabalho não tem publicação vinculada."); return; }
     const destino = "#pub=" + encodeURIComponent(pub.nome);
     if (window.location.hash === destino) { setPubAlvo(pub.id); setTab("temas"); }
@@ -374,15 +381,14 @@ export default function App() {
     if (mPub) {
       let titulo = mPub[1];
       try { titulo = decodeURIComponent(titulo); } catch (e) {}
-      const alvo = titulo.trim().toLowerCase();
-      const pub = temas.find((t) => (t.nome || "").trim().toLowerCase() === alvo);
+      const pub = acharPubPorTitulo(titulo);
       if (!pub) { aviso("Esse trabalho não tem publicação vinculada."); return; }
       setPubAlvo(pub.id);
       setTab("temas");
       return;
     }
     const id = h.replace(/^#/, "");
-    if (["overview", "vendas", "clientes", "trabalhos", "financeiro", "temas"].includes(id)) setTab(id);
+    if (["overview", "vendas", "clientes", "trabalhos", "financeiro", "temas", "planejamento"].includes(id)) setTab(id);
     else if (!h) setTab("overview");
   };
   const irPara = (id) => {
@@ -406,6 +412,13 @@ export default function App() {
       aviso("Publicação criada e enviada para Trabalhos");
       return nova;
     } catch (e) { aviso("Erro: " + e.message); }
+  };
+  // cria a publicação a partir do cronograma (aba Planejamento); a taxa, quando vem no plano,
+  // fica cadastrada na publicação mas não é lançada no Financeiro (isso continua manual)
+  const criarPublicacaoDoPlano = async (dados) => {
+    const nova = await addPublicacao(dados);
+    if (nova && dados.taxa) await editPublicacao(nova.id, { taxa: dados.taxa });
+    return nova;
   };
   // estorna uma taxa lançada: tira do mês do lançamento; se não achar, procura o mês mais recente com taxa suficiente
   const estornarTaxaFinanceiro = async (valor, dataIso) => {
@@ -625,6 +638,7 @@ export default function App() {
     ["trabalhos", "Trabalhos", "✓"],
     ["financeiro", "Financeiro", "$"],
     ["temas", "Publicações e vagas", "≡"],
+    ["planejamento", "Planejamento", "▤"],
   ];
 
   return (
@@ -686,6 +700,9 @@ export default function App() {
             onAdd={addPublicacao} onRem={remPublicacao} onEdit={editPublicacao} onEditNome={editNomePublicacao}
             onAddPart={addParticipante} onEditPart={editParticipante} onRemPart={remParticipante}
             onLancarTaxa={lancarTaxaPub} aviso={aviso} />
+        )}
+        {tab === "planejamento" && (
+          <Planejamento temas={temas} vendas={vendas} onAbrirPublicacao={abrirPublicacao} onCriarPublicacao={criarPublicacaoDoPlano} />
         )}
       </main>
 
@@ -2165,12 +2182,14 @@ function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
   );
 }
 
-function FormTema({ onSalvar, onClose }) {
-  const [f, setF] = useState({ nome: "", tipo: "Artigo", area: "", maxVagas: 6, requiresGrad: false });
+// usado tanto no "+ Nova publicação" quanto no cronograma (aí chega pré-preenchido pelo planejamento)
+function FormTema({ onSalvar, onClose, inicial, titulo = "Nova publicação", aviso: avisoTopo }) {
+  const [f, setF] = useState({ nome: "", tipo: "Artigo", area: "", maxVagas: 6, requiresGrad: false, ...(inicial || {}) });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   return (
-    <Modal titulo="Nova publicação" onClose={onClose}>
-      <Campo label="Tema da publicação"><input className="inp" value={f.nome} onChange={(e) => set("nome", e.target.value)} /></Campo>
+    <Modal titulo={titulo} onClose={onClose}>
+      {avisoTopo && <p className="form-nota">{avisoTopo}</p>}
+      <Campo label="Tema da publicação"><textarea className="inp ta-tema" rows={3} value={f.nome} onChange={(e) => set("nome", e.target.value)} /></Campo>
       <div className="form-grid">
         <Campo label="Tipo de trabalho">
           <input className="inp" list="tipos-datalist" placeholder="Escolha ou digite um novo" value={f.tipo} onChange={(e) => set("tipo", e.target.value)} />
@@ -2184,6 +2203,341 @@ function FormTema({ onSalvar, onClose }) {
         <button className="btn" onClick={() => { if (!f.nome.trim()) { alert("Informe o tema."); return; } onSalvar(f); }}>Criar publicação</button>
       </div>
     </Modal>
+  );
+}
+
+/* ============================================================
+   PLANEJAMENTO (calendário editorial do mês)
+   ============================================================ */
+const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const DIAS_SEMANA_LONGO = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+// compara títulos ignorando acento, hífen, pontuação e espaço: "Prehabilitação" acha "Pré-habilitação",
+// senão uma diferença de grafia entre o planejamento e o cadastro esconde a publicação já aberta
+const chaveTitulo = (s) => (s || "")
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .toLowerCase().replace(/[^a-z0-9]+/g, "");
+// o t\u00edtulo do cronograma raramente \u00e9 digitado igualzinho no cadastro: al\u00e9m da chave exata,
+// comparamos as palavras significativas (\u22654 letras) e aceitamos o melhor candidato acima do limiar
+const tokensTitulo = (s) => new Set((s || "")
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 4));
+const semelhanca = (a, b) => {
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  a.forEach((w) => { if (b.has(w)) inter += 1; });
+  return inter / (a.size + b.size - inter); // Jaccard
+};
+const LIMIAR_TITULO = 0.6;
+// temas acrescentados a um lançamento depois do PDF (ex.: substituindo um que foi antecipado).
+// Ficam no navegador porque o cronograma ainda mora num arquivo do código; migram para o
+// banco quando o planejamento for persistido lá.
+const KEY_EXTRAS = "publicamed:plano-temas-extras";
+const lerExtras = () => { try { return JSON.parse(localStorage.getItem(KEY_EXTRAS) || "{}"); } catch { return {}; } };
+
+function Planejamento({ temas, vendas = [], onAbrirPublicacao, onCriarPublicacao }) {
+  const [planId, setPlanId] = useState(PLANEJAMENTOS[0]?.id || "");
+  const plano = PLANEJAMENTOS.find((p) => p.id === planId) || PLANEJAMENTOS[0] || null;
+  const [diaSel, setDiaSel] = useState(plano?.lancamentos[0]?.dia ?? null);
+  const [criando, setCriando] = useState(null); // { dados, taxa, dia, novo } — abre o form já preenchido
+  const [extras, setExtras] = useState(lerExtras);
+  // temas do lançamento = os do cronograma + os acrescentados depois
+  const temasDe = (l) => [...l.temas, ...(((extras[plano?.id] || {})[l.dia]) || [])];
+
+  // abre o formulário padrão de publicação com os dados do planejamento, para conferir/ajustar antes de criar
+  const abrirCriacao = (l, t) => setCriando({
+    dia: l.dia,
+    novo: !t,
+    taxa: t?.taxa ?? l.taxaPorTema,
+    dados: {
+      nome: t?.titulo || "",
+      tipo: l.tipo,
+      area: t?.areas || "",
+      maxVagas: l.vagas,
+      requiresGrad: !!(t?.exigeGraduado ?? l.exigeGraduado),
+    },
+  });
+  const confirmarCriacao = async (form) => {
+    const ctx = criando;
+    setCriando(null);
+    const nova = await onCriarPublicacao({ ...form, taxa: ctx?.taxa });
+    // tema novo (não estava no PDF): passa a constar no cronograma daquele dia
+    if (nova && ctx?.novo) {
+      setExtras((prev) => {
+        const doPlano = prev[plano.id] || {};
+        const novo = { ...prev, [plano.id]: { ...doPlano, [ctx.dia]: [...(doPlano[ctx.dia] || []), { titulo: form.nome, areas: form.area, extra: true }] } };
+        try { localStorage.setItem(KEY_EXTRAS, JSON.stringify(novo)); } catch (e) {}
+        return novo;
+      });
+    }
+  };
+  // tira o tema do cronograma — NÃO mexe na publicação nem nos participantes
+  const tirarDoCronograma = (dia, titulo) => {
+    if (!confirm(`Tirar este tema do dia ${dia} do cronograma?\n\n${titulo}\n\nA publicação e os participantes continuam no sistema — sai apenas do planejamento.`)) return;
+    setExtras((prev) => {
+      const doPlano = prev[plano.id] || {};
+      const novo = { ...prev, [plano.id]: { ...doPlano, [dia]: (doPlano[dia] || []).filter((x) => x.titulo !== titulo) } };
+      try { localStorage.setItem(KEY_EXTRAS, JSON.stringify(novo)); } catch (e) {}
+      return novo;
+    });
+  };
+
+  // publicação real correspondente a cada tema planejado: casa pelo título exato e,
+  // se não achar, pelo mais parecido acima do limiar (redação do cadastro costuma variar)
+  const pubPorTitulo = useMemo(() => {
+    const idx = (temas || []).map((t) => ({ pub: t, chave: chaveTitulo(t.nome), toks: tokensTitulo(t.nome) }));
+    const porChave = new Map(idx.map((x) => [x.chave, x.pub]));
+    const map = new Map();
+    for (const l of plano?.lancamentos || []) {
+      for (const t of temasDe(l)) {
+        const ch = chaveTitulo(t.titulo);
+        if (map.has(ch)) continue;
+        const exato = porChave.get(ch);
+        if (exato) { map.set(ch, exato); continue; }
+        const toks = tokensTitulo(t.titulo);
+        let melhor = null, score = 0;
+        for (const x of idx) {
+          const s = semelhanca(toks, x.toks);
+          if (s > score) { score = s; melhor = x.pub; }
+        }
+        if (melhor && score >= LIMIAR_TITULO) map.set(ch, melhor);
+      }
+    }
+    return map;
+  }, [temas, plano, extras]);
+  // índices de venda p/ apurar o que já foi pago sem varrer a lista inteira por participante
+  const idxVendas = useMemo(() => {
+    const porPart = new Map(), porTemaNome = new Map();
+    (vendas || []).forEach((v) => {
+      if (v.participanteId) porPart.set(v.participanteId, v);
+      porTemaNome.set(`${v.tema}|${chaveTitulo(v.nome)}`, v);
+    });
+    return { porPart, porTemaNome };
+  }, [vendas]);
+  const faturamentoDaPub = (pub) => {
+    const vistos = new Set();
+    let total = 0;
+    for (const p of pub.participantes) {
+      const v = idxVendas.porPart.get(p.id) || idxVendas.porTemaNome.get(`${pub.nome}|${chaveTitulo(p.nome)}`);
+      if (v && !vistos.has(v.id)) { total += v.valor || 0; vistos.add(v.id); }
+    }
+    return total;
+  };
+
+  // planejado (projeção) e realizado (o que já existe no sistema), lado a lado
+  const calc = (l) => {
+    const n = temasDe(l).length;
+    const teto = l.vagas * l.preco * n;
+    const receita = teto * plano.conversao;
+    return { teto, receita, custo: l.custo || 0, lucro: receita - (l.custo || 0), vagas: l.vagas * n };
+  };
+  const real = (l) => {
+    let criadas = 0, ocupadas = 0, receita = 0, custo = 0;
+    temasDe(l).forEach((t) => {
+      const pub = pubPorTitulo.get(chaveTitulo(t.titulo));
+      if (!pub) return;
+      criadas += 1;
+      ocupadas += pub.participantes.length;
+      receita += faturamentoDaPub(pub);
+      custo += pub.taxa || 0; // taxa de publicação já cadastrada
+    });
+    return { criadas, ocupadas, receita, custo, lucro: receita - custo };
+  };
+  // o realizado é somado por publicação (um mesmo trabalho pode aparecer em mais de um dia
+  // do cronograma — contar duas vezes inflaria o vendido)
+  const tot = useMemo(() => {
+    const a = { teto: 0, receita: 0, custo: 0, lucro: 0, temas: 0, vagas: 0, criadas: 0, ocupadas: 0, receitaReal: 0, custoReal: 0 };
+    const vistos = new Set();
+    for (const l of plano?.lancamentos || []) {
+      const c = calc(l);
+      a.teto += c.teto; a.receita += c.receita; a.custo += c.custo; a.lucro += c.lucro;
+      a.temas += temasDe(l).length; a.vagas += c.vagas;
+      for (const t of temasDe(l)) {
+        const pub = pubPorTitulo.get(chaveTitulo(t.titulo));
+        if (!pub || vistos.has(pub.id)) continue;
+        vistos.add(pub.id);
+        a.criadas += 1;
+        a.ocupadas += pub.participantes.length;
+        a.receitaReal += faturamentoDaPub(pub);
+        a.custoReal += pub.taxa || 0;
+      }
+    }
+    a.lucroReal = a.receitaReal - a.custoReal;
+    return a;
+  }, [plano, pubPorTitulo, idxVendas, extras]);
+
+  if (!plano) return <><Header titulo="Planejamento" sub="Nenhum planejamento cadastrado" /></>;
+
+  const porDia = new Map(plano.lancamentos.map((l) => [l.dia, l]));
+  const primeiroDiaSemana = new Date(plano.ano, plano.mes, 1).getDay();
+  const diasNoMes = new Date(plano.ano, plano.mes + 1, 0).getDate();
+  const celulas = [
+    ...Array.from({ length: primeiroDiaSemana }, () => null),
+    ...Array.from({ length: diasNoMes }, (_, i) => i + 1),
+  ];
+  const lanc = diaSel != null ? porDia.get(diaSel) : null;
+  const faltaMeta = plano.meta - tot.receitaReal; // o que ainda falta vender de verdade
+  const hoje = hojeIso();
+  const diaHoje = anoDeIso(hoje) === plano.ano && mesDeIso(hoje) === plano.mes ? Number(hoje.slice(8, 10)) : null;
+
+  return (
+    <>
+      <Header titulo="Planejamento editorial"
+        sub={`${MESES[plano.mes]} de ${plano.ano} · ${num(plano.lancamentos.length)} lançamentos · ${num(tot.criadas)} de ${num(tot.temas)} temas já abertos no sistema`} />
+
+      {PLANEJAMENTOS.length > 1 && (
+        <div className="periodo-bar">
+          <span className="periodo-lab">Mês</span>
+          <select className="inp" aria-label="Mês do planejamento" value={planId}
+            onChange={(e) => { setPlanId(e.target.value); const p = PLANEJAMENTOS.find((x) => x.id === e.target.value); setDiaSel(p?.lancamentos[0]?.dia ?? null); }}>
+            {PLANEJAMENTOS.map((p) => <option key={p.id} value={p.id}>{MESES[p.mes]} de {p.ano}</option>)}
+          </select>
+        </div>
+      )}
+
+      <div className="kpis kpis-4">
+        <KPI label="Já vendido no mês" valor={brl(tot.receitaReal)} sub={`${num(tot.ocupadas)} de ${num(tot.vagas)} vagas planejadas preenchidas`} cor="var(--ok)" />
+        <KPI label="Lucro real" valor={brl(tot.lucroReal)} sub={`Vendido menos ${brl(tot.custoReal)} de taxas lançadas`} cor="var(--ok)" />
+        <KPI label={`Faturamento projetado (${Math.round(plano.conversao * 100)}%)`} valor={brl(tot.receita)} sub={`${num(tot.criadas)} de ${num(tot.temas)} temas abertos · teto ${brl(tot.teto)}`} cor="#6D5DD3" />
+        <KPI label="Lucro projetado" valor={brl(tot.lucro)} sub={`Custo ${brl(tot.custo)} · margem ${tot.receita ? (tot.lucro / tot.receita * 100).toFixed(1) : 0}%`} cor="var(--accent)" />
+      </div>
+
+      <div className="card meta-bar">
+        <div className="meta-txt">
+          <span className="dp-sub">Meta do mês · {brl(plano.meta)}</span>
+          <span className="meta-leg"><i className="meta-key real" />vendido {brl(tot.receitaReal)}</span>
+          <span className="meta-leg"><i className="meta-key proj" />projeção {brl(tot.receita)}</span>
+          <span className={faltaMeta <= 0 ? "pos" : "negv"}>
+            {faltaMeta <= 0 ? `meta batida · +${brl(-faltaMeta)}` : `faltam ${brl(faltaMeta)} para a meta`}
+          </span>
+        </div>
+        <div className="meta-track" role="img" aria-label={`Vendido ${brl(tot.receitaReal)} de ${brl(plano.meta)}; projeção ${brl(tot.receita)}`}>
+          <div className="meta-fill proj" style={{ width: `${Math.min(100, (tot.receita / plano.meta) * 100)}%` }} />
+          <div className="meta-fill real" style={{ width: `${Math.min(100, (tot.receitaReal / plano.meta) * 100)}%` }} />
+        </div>
+      </div>
+
+      <div className="cal-split">
+        <div className="card cal-card">
+          <div className="card-head"><h3>{MESES[plano.mes]} · {plano.ano}</h3><span className="hint">clique num dia com lançamento</span></div>
+          <div className="cal-grid">
+            {DIAS_SEMANA.map((d) => <div key={d} className="cal-dow">{d}</div>)}
+            {celulas.map((dia, i) => {
+              if (dia == null) return <div key={`v${i}`} className="cal-cel vazia" />;
+              const l = porDia.get(dia);
+              if (!l) return <div key={dia} className="cal-cel"><span className="cal-num">{dia}</span></div>;
+              const r = real(l), c = calc(l);
+              // o dia só ganha a cor do tipo quando pelo menos um tema dele foi aberto no sistema
+              const ativo = r.criadas > 0;
+              return (
+                <button key={dia} className={"cal-cel tem" + (ativo ? " aberto" : " neutro") + (diaSel === dia ? " sel" : "") + (dia === diaHoje ? " hoje" : "")} style={{ "--tc": corTipo(l.tipo) }}
+                  onClick={() => setDiaSel(dia)} aria-pressed={diaSel === dia}
+                  aria-label={`Dia ${dia}: ${l.produto}, ${r.criadas} de ${l.temas.length} publicações abertas, ${r.ocupadas} de ${c.vagas} vagas vendidas`}
+                  title={`${l.produto} · ${r.criadas}/${l.temas.length} abertas`}>
+                  <span className="cal-num">{dia}</span>
+                  <span className="cal-prod">{l.produto}</span>
+                  <span className={"cal-info" + (r.criadas === 0 ? " pendente" : "")}>
+                    {r.criadas === 0 ? `${l.temas.length} temas · não abertos` : `${r.criadas}/${l.temas.length} abertas · ${r.ocupadas}/${c.vagas} vagas`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="card cal-detalhe">
+          {!lanc ? (
+            <div className="pub-vazio-det"><div className="pub-vazio-ic">◧</div><p>Selecione um dia com lançamento para ver os temas planejados.</p></div>
+          ) : (() => {
+            const c = calc(lanc), r = real(lanc);
+            const dow = new Date(plano.ano, plano.mes, lanc.dia).getDay();
+            return (
+              <>
+                <div className="cal-det-head">
+                  <div>
+                    <div className="dp-sub">{DIAS_SEMANA_LONGO[dow]}, {lanc.dia} de {MESES[plano.mes]}</div>
+                    <h3 className="cal-det-tit">{lanc.produto}</h3>
+                  </div>
+                  <div className="cal-det-acoes">
+                    <span className="tipo-pill" style={{ "--tc": corTipo(lanc.tipo) }}>{lanc.tipo}</span>
+                    <button className="mini" onClick={() => abrirCriacao(lanc, null)}
+                      title={`Adiciona um tema ao lançamento de ${lanc.dia}/${String(plano.mes + 1).padStart(2, "0")} e cria a publicação`}>
+                      + adicionar tema
+                    </button>
+                  </div>
+                </div>
+                <div className="dp-meta">
+                  <span className="dp-meta-txt">{lanc.vagas} vagas por tema · {brl(lanc.preco)} por vaga</span>
+                </div>
+                {lanc.veiculo && <div className="cal-veiculo">{lanc.veiculo}</div>}
+
+                <div className="cal-cmp">
+                  <div className="cal-cmp-row cab"><span /><span>Realizado</span><span>Planejado ({Math.round(plano.conversao * 100)}%)</span></div>
+                  <div className="cal-cmp-row"><span>Faturamento</span><b className="pos">{brl(r.receita)}</b><b className="prev">{brl(c.receita)}</b></div>
+                  <div className="cal-cmp-row"><span>Custo</span><b className={r.custo > 0 ? "negv" : ""}>{brl(r.custo)}</b><b className="prev">{brl(c.custo)}</b></div>
+                  <div className="cal-cmp-row lucro"><span>Lucro</span><b className={r.lucro >= 0 ? "pos" : "negv"}>{brl(r.lucro)}</b><b className="prev">{brl(c.lucro)}</b></div>
+                </div>
+
+                <div className="dp-sec-head">
+                  <h4 className="dp-sub">Temas ({temasDe(lanc).length})</h4>
+                  <span className="hint">{r.criadas} de {temasDe(lanc).length} abertos · {r.ocupadas}/{c.vagas} vagas vendidas</span>
+                </div>
+                <ul className="cal-temas">
+                  {temasDe(lanc).map((t) => {
+                    const pub = pubPorTitulo.get(chaveTitulo(t.titulo));
+                    return (
+                      <li key={t.titulo} className={pub ? "aberta" : "fechada"}>
+                        <div className="cal-tema-topo">
+                          <div className="cal-tema-areas">{t.areas}</div>
+                          {t.extra && (
+                            <button className="mini tirar-tema" onClick={() => tirarDoCronograma(lanc.dia, t.titulo)}
+                              title="Tira o tema deste dia do cronograma. A publicação e os participantes continuam no sistema.">
+                              tirar do cronograma
+                            </button>
+                          )}
+                        </div>
+                        {pub ? (
+                          <button className="link-titulo" onClick={() => onAbrirPublicacao(pub.nome)} title="Abrir em Publicações e vagas">{t.titulo}</button>
+                        ) : (
+                          <span className="cal-tema-tit">{t.titulo}</span>
+                        )}
+                        {pub ? (
+                          <>
+                            <span className="cal-tema-st ok">
+                              ✓ aberta · {pub.participantes.length}/{pub.maxVagas} vagas · {brl(faturamentoDaPub(pub))} vendidos
+                            </span>
+                            {chaveTitulo(pub.nome) !== chaveTitulo(t.titulo) && (
+                              <span className="cal-tema-st cadastro" title="Título cadastrado no sistema">no sistema: “{pub.nome}”</span>
+                            )}
+                          </>
+                        ) : (
+                          <div className="cal-tema-acao">
+                            <span className="cal-tema-st">ainda não aberta · {lanc.vagas} vagas previstas</span>
+                            <button className="mini criar-pub" onClick={() => abrirCriacao(lanc, t)}
+                              title="Abre o formulário de publicação já preenchido com os dados do planejamento">
+                              + criar publicação no sistema
+                            </button>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            );
+          })()}
+        </div>
+      </div>
+
+      {criando && (
+        <FormTema titulo={criando.novo ? `Adicionar tema · dia ${criando.dia}` : "Criar publicação do planejamento"} inicial={criando.dados}
+          aviso={criando.novo
+            ? `O tema entra no cronograma do dia ${criando.dia} e a publicação é criada no sistema (e na aba Trabalhos). Tipo e vagas já vêm do lançamento.`
+            : "Dados vindos do cronograma — ajuste o que precisar antes de criar. A publicação também entra na aba Trabalhos."}
+          onSalvar={confirmarCriacao} onClose={() => setCriando(null)} />
+      )}
+
+      {plano.nota && <p className="nota cal-nota"><b>Regras do mês:</b> {plano.nota}</p>}
+    </>
   );
 }
 
@@ -2532,7 +2886,8 @@ select.inp{ cursor:pointer; }
 
 /* PUBLICACOES: lista + painel de detalhe */
 .pub-split{ display:grid; grid-template-columns:330px 1fr; gap:16px; align-items:start; }
-.pub-lista{ max-height:calc(100vh - 240px); overflow-y:auto; }
+/* precisa vencer o .card.no-pad{overflow:hidden}, senão a lista corta em vez de rolar */
+.pub-lista.card.no-pad{ max-height:calc(100vh - 240px); overflow-y:auto; overscroll-behavior:contain; }
 .pub-item{ display:block; width:100%; text-align:left; background:transparent; border:none; border-bottom:1px solid var(--divider);
   padding:12px 14px; cursor:pointer; font-family:inherit; transition:.12s; }
 .pub-item:hover{ background:var(--hover); }
@@ -2608,6 +2963,91 @@ select.inp{ cursor:pointer; }
 .fp-opts .btn{ margin-left:auto; }
 .fp-reconhecida{ font-size:12px; font-weight:600; color:var(--ok); margin-top:9px; }
 
+/* PLANEJAMENTO — calendário editorial */
+.meta-bar{ display:flex; flex-direction:column; gap:10px; }
+.meta-txt{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.meta-txt .dp-sub{ margin:0; }
+.meta-txt span:last-child{ font-size:12px; font-weight:600; margin-left:auto; }
+.meta-leg{ display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.meta-key{ width:9px; height:9px; border-radius:3px; flex-shrink:0; }
+.meta-key.real{ background:var(--ok); }
+.meta-key.proj{ background:color-mix(in srgb, var(--brand) 34%, transparent); }
+.meta-track{ position:relative; height:8px; background:var(--track); border-radius:var(--r-full); overflow:hidden; }
+.meta-fill{ position:absolute; left:0; top:0; height:100%; border-radius:var(--r-full); transition:width .4s; }
+.meta-fill.proj{ background:color-mix(in srgb, var(--brand) 34%, transparent); }
+.meta-fill.real{ background:var(--ok); }
+.cal-split{ display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:16px; align-items:start; }
+.cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+.cal-dow{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em;
+  text-align:center; padding-bottom:4px; }
+.cal-cel{ min-height:76px; border:1px solid var(--divider); border-radius:var(--r-md); padding:7px 8px;
+  background:var(--surface); display:flex; flex-direction:column; gap:3px; text-align:left; font-family:inherit; }
+.cal-cel.vazia{ border-color:transparent; background:transparent; }
+.cal-num{ font-size:12px; font-weight:600; color:var(--muted2); font-variant-numeric:tabular-nums; }
+.cal-cel.tem{ cursor:pointer; transition:border-color .14s ease, background .14s ease, transform .08s ease; }
+.cal-cel.tem:active{ transform:translateY(1px); }
+.cal-cel.tem:focus-visible{ box-shadow:var(--ring); outline:none; }
+/* já aberto no sistema: card na cor do tipo de trabalho */
+.cal-cel.tem.aberto{ border-color:color-mix(in srgb, var(--tc,#5D6D7D) 34%, transparent);
+  background:color-mix(in srgb, var(--tc,#5D6D7D) 7%, var(--surface)); }
+.cal-cel.tem.aberto .cal-num{ color:var(--ink); }
+.cal-cel.tem.aberto:hover{ border-color:color-mix(in srgb, var(--tc,#5D6D7D) 62%, transparent); }
+.cal-cel.tem.aberto.sel{ border-color:var(--tc,var(--brand)); box-shadow:inset 0 0 0 1px var(--tc,var(--brand)); }
+/* nenhum tema aberto ainda: neutro, só o cronograma */
+.cal-cel.tem.neutro{ border-color:var(--border); background:var(--soft); }
+.cal-cel.tem.neutro .cal-num{ color:var(--muted2); }
+.cal-cel.tem.neutro .cal-prod{ color:var(--muted); font-weight:500; }
+.cal-cel.tem.neutro:hover{ border-color:var(--border-strong); background:var(--hover); }
+.cal-cel.tem.neutro.sel{ border-color:var(--border-strong); box-shadow:inset 0 0 0 1px var(--border-strong); }
+.cal-cel.tem.neutro::after{ background:var(--muted2); }
+.cal-cel.hoje .cal-num{ color:var(--brand); }
+.cal-cel.hoje .cal-num::after{ content:" · hoje"; font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+.cal-prod{ font-size:11px; font-weight:600; line-height:1.25; color:color-mix(in srgb, var(--tc,#5D6D7D) 55%, var(--ink)); }
+.cal-info{ font-size:10px; color:var(--muted2); line-height:1.3; margin-top:auto; font-variant-numeric:tabular-nums; }
+.cal-info.pendente{ font-style:italic; }
+.cal-det-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.cal-det-acoes{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex-shrink:0; }
+.cal-tema-topo{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.tirar-tema{ font-size:10px; padding:2px 8px; opacity:0; transition:opacity .14s ease; }
+.cal-temas li:hover .tirar-tema, .tirar-tema:focus-visible{ opacity:1; }
+.tirar-tema:hover{ border-color:var(--danger-border); color:var(--danger); background:var(--danger-soft); }
+.cal-det-tit{ font-size:16px; font-weight:600; letter-spacing:-.01em; margin-top:3px; }
+.cal-veiculo{ font-size:12px; color:var(--muted); margin-top:6px; }
+/* comparação realizado × planejado do lançamento */
+.cal-cmp{ margin:16px 0 6px; border-top:1px solid var(--divider); border-bottom:1px solid var(--divider); padding:6px 0; }
+.cal-cmp-row{ display:grid; grid-template-columns:1fr auto auto; gap:10px 20px; align-items:baseline; padding:6px 2px; }
+.cal-cmp-row span:first-child{ font-size:12px; color:var(--muted); }
+.cal-cmp-row b{ font-size:14px; font-weight:600; text-align:right; min-width:104px; font-variant-numeric:tabular-nums; }
+.cal-cmp-row b.prev{ color:var(--muted2); font-weight:500; }
+.cal-cmp-row.cab{ padding-bottom:2px; }
+.cal-cmp-row.cab span{ font-size:10px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; text-align:right; min-width:104px; }
+.cal-cmp-row.lucro{ border-top:1px solid var(--divider); margin-top:2px; padding-top:9px; }
+.cal-cmp-row.lucro span:first-child{ color:var(--ink); font-weight:600; }
+.cal-cmp-row.lucro b{ font-size:18px; letter-spacing:-.01em; }
+
+/* temas: aberto no sistema = verde; ainda não aberto = neutro apagado */
+.cal-temas{ list-style:none; display:flex; flex-direction:column; }
+.cal-temas li{ padding:11px 6px 11px 12px; border-bottom:1px solid var(--divider); border-left:2px solid transparent; }
+.cal-temas li:last-child{ border-bottom:none; }
+.cal-temas li.aberta{ border-left-color:var(--ok); background:color-mix(in srgb, var(--ok) 4%, transparent); }
+.cal-temas li.fechada .cal-tema-tit{ color:var(--muted); font-weight:500; }
+.cal-tema-areas{ font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+.cal-temas li.aberta .cal-tema-areas{ color:var(--ok); }
+.cal-temas li.fechada .cal-tema-areas{ color:var(--muted2); opacity:.8; }
+.cal-tema-tit{ font-size:13px; font-weight:600; color:var(--ink); line-height:1.4; display:block; }
+.cal-tema-acao{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:5px; }
+.cal-tema-acao .cal-tema-st{ margin-top:0; }
+.form-nota{ font-size:12px; color:var(--muted); line-height:1.5; background:var(--soft); border:1px solid var(--border);
+  border-radius:var(--r-md); padding:9px 12px; margin-bottom:14px; }
+.ta-tema{ width:100%; resize:vertical; line-height:1.45; font-family:inherit; }
+.criar-pub{ margin-left:auto; white-space:nowrap; }
+.criar-pub:hover:not(:disabled){ border-color:var(--brand); color:var(--brand); background:var(--brand-soft); }
+.cal-temas .link-titulo{ font-size:13px; line-height:1.4; }
+.cal-tema-st{ display:block; font-size:11px; color:var(--muted2); margin-top:4px; }
+.cal-tema-st.ok{ color:var(--ok); font-weight:600; }
+.cal-tema-st.cadastro{ color:var(--muted2); font-style:italic; margin-top:2px; }
+.cal-nota{ border-top:none; margin-top:4px; }
+
 /* LOADING / TOAST */
 .loading{ display:grid; place-items:center; min-height:100vh; gap:14px; color:var(--muted); font-size:13px;
   font-family:"Inter",system-ui,sans-serif; background:var(--bg); }
@@ -2669,8 +3109,13 @@ select.inp{ cursor:pointer; }
   .main{ padding:70px 16px 54px; }
   .head{ flex-direction:column; align-items:flex-start; gap:6px; margin-bottom:18px; }
   .head h1{ font-size:18px; }
-  .kpis,.kpis-3,.kpis-4,.grid-2,.pub-split,.fp-grid,.destaques,.cli-info,.form-grid,.dp-props{ grid-template-columns:1fr; }
-  .pub-lista{ max-height:none; }
+  .kpis,.kpis-3,.kpis-4,.grid-2,.pub-split,.fp-grid,.destaques,.cli-info,.form-grid,.dp-props,.cal-split{ grid-template-columns:1fr; }
+  .cal-grid{ gap:4px; }
+  .cal-cel{ min-height:56px; padding:5px; }
+  .cal-prod, .cal-info{ display:none; }
+  .cal-cel.tem{ align-items:center; justify-content:center; }
+  .cal-cel.tem::after{ content:""; width:6px; height:6px; border-radius:50%; background:var(--tc,var(--brand)); }
+  .pub-lista.card.no-pad{ max-height:none; }
   .periodo-bar{ flex-wrap:wrap; }
   .dp-fin{ flex-wrap:wrap; gap:14px 28px; }
   .dp-fin-lucro b{ font-size:20px; }
