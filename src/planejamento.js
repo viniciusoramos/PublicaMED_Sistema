@@ -1,8 +1,16 @@
 /* ============================================================
-   PLANEJAMENTO EDITORIAL
+   PLANEJAMENTO EDITORIAL · CARGA INICIAL
    Cronograma de lançamentos do mês (fonte: PDF de planejamento).
-   Receita e lucro são calculados a partir de vagas × preço × temas,
-   então basta ajustar os números aqui que a tela recalcula tudo.
+
+   ATENÇÃO — o cronograma vivo mora no BANCO, não aqui.
+   Este arquivo é a carga inicial: vira SQL por `npm run sql:planejamento`
+   (→ supabase/11-planejamento.sql), que é aplicado no Supabase uma vez.
+   Depois disso os ajustes são feitos pela tela do Calendário e valem para
+   todos os usuários — editar aqui NÃO muda mais o que aparece no sistema.
+   A tela só cai neste arquivo, em modo leitura, enquanto o SQL não roda.
+
+   Para planejar um mês novo: acrescente aqui, rode o script e aplique o SQL
+   gerado (ele é idempotente — não desfaz o que já foi ajustado pela tela).
 
    Campos opcionais, usados pelo botão "criar publicação no sistema":
      no lançamento → taxaPorTema (taxa de cada publicação), exigeGraduado
@@ -73,7 +81,9 @@ export const PLANEJAMENTOS = [
           { areas: "Cirurgia Geral · Coloproctologia · Oncologia", titulo: "Câncer de Cólon Obstruído: Cirurgia em Um ou Dois Tempos e o Lugar da Prótese Endoscópica" },
           // "Insuficiência Cardíaca Descompensada" saiu daqui: já tinha sido aberto antes (está no sistema como
           // "Decisão Clínica na Insuficiência Cardíaca Descompensada..."). Falta definir o tema que entra no lugar.
-          { areas: "Neurologia · Emergência", titulo: "AVC nas Primeiras Horas: Reconhecimento, Critérios para Trombólise e Decisão de Transferir" },
+          // "AVC nas Primeiras Horas" saiu daqui: foi aberto como Apresentação em congresso no dia 10/08, não como
+          // capítulo. (a publicação segue normalmente no sistema — isto é só o cronograma). Falta definir o tema que
+          // entra no lugar.
         ],
       },
       {

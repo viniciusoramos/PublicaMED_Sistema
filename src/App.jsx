@@ -299,6 +299,17 @@ const finMudou = (a, b) =>
   (a.faturamentoAjuste || 0) !== (b.faturamentoAjuste || 0);
 // (CRUD de publicações é incremental via db.*; ver os handlers granulares no App)
 
+/* Qual banco o painel está usando. Existe porque o `npm run dev` aponta para o Supabase de
+ * produção: sem um aviso na tela, é fácil testar achando que é de mentira e mexer no real.
+ *   npm run dev        → banco real   (tarja vermelha, só em desenvolvimento)
+ *   npm run dev:teste  → banco teste  (tarja verde, lê .env.teste)
+ * Em produção de verdade (site publicado) nenhuma das duas aparece. */
+const AMBIENTE_TESTE = import.meta.env.VITE_AMBIENTE === "teste";
+const DEV_NO_REAL = import.meta.env.DEV && !AMBIENTE_TESTE;
+// o Vite completa o .env.teste com o .env: se faltar a URL lá, cairíamos no banco real
+// com cara de teste. Mostrar o projeto na tarja deixa isso visível de imediato.
+const PROJETO_SUPABASE = (import.meta.env.VITE_SUPABASE_URL || "").replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+
 export default function App() {
   const [tab, setTab] = useState("overview");
   const [menuAberto, setMenuAberto] = useState(false);
@@ -309,6 +320,9 @@ export default function App() {
   const [trabalhos, setTrabalhos] = useState([]);
   const [financeiro, setFinanceiro] = useState([]);
   const [temas, setTemas] = useState([]);
+  // cronograma: vem do banco. Enquanto o SQL não for aplicado, cai no arquivo em modo leitura.
+  const [planejamentos, setPlanejamentos] = useState(PLANEJAMENTOS);
+  const [planoNoBanco, setPlanoNoBanco] = useState(false);
   const [pronto, setPronto] = useState(false);
   const [sessao, setSessao] = useState(undefined); // undefined=verificando, null=deslogado, objeto=logado
   const [toast, setToast] = useState(null);
@@ -327,10 +341,13 @@ export default function App() {
     let vivo = true;
     (async () => {
       try {
-        const d = await db.carregarTudo();
+        const [d, plan] = await Promise.all([db.carregarTudo(), db.carregarPlanejamentos()]);
         if (!vivo) return;
         setVendas(d.vendas); setTrabalhos(d.trabalhos);
         setFinanceiro(d.financeiro); setTemas(d.temas);
+        // sem cronograma no banco (SQL ainda não aplicado): segue com o do arquivo, sem edição
+        setPlanejamentos(plan || PLANEJAMENTOS);
+        setPlanoNoBanco(!!plan);
         setPronto(true);
       } catch (e) {
         if (vivo) aviso("Erro ao carregar dados: " + e.message);
@@ -413,12 +430,45 @@ export default function App() {
       return nova;
     } catch (e) { aviso("Erro: " + e.message); }
   };
-  // cria a publicação a partir do cronograma (aba Planejamento); a taxa, quando vem no plano,
-  // fica cadastrada na publicação mas não é lançada no Financeiro (isso continua manual)
+  // cria a publicação a partir do cronograma (aba Calendário). A taxa informada ali já entra
+  // como saída no Financeiro, no mês do lançamento — a publicação nasce com o custo lançado,
+  // sem obrigar a repetir o valor no painel dela depois.
   const criarPublicacaoDoPlano = async (dados) => {
     const nova = await addPublicacao(dados);
-    if (nova && dados.taxa) await editPublicacao(nova.id, { taxa: dados.taxa });
+    if (nova && (dados.taxa || 0) > 0) await lancarTaxaPub(nova, dados.taxa, dados.taxaData || hojeIso());
     return nova;
+  };
+  /* ---------- cronograma (aba Calendário) ----------
+   * Nenhuma destas ações toca na publicação ou nos participantes: mexem só no plano do mês.
+   */
+  const mexerNosTemas = (lancamentoId, fn) => setPlanejamentos((ps) => ps.map((p) => ({
+    ...p,
+    lancamentos: p.lancamentos.map((l) => (l.id === lancamentoId ? { ...l, temas: fn(l.temas) } : l)),
+  })));
+  const addTemaPlano = async (lancamentoId, dados) => {
+    try {
+      const t = await db.adicionarTemaPlano(lancamentoId, dados);
+      mexerNosTemas(lancamentoId, (ts) => [...ts, t]);
+      return t;
+    } catch (e) { aviso("Erro ao pôr no cronograma: " + e.message); }
+  };
+  // o que veio do plano do mês fica guardado e pode ser restaurado;
+  // o que foi acrescentado pela tela sai de vez (não fazia parte do plano)
+  const tirarTemaPlano = async (lancamentoId, tema) => {
+    const antes = planejamentos;
+    mexerNosTemas(lancamentoId, (ts) => (tema.extra
+      ? ts.filter((x) => x.id !== tema.id)
+      : ts.map((x) => (x.id === tema.id ? { ...x, removido: true } : x))));
+    try {
+      if (tema.extra) await db.removerTemaPlano(tema.id);
+      else await db.marcarTemaPlanoRemovido(tema.id, true);
+    } catch (e) { aviso("Erro ao salvar: " + e.message); setPlanejamentos(antes); }
+  };
+  const restaurarTemaPlano = async (lancamentoId, tema) => {
+    const antes = planejamentos;
+    mexerNosTemas(lancamentoId, (ts) => ts.map((x) => (x.id === tema.id ? { ...x, removido: false } : x)));
+    try { await db.marcarTemaPlanoRemovido(tema.id, false); }
+    catch (e) { aviso("Erro ao salvar: " + e.message); setPlanejamentos(antes); }
   };
   // estorna uma taxa lançada: tira do mês do lançamento; se não achar, procura o mês mais recente com taxa suficiente
   const estornarTaxaFinanceiro = async (valor, dataIso) => {
@@ -643,8 +693,22 @@ export default function App() {
 
   return (
     <ListasCtx.Provider value={{ tipos: tiposDisp, status: statusDisp }}>
-    <div className={"root" + (dark ? " dark" : "")}>
+    <div className={"root" + (dark ? " dark" : "") + (AMBIENTE_TESTE || DEV_NO_REAL ? " com-tarja" : "")}>
       <Estilos />
+      {AMBIENTE_TESTE && (
+        <div className="tarja-amb teste">
+          AMBIENTE DE TESTE · pode mexer à vontade
+          <code>{PROJETO_SUPABASE}</code>
+          <span className="tarja-conf">confira que este NÃO é o projeto real</span>
+        </div>
+      )}
+      {DEV_NO_REAL && (
+        <div className="tarja-amb real">
+          ATENÇÃO · localhost ligado ao banco REAL — o que mudar aqui vale de verdade
+          <code>{PROJETO_SUPABASE}</code>
+          <span className="tarja-conf">para testar sem risco: npm run dev:teste</span>
+        </div>
+      )}
       <datalist id="tipos-datalist">{tiposDisp.map((t) => <option key={t} value={t} />)}</datalist>
       <datalist id="status-datalist">{statusDisp.map((s) => <option key={s} value={s} />)}</datalist>
       {/* TOPBAR (aparece só no celular) */}
@@ -702,7 +766,9 @@ export default function App() {
             onLancarTaxa={lancarTaxaPub} aviso={aviso} />
         )}
         {tab === "planejamento" && (
-          <Planejamento temas={temas} vendas={vendas} onAbrirPublicacao={abrirPublicacao} onCriarPublicacao={criarPublicacaoDoPlano} />
+          <Planejamento temas={temas} vendas={vendas} planejamentos={planejamentos} editavel={planoNoBanco}
+            onAbrirPublicacao={abrirPublicacao} onCriarPublicacao={criarPublicacaoDoPlano}
+            onAddTema={addTemaPlano} onTirarTema={tirarTemaPlano} onRestaurarTema={restaurarTemaPlano} />
         )}
       </main>
 
@@ -1893,8 +1959,14 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
   const [editandoNome, setEditandoNome] = useState(false);
   const [nomeTmp, setNomeTmp] = useState("");
   const [editP, setEditP] = useState(null);
+  // se a publicação já tem taxa cadastrada mas ainda não lançada (ex.: veio do cronograma antes
+  // do lançamento automático), o valor aparece preenchido — não faz sentido redigitar
   const [taxaVal, setTaxaVal] = useState("");
   const [taxaData, setTaxaData] = useState(hojeIso());
+  useEffect(() => {
+    setTaxaVal(!t.taxaLancada && (t.taxa || 0) > 0 ? String(t.taxa).replace(".", ",") : "");
+    setTaxaData(t.taxaData || hojeIso());
+  }, [t.id, t.taxa, t.taxaLancada, t.taxaData]);
   const [subindoCert, setSubindoCert] = useState(false);
   const [copiado, setCopiado] = useState(false);
   const lancar = () => {
@@ -2183,8 +2255,16 @@ function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
 }
 
 // usado tanto no "+ Nova publicação" quanto no cronograma (aí chega pré-preenchido pelo planejamento)
-function FormTema({ onSalvar, onClose, inicial, titulo = "Nova publicação", aviso: avisoTopo }) {
-  const [f, setF] = useState({ nome: "", tipo: "Artigo", area: "", maxVagas: 6, requiresGrad: false, ...(inicial || {}) });
+// comTaxa liga o campo de taxa de publicação (usado ao criar a partir do cronograma, onde o
+// custo do lançamento já é conhecido na hora). A taxa é digitada como no resto do painel
+// ("1.650,00"), convertida por numBR ao salvar, e quem cria é que decide o que fazer com ela —
+// no cronograma, ela já é lançada no Financeiro do mês do lançamento.
+function FormTema({ onSalvar, onClose, inicial, titulo = "Nova publicação", aviso: avisoTopo, comTaxa = false }) {
+  const [f, setF] = useState(() => {
+    const base = { nome: "", tipo: "Artigo", area: "", maxVagas: 6, requiresGrad: false, ...(inicial || {}) };
+    // a taxa pode chegar como número (vinda do plano) — o input trabalha com texto
+    return { ...base, taxa: base.taxa == null || base.taxa === "" ? "" : String(base.taxa).replace(".", ",") };
+  });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   return (
     <Modal titulo={titulo} onClose={onClose}>
@@ -2197,10 +2277,22 @@ function FormTema({ onSalvar, onClose, inicial, titulo = "Nova publicação", av
         <Campo label="Número de vagas"><input type="number" min="1" className="inp" value={f.maxVagas} onChange={(e) => set("maxVagas", parseInt(e.target.value, 10) || 1)} /></Campo>
       </div>
       <Campo label="Área (opcional)"><input className="inp" placeholder="Ex.: Cirurgia Geral · Emergência" value={f.area} onChange={(e) => set("area", e.target.value)} /></Campo>
+      {comTaxa && (
+        <div className="form-grid form-grid-taxa">
+          <Campo label="Taxa de publicação (opcional)">
+            <input className="inp" inputMode="decimal" placeholder="R$ 0,00" value={f.taxa} onChange={(e) => set("taxa", e.target.value)} />
+          </Campo>
+          <p className="form-dica">O custo pago à revista. Já entra como saída no Financeiro,
+            no mês deste lançamento — não precisa lançar de novo depois.</p>
+        </div>
+      )}
       <label className="check pub-grad"><input type="checkbox" checked={f.requiresGrad} onChange={(e) => set("requiresGrad", e.target.checked)} /> é necessário ao menos um médico graduado?</label>
       <div className="form-acoes">
         <button className="btn-ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn" onClick={() => { if (!f.nome.trim()) { alert("Informe o tema."); return; } onSalvar(f); }}>Criar publicação</button>
+        <button className="btn" onClick={() => {
+          if (!f.nome.trim()) { alert("Informe o tema."); return; }
+          onSalvar(comTaxa ? { ...f, taxa: numBR(f.taxa) } : f);
+        }}>Criar publicação</button>
       </div>
     </Modal>
   );
@@ -2228,57 +2320,51 @@ const semelhanca = (a, b) => {
   return inter / (a.size + b.size - inter); // Jaccard
 };
 const LIMIAR_TITULO = 0.6;
-// temas acrescentados a um lançamento depois do PDF (ex.: substituindo um que foi antecipado).
-// Ficam no navegador porque o cronograma ainda mora num arquivo do código; migram para o
-// banco quando o planejamento for persistido lá.
-const KEY_EXTRAS = "publicamed:plano-temas-extras";
-const lerExtras = () => { try { return JSON.parse(localStorage.getItem(KEY_EXTRAS) || "{}"); } catch { return {}; } };
-
-function Planejamento({ temas, vendas = [], onAbrirPublicacao, onCriarPublicacao }) {
-  const [planId, setPlanId] = useState(PLANEJAMENTOS[0]?.id || "");
-  const plano = PLANEJAMENTOS.find((p) => p.id === planId) || PLANEJAMENTOS[0] || null;
+// `editavel` é falso enquanto o cronograma ainda não está no banco (SQL 11-planejamento.sql
+// não aplicado): a tela mostra o plano do arquivo, mas sem os botões que gravariam.
+function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false,
+                        onAbrirPublicacao, onCriarPublicacao, onAddTema, onTirarTema, onRestaurarTema }) {
+  const [planId, setPlanId] = useState(planejamentos[0]?.id || "");
+  const plano = planejamentos.find((p) => p.id === planId) || planejamentos[0] || null;
   const [diaSel, setDiaSel] = useState(plano?.lancamentos[0]?.dia ?? null);
   const [criando, setCriando] = useState(null); // { dados, taxa, dia, novo } — abre o form já preenchido
-  const [extras, setExtras] = useState(lerExtras);
-  // temas do lançamento = os do cronograma + os acrescentados depois
-  const temasDe = (l) => [...l.temas, ...(((extras[plano?.id] || {})[l.dia]) || [])];
+  // temas em cartaz no dia e temas que foram tirados dele (guardados, dá para restaurar)
+  const temasDe = (l) => l.temas.filter((t) => !t.removido);
+  const tiradosDe = (l) => l.temas.filter((t) => t.removido);
 
   // abre o formulário padrão de publicação com os dados do planejamento, para conferir/ajustar antes de criar
   const abrirCriacao = (l, t) => setCriando({
     dia: l.dia,
+    lancamentoId: l.id,
     novo: !t,
-    taxa: t?.taxa ?? l.taxaPorTema,
     dados: {
       nome: t?.titulo || "",
       tipo: l.tipo,
       area: t?.areas || "",
       maxVagas: l.vagas,
       requiresGrad: !!(t?.exigeGraduado ?? l.exigeGraduado),
+      // sugestão vinda do plano; o campo do formulário é quem manda
+      taxa: t?.taxa ?? l.taxaPorTema,
+      // a taxa é lançada no mês do lançamento, não no mês em que a publicação foi criada
+      taxaData: `${plano.ano}-${String(plano.mes + 1).padStart(2, "0")}-${String(l.dia).padStart(2, "0")}`,
     },
   });
   const confirmarCriacao = async (form) => {
     const ctx = criando;
     setCriando(null);
-    const nova = await onCriarPublicacao({ ...form, taxa: ctx?.taxa });
-    // tema novo (não estava no PDF): passa a constar no cronograma daquele dia
-    if (nova && ctx?.novo) {
-      setExtras((prev) => {
-        const doPlano = prev[plano.id] || {};
-        const novo = { ...prev, [plano.id]: { ...doPlano, [ctx.dia]: [...(doPlano[ctx.dia] || []), { titulo: form.nome, areas: form.area, extra: true }] } };
-        try { localStorage.setItem(KEY_EXTRAS, JSON.stringify(novo)); } catch (e) {}
-        return novo;
-      });
+    const nova = await onCriarPublicacao(form); // a taxa vem do próprio formulário
+    // tema novo (não estava no plano do mês): passa a constar no cronograma daquele dia
+    if (nova && ctx?.novo && ctx.lancamentoId) {
+      await onAddTema(ctx.lancamentoId, { titulo: form.nome, areas: form.area });
     }
   };
   // tira o tema do cronograma — NÃO mexe na publicação nem nos participantes
-  const tirarDoCronograma = (dia, titulo) => {
-    if (!confirm(`Tirar este tema do dia ${dia} do cronograma?\n\n${titulo}\n\nA publicação e os participantes continuam no sistema — sai apenas do planejamento.`)) return;
-    setExtras((prev) => {
-      const doPlano = prev[plano.id] || {};
-      const novo = { ...prev, [plano.id]: { ...doPlano, [dia]: (doPlano[dia] || []).filter((x) => x.titulo !== titulo) } };
-      try { localStorage.setItem(KEY_EXTRAS, JSON.stringify(novo)); } catch (e) {}
-      return novo;
-    });
+  const tirarDoCronograma = (l, tema) => {
+    const guardado = tema.extra
+      ? "Ele foi acrescentado por aqui, então sai de vez do cronograma."
+      : "Ele fica guardado no rodapé do dia — dá para restaurar depois.";
+    if (!confirm(`Tirar este tema do dia ${l.dia} do cronograma?\n\n${tema.titulo}\n\nA publicação e os participantes continuam no sistema — sai apenas do planejamento. ${guardado}`)) return;
+    onTirarTema(l.id, tema);
   };
 
   // publicação real correspondente a cada tema planejado: casa pelo título exato e,
@@ -2303,7 +2389,7 @@ function Planejamento({ temas, vendas = [], onAbrirPublicacao, onCriarPublicacao
       }
     }
     return map;
-  }, [temas, plano, extras]);
+  }, [temas, plano]);
   // índices de venda p/ apurar o que já foi pago sem varrer a lista inteira por participante
   const idxVendas = useMemo(() => {
     const porPart = new Map(), porTemaNome = new Map();
@@ -2363,7 +2449,7 @@ function Planejamento({ temas, vendas = [], onAbrirPublicacao, onCriarPublicacao
     }
     a.lucroReal = a.receitaReal - a.custoReal;
     return a;
-  }, [plano, pubPorTitulo, idxVendas, extras]);
+  }, [plano, pubPorTitulo, idxVendas]);
 
   if (!plano) return <><Header titulo="Planejamento" sub="Nenhum planejamento cadastrado" /></>;
 
@@ -2384,14 +2470,21 @@ function Planejamento({ temas, vendas = [], onAbrirPublicacao, onCriarPublicacao
       <Header titulo="Planejamento editorial"
         sub={`${MESES[plano.mes]} de ${plano.ano} · ${num(plano.lancamentos.length)} lançamentos · ${num(tot.criadas)} de ${num(tot.temas)} temas já abertos no sistema`} />
 
-      {PLANEJAMENTOS.length > 1 && (
+      {planejamentos.length > 1 && (
         <div className="periodo-bar">
           <span className="periodo-lab">Mês</span>
           <select className="inp" aria-label="Mês do planejamento" value={planId}
-            onChange={(e) => { setPlanId(e.target.value); const p = PLANEJAMENTOS.find((x) => x.id === e.target.value); setDiaSel(p?.lancamentos[0]?.dia ?? null); }}>
-            {PLANEJAMENTOS.map((p) => <option key={p.id} value={p.id}>{MESES[p.mes]} de {p.ano}</option>)}
+            onChange={(e) => { setPlanId(e.target.value); const p = planejamentos.find((x) => x.id === e.target.value); setDiaSel(p?.lancamentos[0]?.dia ?? null); }}>
+            {planejamentos.map((p) => <option key={p.id} value={p.id}>{MESES[p.mes]} de {p.ano}</option>)}
           </select>
         </div>
+      )}
+      {!editavel && (
+        <p className="nota plano-somente-leitura">
+          <b>Cronograma em modo leitura.</b> Ele ainda está no arquivo do código, não no banco —
+          por isso os botões de mexer nos temas estão desligados. Para liberar, aplique
+          <code> supabase/11-planejamento.sql</code> no SQL Editor do Supabase.
+        </p>
       )}
 
       <div className="kpis kpis-4">
@@ -2459,10 +2552,12 @@ function Planejamento({ temas, vendas = [], onAbrirPublicacao, onCriarPublicacao
                   </div>
                   <div className="cal-det-acoes">
                     <span className="tipo-pill" style={{ "--tc": corTipo(lanc.tipo) }}>{lanc.tipo}</span>
-                    <button className="mini" onClick={() => abrirCriacao(lanc, null)}
-                      title={`Adiciona um tema ao lançamento de ${lanc.dia}/${String(plano.mes + 1).padStart(2, "0")} e cria a publicação`}>
-                      + adicionar tema
-                    </button>
+                    {editavel && (
+                      <button className="mini" onClick={() => abrirCriacao(lanc, null)}
+                        title={`Adiciona um tema ao lançamento de ${lanc.dia}/${String(plano.mes + 1).padStart(2, "0")} e cria a publicação`}>
+                        + adicionar tema
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="dp-meta">
@@ -2485,11 +2580,11 @@ function Planejamento({ temas, vendas = [], onAbrirPublicacao, onCriarPublicacao
                   {temasDe(lanc).map((t) => {
                     const pub = pubPorTitulo.get(chaveTitulo(t.titulo));
                     return (
-                      <li key={t.titulo} className={pub ? "aberta" : "fechada"}>
+                      <li key={t.id || t.titulo} className={pub ? "aberta" : "fechada"}>
                         <div className="cal-tema-topo">
                           <div className="cal-tema-areas">{t.areas}</div>
-                          {t.extra && (
-                            <button className="mini tirar-tema" onClick={() => tirarDoCronograma(lanc.dia, t.titulo)}
+                          {editavel && (
+                            <button className="mini tirar-tema" onClick={() => tirarDoCronograma(lanc, t)}
                               title="Tira o tema deste dia do cronograma. A publicação e os participantes continuam no sistema.">
                               tirar do cronograma
                             </button>
@@ -2522,6 +2617,21 @@ function Planejamento({ temas, vendas = [], onAbrirPublicacao, onCriarPublicacao
                     );
                   })}
                 </ul>
+
+                {tiradosDe(lanc).length > 0 && (
+                  <div className="cal-tirados">
+                    <span className="hint">Tirados do cronograma deste dia</span>
+                    <ul>
+                      {tiradosDe(lanc).map((t) => (
+                        <li key={t.id}>
+                          <span className="cal-tirado-tit">{t.titulo}</span>
+                          <button className="mini" onClick={() => onRestaurarTema(lanc.id, t)}
+                            title="Devolve o tema a este dia do cronograma">restaurar</button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </>
             );
           })()}
@@ -2533,7 +2643,7 @@ function Planejamento({ temas, vendas = [], onAbrirPublicacao, onCriarPublicacao
           aviso={criando.novo
             ? `O tema entra no cronograma do dia ${criando.dia} e a publicação é criada no sistema (e na aba Trabalhos). Tipo e vagas já vêm do lançamento.`
             : "Dados vindos do cronograma — ajuste o que precisar antes de criar. A publicação também entra na aba Trabalhos."}
-          onSalvar={confirmarCriacao} onClose={() => setCriando(null)} />
+          comTaxa onSalvar={confirmarCriacao} onClose={() => setCriando(null)} />
       )}
 
       {plano.nota && <p className="nota cal-nota"><b>Regras do mês:</b> {plano.nota}</p>}
@@ -2838,6 +2948,8 @@ select.inp{ cursor:pointer; }
 .campo span{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.05em; }
 .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:13px; }
 .form-grid .campo{ margin-bottom:0; }
+.form-grid-taxa{ margin-bottom:13px; }
+.form-dica{ align-self:center; font-size:11px; color:var(--muted2); line-height:1.45; }
 .form-acoes{ display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
 .resumo-mes{ display:flex; gap:24px; margin-top:16px; padding:12px 14px; background:var(--soft); border-radius:var(--r-md); border:1px solid var(--border); }
 .resumo-mes div{ display:flex; flex-direction:column; gap:3px; }
@@ -3047,6 +3159,23 @@ select.inp{ cursor:pointer; }
 .cal-tema-st.ok{ color:var(--ok); font-weight:600; }
 .cal-tema-st.cadastro{ color:var(--muted2); font-style:italic; margin-top:2px; }
 .cal-nota{ border-top:none; margin-top:4px; }
+/* temas tirados do dia — ficam discretos, só para poder devolver ao cronograma */
+.cal-tirados{ margin-top:12px; border-top:1px dashed var(--divider); padding-top:10px; }
+.cal-tirados ul{ list-style:none; display:flex; flex-direction:column; gap:6px; margin-top:7px; }
+.cal-tirados li{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.cal-tirado-tit{ font-size:12px; color:var(--muted2); line-height:1.4; text-decoration:line-through; }
+/* TARJA DE AMBIENTE — qual banco o painel está usando */
+.tarja-amb{ position:fixed; top:0; left:0; right:0; z-index:70; min-height:30px; display:flex; align-items:center;
+  justify-content:center; gap:7px; padding:5px 14px; text-align:center; font-size:12px; font-weight:600; letter-spacing:.02em; }
+.tarja-amb code{ font-weight:500; font-size:11px; background:rgba(0,0,0,.2); border-radius:5px; padding:1px 6px; }
+.tarja-conf{ font-weight:500; opacity:.8; }
+.tarja-amb.teste{ background:#12694A; color:#E6FBF2; }
+.tarja-amb.real{ background:#A81F27; color:#FFEDED; }
+.root.com-tarja{ padding-top:30px; }
+.root.com-tarja .side{ top:30px; height:calc(100vh - 30px); }
+.plano-somente-leitura{ border-top:none; margin:0 0 14px; }
+.plano-somente-leitura code{ font-size:11px; background:var(--soft); border:1px solid var(--border);
+  border-radius:var(--r-sm); padding:1px 5px; }
 
 /* LOADING / TOAST */
 .loading{ display:grid; place-items:center; min-height:100vh; gap:14px; color:var(--muted); font-size:13px;
@@ -3107,6 +3236,9 @@ select.inp{ cursor:pointer; }
   .side.aberta{ transform:translateX(0); }
   .side-backdrop{ display:block; }
   .main{ padding:70px 16px 54px; }
+  /* no celular a topbar é fixa: desce para caber a tarja de ambiente */
+  .root.com-tarja .topbar{ top:30px; }
+  .root.com-tarja .side{ top:0; height:100vh; }
   .head{ flex-direction:column; align-items:flex-start; gap:6px; margin-bottom:18px; }
   .head h1{ font-size:18px; }
   .kpis,.kpis-3,.kpis-4,.grid-2,.pub-split,.fp-grid,.destaques,.cli-info,.form-grid,.dp-props,.cal-split{ grid-template-columns:1fr; }

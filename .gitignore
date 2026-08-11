@@ -11,6 +11,7 @@ publicamed_sistema.jsx
 .env
 .env.local
 .env.*.local
+.env.teste
 
 # logs / editor / SO
 *.log

@@ -8,6 +8,12 @@
 --    Supabase Dashboard → SQL Editor → New query → cole tudo → Run.
 --    (idempotente: pode rodar de novo sem quebrar nada)
 --
+--  Rode DEPOIS, no mesmo projeto, para ter o calendário editorial:
+--    supabase/11-planejamento.sql  (tabelas do cronograma + a carga
+--    do mês). Fica fora daqui de propósito: aquele arquivo é gerado
+--    a partir de src/planejamento.js e duplicá-lo aqui sairia do ar
+--    assim que o cronograma mudasse.
+--
 --  Depois de rodar, crie um usuário para conseguir entrar no app:
 --    Authentication → Users → Add user → email + senha (marque
 --    "Auto Confirm User"). Sem isso o login não passa, porque o

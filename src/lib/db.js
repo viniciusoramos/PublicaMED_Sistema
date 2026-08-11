@@ -268,6 +268,86 @@ export async function removerParticipante(id) {
   if (error) throw error;
 }
 
+/* ---------- planejamento editorial (cronograma) ----------
+ * Sai no mesmo formato do antigo src/planejamento.js, então a tela do
+ * calendário não precisa saber se o cronograma veio do banco ou do arquivo.
+ * Cada tema traz o id (para editar) e o par extra/removido:
+ *   extra    = acrescentado pela tela, não fazia parte do plano do mês
+ *   removido = tirado do cronograma, mas guardado para poder restaurar
+ */
+const planTemaDe = (t) => ({
+  id: t.id,
+  titulo: t.titulo || '',
+  areas: t.areas || '',
+  taxa: t.taxa == null ? undefined : Number(t.taxa),
+  exigeGraduado: t.exige_graduado == null ? undefined : !!t.exige_graduado,
+  extra: t.origem === 'extra',
+  removido: !!t.removido,
+});
+const planLancDe = (l) => ({
+  id: l.id,
+  dia: l.dia,
+  produto: l.produto || '',
+  tipo: l.tipo || 'Artigo',
+  vagas: l.vagas,
+  preco: Number(l.preco) || 0,
+  custo: Number(l.custo) || 0,
+  veiculo: l.veiculo || '',
+  taxaPorTema: l.taxa_por_tema == null ? undefined : Number(l.taxa_por_tema),
+  exigeGraduado: !!l.exige_graduado,
+  temas: (l.planejamento_temas || [])
+    .slice()
+    .sort((a, b) => (a.ordem - b.ordem) || (a.criado_em || '').localeCompare(b.criado_em || ''))
+    .map(planTemaDe),
+});
+
+// devolve null (em vez de estourar) quando as tabelas ainda não existem no banco:
+// a tela cai no cronograma do arquivo, em modo leitura, até o SQL ser aplicado
+export async function carregarPlanejamentos() {
+  const { data, error } = await supabase
+    .from('planejamentos')
+    .select('*, planejamento_lancamentos(*, planejamento_temas(*))')
+    .order('id', { ascending: false });
+  if (error) {
+    // tabela ainda não criada: o PostgREST responde PGRST205 ("não achei no schema cache")
+    // e o Postgres, 42P01. Nos dois casos não é falha — é o SQL que ainda não foi aplicado.
+    if (error.code === 'PGRST205' || error.code === '42P01'
+        || /schema cache|does not exist/i.test(error.message || '')) return null;
+    throw error;
+  }
+  if (!data || !data.length) return null;
+  return data.map((p) => ({
+    id: p.id,
+    ano: p.ano,
+    mes: p.mes,
+    meta: Number(p.meta) || 0,
+    conversao: Number(p.conversao) || 0.8,
+    nota: p.nota || '',
+    lancamentos: (p.planejamento_lancamentos || []).slice().sort((a, b) => a.dia - b.dia).map(planLancDe),
+  }));
+}
+export async function adicionarTemaPlano(lancamentoId, t) {
+  const { data, error } = await supabase.from('planejamento_temas').insert({
+    lancamento_id: lancamentoId,
+    titulo: t.titulo || '',
+    areas: t.areas || '',
+    origem: 'extra',
+    ordem: t.ordem ?? 99,
+  }).select().single();
+  if (error) throw error;
+  return planTemaDe(data);
+}
+// tira/devolve o tema do cronograma. NÃO mexe na publicação nem nos participantes.
+export async function marcarTemaPlanoRemovido(id, removido) {
+  const { error } = await supabase.from('planejamento_temas').update({ removido: !!removido }).eq('id', id);
+  if (error) throw error;
+}
+// só para temas acrescentados pela tela: não faziam parte do plano, somem de vez
+export async function removerTemaPlano(id) {
+  const { error } = await supabase.from('planejamento_temas').delete().eq('id', id);
+  if (error) throw error;
+}
+
 /* ---------- auth ---------- */
 export async function sessaoAtual() {
   if (!supabase) return null;

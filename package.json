@@ -6,11 +6,13 @@
   "description": "Painel de gestão interna da PublicaMED (Vite + React + Supabase)",
   "scripts": {
     "dev": "vite",
+    "dev:teste": "vite --mode teste",
     "build": "vite build",
     "preview": "vite preview",
     "import:seed": "node scripts/import-seed.mjs",
     "import:seed:dry": "node scripts/import-seed.mjs --dry-run",
-    "import:seed:reset": "node scripts/import-seed.mjs --reset"
+    "import:seed:reset": "node scripts/import-seed.mjs --reset",
+    "sql:planejamento": "node scripts/gerar-sql-planejamento.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
