@@ -76,6 +76,12 @@ const anoDeIso = (iso) => (iso ? parseInt(iso.split("-")[0], 10) : null);
 const hojeIso = () => new Date().toISOString().slice(0, 10);
 // Lê número no padrão brasileiro: ponto = separador de milhar, vírgula = decimal.
 // Ex.: "1.260" -> 1260 · "1.260,50" -> 1260.5 · "124,17" -> 124.17 · "1260" -> 1260 · "124.17" -> 124.17
+/* Links internos do painel: são <a href="#..."> de verdade, para o botão direito oferecer
+ * "abrir em nova guia" e o clique do meio funcionar. No clique simples cancelamos o padrão e
+ * navegamos por dentro (sem recarregar); com Ctrl/Cmd/Shift/Alt saímos do caminho e deixamos o
+ * navegador abrir a guia — se chamássemos preventDefault sempre, o Ctrl+clique não abriria nada. */
+const abrirForaDoApp = (e) => e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
+
 const numBR = (v) => {
   if (typeof v === "number") return v;
   let s = String(v ?? "").trim().replace(/[^\d.,-]/g, "");
@@ -728,9 +734,10 @@ export default function App() {
         </div>
         <nav>
           {navItens.map(([id, lab, ic]) => (
-            <button key={id} className={"nav " + (tab === id ? "ativo" : "")} aria-current={tab === id ? "page" : undefined} onClick={() => irPara(id)}>
+            <a key={id} href={"#" + id} className={"nav " + (tab === id ? "ativo" : "")} aria-current={tab === id ? "page" : undefined}
+              onClick={(e) => { if (abrirForaDoApp(e)) return; e.preventDefault(); irPara(id); }}>
               <span className="nav-ic">{ic}</span>{lab}
-            </button>
+            </a>
           ))}
         </nav>
         <div className="side-foot">
@@ -1456,7 +1463,7 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
               <tr key={t.id}>
                 <td className="cel-titulo">
                   <a className="link-titulo" href={`#pub=${encodeURIComponent(t.titulo)}`} title="Ver em Publicações e vagas"
-                    onClick={(e) => { e.preventDefault(); onAbrirPublicacao(t.titulo); }}>{t.titulo}</a>
+                    onClick={(e) => { if (abrirForaDoApp(e)) return; e.preventDefault(); onAbrirPublicacao(t.titulo); }}>{t.titulo}</a>
                   <div className="titulo-meta">
                     <span className="tipo-pill" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo}</span>
                     {editLocalId === t.id ? (
@@ -1908,8 +1915,12 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
             const restantes = t.maxVagas - t.participantes.length;
             const cheio = restantes <= 0;
             return (
-              <button key={t.id} className={"pub-item" + (selId === t.id ? " ativo" : "")}
-                onClick={() => { setSelId(t.id); window.history.replaceState(null, "", "#pub=" + encodeURIComponent(t.nome)); }}>
+              <a key={t.id} href={"#pub=" + encodeURIComponent(t.nome)} className={"pub-item" + (selId === t.id ? " ativo" : "")}
+                onClick={(e) => {
+                  if (abrirForaDoApp(e)) return;
+                  e.preventDefault();
+                  setSelId(t.id); window.history.replaceState(null, "", "#pub=" + encodeURIComponent(t.nome));
+                }}>
                 <div className="pub-item-top">
                   <span className="pub-item-nome">{t.nome}</span>
                   <span className={"vagas-badge " + (cheio ? "b-cheio" : restantes <= 2 ? "b-quase" : "b-ok")}>
@@ -1920,7 +1931,7 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
                   <span className="tipo-pill" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo || "Artigo"}</span>
                   <span className="pub-item-ocup">{t.participantes.length}/{t.maxVagas} ocupadas</span>
                 </div>
-              </button>
+              </a>
             );
           })}
           {lista.length === 0 && (
@@ -2591,7 +2602,8 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
                           )}
                         </div>
                         {pub ? (
-                          <button className="link-titulo" onClick={() => onAbrirPublicacao(pub.nome)} title="Abrir em Publicações e vagas">{t.titulo}</button>
+                          <a className="link-titulo" href={`#pub=${encodeURIComponent(pub.nome)}`} title="Abrir em Publicações e vagas"
+                            onClick={(e) => { if (abrirForaDoApp(e)) return; e.preventDefault(); onAbrirPublicacao(pub.nome); }}>{t.titulo}</a>
                         ) : (
                           <span className="cal-tema-tit">{t.titulo}</span>
                         )}
@@ -2721,7 +2733,7 @@ function Estilos() {
 nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 .nav{ display:flex; align-items:center; gap:10px; padding:9px 12px; border:none; background:transparent;
   color:rgba(214,230,240,.72); font-size:13px; border-radius:8px; cursor:pointer; text-align:left; width:100%; font-weight:500;
-  transition:background .12s, color .12s; font-family:inherit; }
+  transition:background .12s, color .12s; font-family:inherit; text-decoration:none; box-sizing:border-box; }
 .nav:hover{ background:rgba(255,255,255,.05); color:#E9F2F7; }
 .nav.ativo{ background:rgba(255,255,255,.10); color:#fff; font-weight:600; box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); }
 .nav.ativo .nav-ic{ color:#8FCBE8; opacity:1; }
@@ -3001,7 +3013,7 @@ select.inp{ cursor:pointer; }
 /* precisa vencer o .card.no-pad{overflow:hidden}, senão a lista corta em vez de rolar */
 .pub-lista.card.no-pad{ max-height:calc(100vh - 240px); overflow-y:auto; overscroll-behavior:contain; }
 .pub-item{ display:block; width:100%; text-align:left; background:transparent; border:none; border-bottom:1px solid var(--divider);
-  padding:12px 14px; cursor:pointer; font-family:inherit; transition:.12s; }
+  padding:12px 14px; cursor:pointer; font-family:inherit; transition:.12s; text-decoration:none; color:inherit; box-sizing:border-box; }
 .pub-item:hover{ background:var(--hover); }
 .pub-item.ativo{ background:var(--brand-soft); box-shadow:inset 2px 0 0 var(--brand); }
 .pub-item-top{ display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
