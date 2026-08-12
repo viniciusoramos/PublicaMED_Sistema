@@ -49,7 +49,7 @@ create index if not exists vendas_faculdade_idx on public.vendas (faculdade_id);
 -- Controle de vagas por publicação (aba "Publicações e vagas").
 create table if not exists public.publicacoes (
   id               uuid        primary key default gen_random_uuid(),
-  tema             text        not null unique,
+  tema             text        not null,
   tipo             text        not null default 'Artigo',
   area             text        not null default '',
   vagas            integer     not null default 6 check (vagas >= 1),
@@ -58,7 +58,11 @@ create table if not exists public.publicacoes (
   taxa_lancada     boolean     not null default false,
   taxa_data        date,
   certificado_url  text        not null default '',
-  criado_em        timestamptz not null default now()
+  fechada_em       timestamptz,                    -- vendas encerradas; nulo = ainda em venda
+  criado_em        timestamptz not null default now(),
+  -- o mesmo título pode existir em tipos diferentes (capítulo × apresentação são
+  -- trabalhos distintos); o que não pode é repetir o mesmo título no mesmo tipo
+  unique (tema, tipo)
 );
 
 -- ───────────────────────── PARTICIPANTES ──────────────────────

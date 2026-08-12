@@ -64,6 +64,7 @@ create table if not exists public.planejamento_lancamentos (
   veiculo          text        not null default '',
   taxa_por_tema    numeric(10,2),                  -- nulo = taxa lançada à mão na publicação
   exige_graduado   boolean     not null default false,
+  avulso           boolean     not null default false, -- criado para segurar trabalho fora do plano
   criado_em        timestamptz not null default now(),
   unique (planejamento_id, dia)
 );
@@ -80,13 +81,22 @@ create table if not exists public.planejamento_temas (
   areas          text        not null default '',
   taxa           numeric(10,2),                    -- tem prioridade sobre a taxa do lançamento
   exige_graduado boolean,                          -- nulo = herda do lançamento
+  -- próprios do tema; nulo = herda do lançamento. É o que permite um trabalho avulso de
+  -- outro tipo (ex.: capítulo num dia cujo lançamento planejado é apresentação).
+  tipo           text,
+  vagas          integer,
+  preco          numeric(10,2),
   origem         text        not null default 'plano' check (origem in ('plano', 'extra')),
   removido       boolean     not null default false,
   ordem          smallint    not null default 0,
-  criado_em      timestamptz not null default now(),
-  unique (lancamento_id, titulo)
+  criado_em      timestamptz not null default now()
 );
 create index if not exists plan_temas_lanc_idx on public.planejamento_temas (lancamento_id);
+-- único por dia + título + TIPO: um capítulo e uma apresentação de mesmo nome no mesmo dia
+-- são trabalhos distintos. O coalesce existe porque NULLs não colidem entre si em Postgres,
+-- e tema vindo do plano tem tipo nulo (herda o do lançamento).
+create unique index if not exists planejamento_temas_unq
+  on public.planejamento_temas (lancamento_id, titulo, coalesce(tipo, ''));
 
 -- ───────────────────────── CARGA INICIAL ─────────────────────────
 `;
@@ -132,7 +142,7 @@ on conflict (planejamento_id, dia) do nothing;
 select l.id, ${txt(t.titulo)}, ${txt(t.areas || "")}, ${num(t.taxa)}, ${bool(t.exigeGraduado == null ? null : t.exigeGraduado)}, ${i}
   from public.planejamento_lancamentos l
  where l.planejamento_id = ${txt(p.id)} and l.dia = ${num(l.dia)}
-on conflict (lancamento_id, titulo) do nothing;
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
 `);
     });
   }

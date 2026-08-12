@@ -59,6 +59,8 @@ const pubDe = (p) => ({
   taxaLancada: !!p.taxa_lancada,
   taxaData: p.taxa_data || null,
   certificadoUrl: p.certificado_url || '',
+  // trabalho publicado: não vende mais vaga, mesmo que tenha sobrado. Nulo = ainda em venda.
+  fechadaEm: p.fechada_em || null,
   participantes: (p.participantes || []).map(partDe),
 });
 
@@ -220,6 +222,7 @@ export async function atualizarPublicacao(id, campos) {
   if ('taxaLancada' in campos) row.taxa_lancada = campos.taxaLancada;
   if ('taxaData' in campos) row.taxa_data = campos.taxaData;
   if ('certificadoUrl' in campos) row.certificado_url = campos.certificadoUrl;
+  if ('fechadaEm' in campos) row.fechada_em = campos.fechadaEm; // null reabre a publicação
   if (Object.keys(row).length === 0) return;
   const { error } = await supabase.from('publicacoes').update(row).eq('id', id);
   if (error) throw error;
@@ -281,6 +284,10 @@ const planTemaDe = (t) => ({
   areas: t.areas || '',
   taxa: t.taxa == null ? undefined : Number(t.taxa),
   exigeGraduado: t.exige_graduado == null ? undefined : !!t.exige_graduado,
+  // próprios do tema; nulo = herda do lançamento do dia
+  tipo: t.tipo || undefined,
+  vagas: t.vagas == null ? undefined : t.vagas,
+  preco: t.preco == null ? undefined : Number(t.preco),
   extra: t.origem === 'extra',
   removido: !!t.removido,
 });
@@ -295,6 +302,7 @@ const planLancDe = (l) => ({
   veiculo: l.veiculo || '',
   taxaPorTema: l.taxa_por_tema == null ? undefined : Number(l.taxa_por_tema),
   exigeGraduado: !!l.exige_graduado,
+  avulso: !!l.avulso, // criado para segurar trabalho de um dia fora do planejamento
   temas: (l.planejamento_temas || [])
     .slice()
     .sort((a, b) => (a.ordem - b.ordem) || (a.criado_em || '').localeCompare(b.criado_em || ''))
@@ -331,11 +339,60 @@ export async function adicionarTemaPlano(lancamentoId, t) {
     lancamento_id: lancamentoId,
     titulo: t.titulo || '',
     areas: t.areas || '',
+    tipo: t.tipo || null,     // trabalho avulso pode ter tipo diferente do dia
+    vagas: t.vagas ?? null,
+    preco: t.preco ?? null,
     origem: 'extra',
     ordem: t.ordem ?? 99,
   }).select().single();
   if (error) throw error;
   return planTemaDe(data);
+}
+/* Garante que existe o mês e o lançamento daquele dia, para pendurar um trabalho avulso.
+ * Devolve { plano, lancamento } já no formato da tela. Não mexe no que já existe. */
+export async function garantirDiaNoPlano(dataIso, modelo = {}) {
+  const ano = Number(dataIso.slice(0, 4));
+  const mes = Number(dataIso.slice(5, 7)) - 1; // 0 = janeiro
+  const dia = Number(dataIso.slice(8, 10));
+  const planoId = `${ano}-${String(mes + 1).padStart(2, '0')}`;
+
+  const achouPlano = await supabase.from('planejamentos').select('*').eq('id', planoId).maybeSingle();
+  if (achouPlano.error) throw achouPlano.error;
+  if (!achouPlano.data) {
+    const novo = await supabase.from('planejamentos')
+      .insert({ id: planoId, ano, mes, meta: 0, conversao: 0.8, nota: '' }).select().single();
+    if (novo.error) throw novo.error;
+  }
+
+  const achouLanc = await supabase.from('planejamento_lancamentos')
+    .select('*, planejamento_temas(*)').eq('planejamento_id', planoId).eq('dia', dia).maybeSingle();
+  if (achouLanc.error) throw achouLanc.error;
+  if (achouLanc.data) return { planoId, lancamento: planLancDe(achouLanc.data) };
+
+  const novoLanc = await supabase.from('planejamento_lancamentos').insert({
+    planejamento_id: planoId,
+    dia,
+    produto: modelo.produto || modelo.tipo || 'Avulso',
+    tipo: modelo.tipo || 'Artigo',
+    vagas: modelo.vagas || 6,
+    preco: modelo.preco || 0,
+    custo: 0,
+    veiculo: '',
+    avulso: true,
+  }).select('*, planejamento_temas(*)').single();
+  if (novoLanc.error) throw novoLanc.error;
+  return { planoId, lancamento: planLancDe(novoLanc.data) };
+}
+// mantém o tema do cronograma alinhado com a publicação quando ela é renomeada ou muda de
+// tipo — sem isso o vínculo (tipo+título) quebra e a publicação some do calendário
+export async function atualizarTemaPlano(id, campos) {
+  const row = {};
+  if ('titulo' in campos) row.titulo = campos.titulo;
+  if ('tipo' in campos) row.tipo = campos.tipo;
+  if ('areas' in campos) row.areas = campos.areas;
+  if (!Object.keys(row).length) return;
+  const { error } = await supabase.from('planejamento_temas').update(row).eq('id', id);
+  if (error) throw error;
 }
 // tira/devolve o tema do cronograma. NÃO mexe na publicação nem nos participantes.
 export async function marcarTemaPlanoRemovido(id, removido) {

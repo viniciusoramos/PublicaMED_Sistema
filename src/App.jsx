@@ -380,18 +380,24 @@ export default function App() {
     try { for (const f of nf) { const old = antes.find((x) => x.id === f.id); if (old && finMudou(old, f)) await db.atualizarFinanceiro(f.id, f); } }
     catch (e) { aviso("Erro ao salvar: " + e.message); setFinanceiro(antes); }
   };
-  // acha a publicação pelo título: exato e, se falhar, ignorando acento/pontuação/espaço
-  // (o mesmo trabalho costuma estar escrito com pequenas diferenças em cada tela)
-  const acharPubPorTitulo = (titulo) => {
+  /* Acha a publicação pelo título: exato e, se falhar, ignorando acento/pontuação/espaço
+   * (a mesma obra costuma estar escrita com pequenas diferenças em cada tela).
+   * O tipo entra como desempate: desde que o título passou a ser único apenas DENTRO de cada
+   * tipo, podem existir um capítulo e uma apresentação com o mesmo nome. */
+  const acharPubPorTitulo = (titulo, tipo) => {
     const alvo = (titulo || "").trim().toLowerCase();
-    return temas.find((t) => (t.nome || "").trim().toLowerCase() === alvo)
-      || temas.find((t) => chaveTitulo(t.nome) === chaveTitulo(titulo));
+    const mesmoTipo = (t) => !tipo || chaveTipo(t.tipo) === chaveTipo(tipo);
+    const exatos = temas.filter((t) => (t.nome || "").trim().toLowerCase() === alvo);
+    const aprox = temas.filter((t) => chaveTitulo(t.nome) === chaveTitulo(titulo));
+    return exatos.find(mesmoTipo) || aprox.find(mesmoTipo) || exatos[0] || aprox[0];
   };
-  // clicar num trabalho abre a publicação correspondente em "Publicações e vagas" (liga pelo título = nome)
-  const abrirPublicacao = (titulo) => {
-    const pub = acharPubPorTitulo(titulo);
+  // o hash carrega tipo junto do título ("#pub=Nome::Capítulo") para não abrir o trabalho errado
+  const hashDaPub = (pub) => "#pub=" + encodeURIComponent(pub.nome) + "::" + encodeURIComponent(pub.tipo || "");
+  // clicar num trabalho abre a publicação correspondente em "Publicações e vagas"
+  const abrirPublicacao = (titulo, tipo) => {
+    const pub = acharPubPorTitulo(titulo, tipo);
     if (!pub) { aviso("Esse trabalho não tem publicação vinculada."); return; }
-    const destino = "#pub=" + encodeURIComponent(pub.nome);
+    const destino = hashDaPub(pub);
     if (window.location.hash === destino) { setPubAlvo(pub.id); setTab("temas"); }
     else window.location.hash = destino; // vira entrada no histórico; o hashchange abre a publicação
   };
@@ -402,9 +408,11 @@ export default function App() {
     const h = window.location.hash || "";
     const mPub = h.match(/^#pub=(.+)$/);
     if (mPub) {
-      let titulo = mPub[1];
-      try { titulo = decodeURIComponent(titulo); } catch (e) {}
-      const pub = acharPubPorTitulo(titulo);
+      // "#pub=Titulo::Tipo" — links antigos, sem o "::Tipo", seguem funcionando
+      const [cru, tipoCru = ""] = mPub[1].split("::");
+      let titulo = cru, tipo = tipoCru;
+      try { titulo = decodeURIComponent(cru); tipo = decodeURIComponent(tipoCru); } catch (e) {}
+      const pub = acharPubPorTitulo(titulo, tipo);
       if (!pub) { aviso("Esse trabalho não tem publicação vinculada."); return; }
       setPubAlvo(pub.id);
       setTab("temas");
@@ -444,6 +452,25 @@ export default function App() {
     if (nova && (dados.taxa || 0) > 0) await lancarTaxaPub(nova, dados.taxa, dados.taxaData || hojeIso());
     return nova;
   };
+  /* Cria a publicação E a põe no calendário no dia informado — criando o mês e o dia se ainda
+   * não existirem. É o que faz um trabalho avulso ter data de abertura de verdade (e portanto
+   * cair em "Em venda"/"Programadas" em vez de "Anteriores"). */
+  const criarPublicacaoNoDia = async (dataIso, dados) => {
+    const nova = await criarPublicacaoDoPlano({ ...dados, taxaData: dataIso });
+    if (!nova) return null;
+    if (!planoNoBanco) { aviso("Publicação criada. O calendário está em modo leitura, então ela não entrou no cronograma."); return nova; }
+    try {
+      const { lancamento } = await db.garantirDiaNoPlano(dataIso, { tipo: dados.tipo, produto: dados.tipo, vagas: dados.maxVagas });
+      await db.adicionarTemaPlano(lancamento.id, {
+        titulo: dados.nome, areas: dados.area, tipo: dados.tipo, vagas: dados.maxVagas,
+      });
+      const rec = await db.carregarPlanejamentos();
+      if (rec) setPlanejamentos(rec);
+    } catch (e) {
+      aviso("Publicação criada, mas não entrou no calendário: " + e.message);
+    }
+    return nova;
+  };
   /* ---------- cronograma (aba Calendário) ----------
    * Nenhuma destas ações toca na publicação ou nos participantes: mexem só no plano do mês.
    */
@@ -451,13 +478,24 @@ export default function App() {
     ...p,
     lancamentos: p.lancamentos.map((l) => (l.id === lancamentoId ? { ...l, temas: fn(l.temas) } : l)),
   })));
-  const addTemaPlano = async (lancamentoId, dados) => {
+  /* Põe no calendário uma publicação que JÁ existe (não cria nada em Publicações e vagas).
+   * É o caminho para trabalhos abertos fora do cronograma — inclusive os antigos — passarem
+   * a ter data de abertura e sair de "Anteriores". */
+  const porPublicacaoNoCalendario = async (pub, dataIso) => {
+    if (!dataIso) return;
     try {
-      const t = await db.adicionarTemaPlano(lancamentoId, dados);
-      mexerNosTemas(lancamentoId, (ts) => [...ts, t]);
-      return t;
-    } catch (e) { aviso("Erro ao pôr no cronograma: " + e.message); }
+      const modelo = { tipo: pub.tipo, produto: pub.tipo, vagas: pub.maxVagas };
+      const { lancamento } = await db.garantirDiaNoPlano(dataIso, modelo);
+      await db.adicionarTemaPlano(lancamento.id, {
+        titulo: pub.nome, areas: pub.area, tipo: pub.tipo, vagas: pub.maxVagas,
+      });
+      const rec = await db.carregarPlanejamentos();
+      if (rec) setPlanejamentos(rec);
+      aviso("Publicação posta no calendário");
+    } catch (e) { aviso("Erro ao pôr no calendário: " + e.message); }
   };
+  // (acrescentar tema ao cronograma agora acontece dentro de criarPublicacaoNoDia, que
+  //  também cria o dia e o mês quando eles ainda não existem)
   // o que veio do plano do mês fica guardado e pode ser restaurado;
   // o que foi acrescentado pela tela sai de vez (não fazia parte do plano)
   const tirarTemaPlano = async (lancamentoId, tema) => {
@@ -513,9 +551,22 @@ export default function App() {
       aviso(acoes.join(" · "));
     } catch (e) { aviso("Erro: " + e.message); setTemas(antesT); setTrabalhos(antesTr); }
   };
+  /* O calendário liga tema↔publicação por TIPO + TÍTULO. Se um dos dois muda só na publicação,
+   * o vínculo arrebenta e ela some do calendário (indo parar em "Anteriores"). Então o tema do
+   * cronograma é atualizado junto — em vez de só avisar. */
+  const sincronizarTemasDoCal = async (pubId, campos) => {
+    const ids = vinculoCal.temasDaPub.get(pubId) || [];
+    if (!ids.length) return;
+    for (const tid of ids) await db.atualizarTemaPlano(tid, campos);
+    const rec = await db.carregarPlanejamentos();
+    if (rec) setPlanejamentos(rec);
+  };
   const editPublicacao = async (id, campos) => {
     const antes = temas; setTemas((ts) => ts.map((t) => (t.id === id ? { ...t, ...campos } : t)));
-    try { await db.atualizarPublicacao(id, campos); }
+    try {
+      await db.atualizarPublicacao(id, campos);
+      if ("tipo" in campos) await sincronizarTemasDoCal(id, { tipo: campos.tipo });
+    }
     catch (e) { aviso("Erro: " + e.message); setTemas(antes); }
   };
   // renomeia a publicação e sincroniza o trabalho vinculado (mesmo título) e as vendas (mesmo tema)
@@ -531,8 +582,13 @@ export default function App() {
       await db.atualizarPublicacao(tema.id, { nome });
       const trab = trabalhos.find((x) => x.titulo === antigo);
       if (trab) await db.renomearTrabalho(trab.id, nome);
-      await db.renomearTemaVendas(antigo, nome);
-      aviso("Nome atualizado");
+      // vendas guardam o nome do trabalho em texto. Se outra publicação (de outro tipo) usa
+      // o mesmo título, renomear em lote levaria as vendas dela junto — aí não mexemos.
+      const homonima = temas.some((t) => t.id !== tema.id && t.nome === antigo);
+      if (!homonima) await db.renomearTemaVendas(antigo, nome);
+      // mantém o tema do cronograma com o título novo, senão a publicação sai do calendário
+      await sincronizarTemasDoCal(tema.id, { titulo: nome });
+      aviso(homonima ? "Nome atualizado (vendas não renomeadas: há outro trabalho com o título antigo)" : "Nome atualizado");
     } catch (e) { aviso("Erro: " + e.message); setTemas(antT); setTrabalhos(antTr); setVendas(antV); }
   };
   // define o local de publicação de um trabalho (usado na aba Trabalhos e no painel da publicação)
@@ -669,6 +725,10 @@ export default function App() {
   const statusDisp = useMemo(
     () => [...new Set([...STATUS, ...trabalhos.map((t) => t.status)])].filter(Boolean),
     [trabalhos]);
+  // data de abertura de cada publicação, vinda do cronograma (organiza a lista de Publicações
+  // e vagas por situação em vez de por data de cadastro). Também antes dos returns condicionais.
+  const vinculoCal = useMemo(() => aberturaDasPublicacoes(planejamentos, temas), [planejamentos, temas]);
+  const aberturaPub = vinculoCal.abertura;
 
   if (sessao === undefined) {
     return (
@@ -715,8 +775,6 @@ export default function App() {
           <span className="tarja-conf">para testar sem risco: npm run dev:teste</span>
         </div>
       )}
-      <datalist id="tipos-datalist">{tiposDisp.map((t) => <option key={t} value={t} />)}</datalist>
-      <datalist id="status-datalist">{statusDisp.map((s) => <option key={s} value={s} />)}</datalist>
       {/* TOPBAR (aparece só no celular) */}
       <header className="topbar">
         <button className="hamb" onClick={() => setMenuAberto(true)} aria-label="Abrir menu">☰</button>
@@ -767,15 +825,15 @@ export default function App() {
           <Financeiro financeiro={financeiro} salvar={salvarFinanceiro} vendas={vendas} aviso={aviso} onCriarAno={criarAnoFin} dark={dark} />
         )}
         {tab === "temas" && (
-          <Temas temas={temas} vendas={vendas} trabalhos={trabalhos} onSetLocalTrabalho={setLocalTrabalho} onSetStatusTrabalho={setStatusTrabalho} alvoId={pubAlvo} onAlvoUsado={() => setPubAlvo(null)}
-            onAdd={addPublicacao} onRem={remPublicacao} onEdit={editPublicacao} onEditNome={editNomePublicacao}
+          <Temas temas={temas} vendas={vendas} trabalhos={trabalhos} abertura={aberturaPub} onSetLocalTrabalho={setLocalTrabalho} onSetStatusTrabalho={setStatusTrabalho} alvoId={pubAlvo} onAlvoUsado={() => setPubAlvo(null)}
+            onAdd={addPublicacao} onCriarNoDia={criarPublicacaoNoDia} onPorNoCalendario={porPublicacaoNoCalendario} onRem={remPublicacao} onEdit={editPublicacao} onEditNome={editNomePublicacao}
             onAddPart={addParticipante} onEditPart={editParticipante} onRemPart={remParticipante}
             onLancarTaxa={lancarTaxaPub} aviso={aviso} />
         )}
         {tab === "planejamento" && (
           <Planejamento temas={temas} vendas={vendas} planejamentos={planejamentos} editavel={planoNoBanco}
             onAbrirPublicacao={abrirPublicacao} onCriarPublicacao={criarPublicacaoDoPlano}
-            onAddTema={addTemaPlano} onTirarTema={tirarTemaPlano} onRestaurarTema={restaurarTemaPlano} />
+            onCriarNoDia={criarPublicacaoNoDia} onTirarTema={tirarTemaPlano} onRestaurarTema={restaurarTemaPlano} />
         )}
       </main>
 
@@ -1167,7 +1225,26 @@ function Vendas({ vendas, salvar, aviso, temasExist }) {
   );
 }
 
+/* Select com a lista COMPLETA + opção de criar um valor novo.
+ * Substitui os <input list="...">: o datalist só sugeria o que era parecido com o texto já
+ * digitado — escondendo as demais opções — e digitar livre criava variantes quase iguais
+ * ("capitulo" x "Capítulo"), que o resto do sistema passa a tratar como coisas diferentes. */
+function SelectComNovo({ valor, opcoes = [], onChange, rotuloNovo, className = "inp" }) {
+  return (
+    <select className={className} value={valor} onChange={(e) => {
+      if (e.target.value !== "__novo") { onChange(e.target.value); return; }
+      const novo = prompt(rotuloNovo);
+      if (novo && novo.trim()) onChange(novo.trim());
+    }}>
+      {valor && !opcoes.includes(valor) && <option value={valor}>{valor}</option>}
+      {opcoes.map((o) => <option key={o} value={o}>{o}</option>)}
+      <option value="__novo">{rotuloNovo}</option>
+    </select>
+  );
+}
+
 function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts }) {
+  const { tipos: tiposDisp } = useContext(ListasCtx);
   const opts = facOpts || { nomes: FAC_BASE.nomes, ufMap: FAC_BASE.ufMap };
   // se a venda em edição tem faculdade fora da lista, tratamos como "outra"
   const facNaLista = venda && venda.faculdade && opts.nomes.includes(venda.faculdade);
@@ -1210,7 +1287,7 @@ function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts }) {
           <Campo label="Telefone (opcional)"><input className="inp" placeholder="(31)99999-9999" value={f.telefone} onChange={(e) => set("telefone", e.target.value)} /></Campo>
         )}
         <Campo label="Tipo de trabalho">
-          <input className="inp" list="tipos-datalist" placeholder="Escolha ou digite um novo" value={f.tipo} onChange={(e) => set("tipo", e.target.value)} />
+          <SelectComNovo valor={f.tipo} opcoes={tiposDisp} onChange={(v) => set("tipo", v)} rotuloNovo="Criar novo tipo…" />
         </Campo>
         <Campo label={outraFac ? "Estado (UF) da nova faculdade" : "Estado (UF)"}>
           <select className="inp" value={f.uf} onChange={(e) => set("uf", e.target.value)}>
@@ -1462,8 +1539,8 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
             {filtrados.map((t) => (
               <tr key={t.id}>
                 <td className="cel-titulo">
-                  <a className="link-titulo" href={`#pub=${encodeURIComponent(t.titulo)}`} title="Ver em Publicações e vagas"
-                    onClick={(e) => { if (abrirForaDoApp(e)) return; e.preventDefault(); onAbrirPublicacao(t.titulo); }}>{t.titulo}</a>
+                  <a className="link-titulo" href={`#pub=${encodeURIComponent(t.titulo)}::${encodeURIComponent(t.tipo || "")}`} title="Ver em Publicações e vagas"
+                    onClick={(e) => { if (abrirForaDoApp(e)) return; e.preventDefault(); onAbrirPublicacao(t.titulo, t.tipo); }}>{t.titulo}</a>
                   <div className="titulo-meta">
                     <span className="tipo-pill" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo}</span>
                     {editLocalId === t.id ? (
@@ -1508,14 +1585,15 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
 }
 
 function FormTrabalho({ onSalvar, onClose }) {
+  const { tipos: tiposDisp, status: statusDisp } = useContext(ListasCtx);
   const [f, setF] = useState({ titulo: "", tipo: "Artigo", status: "A fazer", localPublicacao: "" });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   return (
     <Modal titulo="Novo trabalho" onClose={onClose}>
       <Campo label="Título do trabalho"><input className="inp" value={f.titulo} onChange={(e) => set("titulo", e.target.value)} /></Campo>
       <div className="form-grid">
-        <Campo label="Tipo"><input className="inp" list="tipos-datalist" placeholder="Escolha ou digite um novo" value={f.tipo} onChange={(e) => set("tipo", e.target.value)} /></Campo>
-        <Campo label="Status"><input className="inp" list="status-datalist" placeholder="Escolha ou digite um novo" value={f.status} onChange={(e) => set("status", e.target.value)} /></Campo>
+        <Campo label="Tipo"><SelectComNovo valor={f.tipo} opcoes={tiposDisp} onChange={(v) => set("tipo", v)} rotuloNovo="Criar novo tipo…" /></Campo>
+        <Campo label="Status"><SelectComNovo valor={f.status} opcoes={statusDisp} onChange={(v) => set("status", v)} rotuloNovo="Criar novo status…" /></Campo>
       </div>
       <Campo label="Onde será publicado (opcional)"><input className="inp" placeholder="Ex.: Revista X · Congresso Y" value={f.localPublicacao} onChange={(e) => set("localPublicacao", e.target.value)} /></Campo>
       <div className="form-acoes">
@@ -1834,9 +1912,10 @@ function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
 /* ============================================================
    TEMAS E VAGAS
    ============================================================ */
-function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabalho, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, aviso }) {
+function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, onPorNoCalendario, onSetLocalTrabalho, onSetStatusTrabalho, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, aviso }) {
   const [busca, setBusca] = useState("");
   const [soComVaga, setSoComVaga] = useState(false);
+  const [situacao, setSituacao] = useState("venda"); // a tela abre no trabalho do dia
   const [selId, setSelId] = useState(null);
   const [modalTema, setModalTema] = useState(false);
   const detalheRef = useRef(null);
@@ -1844,18 +1923,40 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
   useEffect(() => {
     if (alvoId) {
       setSelId(alvoId);
+      // veio de fora (Calendário, Trabalhos, link direto): a publicação pode não estar na
+      // situação filtrada. Troca o filtro para a dela, senão ela abre no detalhe mas some da lista.
+      const alvo = temas.find((t) => t.id === alvoId);
+      if (alvo) { setSituacao(situacaoDaPub(alvo, abertura, hojeIso())); setBusca(""); }
       if (onAlvoUsado) onAlvoUsado();
       requestAnimationFrame(() => { if (detalheRef.current) detalheRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); });
     }
   }, [alvoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const hoje = hojeIso();
+  const situacaoDe = (t) => situacaoDaPub(t, abertura, hoje);
+  // quantas publicações em cada situação — vai no rótulo de cada filtro
+  const contagens = useMemo(() => {
+    const c = { venda: 0, programada: 0, fechada: 0, anterior: 0, todas: temas.length };
+    temas.forEach((t) => { c[situacaoDe(t)] += 1; });
+    return c;
+  }, [temas, abertura, hoje]);
+
+  const buscando = busca.trim().length > 0;
   const lista = useMemo(() => {
     const b = busca.trim().toLowerCase();
     return temas
       .filter((t) => !b || t.nome.toLowerCase().includes(b))
+      // a busca procura em todas: quando há texto digitado, o filtro de situação sai da frente
+      .filter((t) => buscando || situacao === "todas" || situacaoDe(t) === situacao)
       .filter((t) => !soComVaga || t.participantes.length < t.maxVagas)
-      .sort((a, b) => (b.criadoEm || "").localeCompare(a.criadoEm || ""));
-  }, [temas, busca, soComVaga]);
+      .sort((a, b) => {
+        const da = abertura.get(a.id) || "", db = abertura.get(b.id) || "";
+        // programadas: a que abre primeiro no topo. Demais: a mais recente no topo.
+        if (da && db && da !== db) return situacao === "programada" && !buscando ? da.localeCompare(db) : db.localeCompare(da);
+        if (da !== db) return db.localeCompare(da); // com data antes de sem data
+        return (b.criadoEm || "").localeCompare(a.criadoEm || "");
+      });
+  }, [temas, busca, soComVaga, situacao, abertura, hoje]);
 
   const sel = temas.find((t) => t.id === selId) || null;
   const trabLink = sel ? (trabalhos || []).find((x) => x.titulo === sel.nome) : null; // trabalho vinculado (mesmo título)
@@ -1884,7 +1985,18 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
     return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   }, [vendas, temas]);
 
-  const criar = (d) => { onAdd(d); setModalTema(false); };
+  // publicação criada por aqui também entra no calendário, na data informada — senão ela
+  // nasceria sem data de abertura e cairia em "Anteriores" no mesmo dia em que foi criada
+  const criar = (d) => { onCriarNoDia(d.dataAbertura || hojeIso(), d); setModalTema(false); };
+  // fechar = trabalho publicado, não vende mais. Sai de "Em venda" e vai para "Fechadas".
+  // Nada é apagado: participantes, vendas e taxa continuam como estão.
+  const fechar = (t) => {
+    const sobrando = t.maxVagas - t.participantes.length;
+    const nota = sobrando > 0 ? `\n\nAinda há ${sobrando} vaga(s) por vender — elas serão dadas como encerradas.` : "";
+    if (!confirm(`Fechar as vendas desta publicação?\n\n${t.nome}${nota}\n\nOs participantes e as vendas continuam no sistema. Dá para reabrir depois.`)) return;
+    onEdit(t.id, { fechadaEm: new Date().toISOString() });
+  };
+  const reabrir = (t) => onEdit(t.id, { fechadaEm: null });
   const excluir = (t) => {
     const extras = ["o trabalho vinculado na aba Trabalhos"];
     if (t.taxaLancada && (t.taxa || 0) > 0) extras.push(`a taxa de ${brl(t.taxa)} lançada no Financeiro (estorno)`);
@@ -1909,26 +2021,43 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
         <label className="check"><input type="checkbox" checked={soComVaga} onChange={(e) => setSoComVaga(e.target.checked)} /> só com vaga aberta</label>
       </div>
 
+      <div className="sit-bar" role="tablist" aria-label="Situação da publicação">
+        {SITUACOES.map(([id, lab]) => (
+          <button key={id} role="tab" aria-selected={!buscando && situacao === id}
+            className={"sit-chip" + (!buscando && situacao === id ? " ativo" : "")}
+            onClick={() => { setSituacao(id); setBusca(""); }}
+            title={DICA_SITUACAO[id]}>
+            {lab} <span className="sit-num">{contagens[id]}</span>
+          </button>
+        ))}
+        {buscando && <span className="sit-aviso">buscando nas {num(temas.length)} publicações</span>}
+      </div>
+
       <div className="pub-split">
         <div className="pub-lista card no-pad">
           {lista.map((t) => {
             const restantes = t.maxVagas - t.participantes.length;
             const cheio = restantes <= 0;
             return (
-              <a key={t.id} href={"#pub=" + encodeURIComponent(t.nome)} className={"pub-item" + (selId === t.id ? " ativo" : "")}
+              <a key={t.id} href={"#pub=" + encodeURIComponent(t.nome) + "::" + encodeURIComponent(t.tipo || "")} className={"pub-item" + (selId === t.id ? " ativo" : "")}
                 onClick={(e) => {
                   if (abrirForaDoApp(e)) return;
                   e.preventDefault();
-                  setSelId(t.id); window.history.replaceState(null, "", "#pub=" + encodeURIComponent(t.nome));
+                  setSelId(t.id); window.history.replaceState(null, "", "#pub=" + encodeURIComponent(t.nome) + "::" + encodeURIComponent(t.tipo || ""));
                 }}>
                 <div className="pub-item-top">
                   <span className="pub-item-nome">{t.nome}</span>
-                  <span className={"vagas-badge " + (cheio ? "b-cheio" : restantes <= 2 ? "b-quase" : "b-ok")}>
-                    {cheio ? "Lotado" : `${restantes} vaga${restantes > 1 ? "s" : ""}`}
+                  <span className={"vagas-badge " + (t.fechadaEm ? "b-fechada" : cheio ? "b-cheio" : restantes <= 2 ? "b-quase" : "b-ok")}>
+                    {t.fechadaEm ? "Fechada" : cheio ? "Lotado" : `${restantes} vaga${restantes > 1 ? "s" : ""}`}
                   </span>
                 </div>
                 <div className="pub-item-meta">
                   <span className="tipo-pill" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo || "Artigo"}</span>
+                  {abertura.get(t.id) && (
+                    <span className={"pub-item-data" + (abertura.get(t.id) === hoje ? " hoje" : abertura.get(t.id) > hoje ? " futura" : "")}>
+                      {rotuloAbertura(abertura.get(t.id), hoje)}
+                    </span>
+                  )}
                   <span className="pub-item-ocup">{t.participantes.length}/{t.maxVagas} ocupadas</span>
                 </div>
               </a>
@@ -1938,7 +2067,11 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
             <div className="vazio">
               {temas.length === 0
                 ? "Sem publicações ainda — clique em + Nova publicação para começar."
-                : "Nenhuma publicação encontrada com esses filtros."}
+                : buscando
+                  ? "Nenhuma publicação com esse nome."
+                  : situacao === "venda"
+                    ? "Nada em venda no momento. Veja em Programadas o que ainda vai abrir, ou use a busca."
+                    : "Nenhuma publicação nesta situação."}
             </div>
           )}
         </div>
@@ -1953,17 +2086,19 @@ function Temas({ temas, vendas, trabalhos, onSetLocalTrabalho, onSetStatusTrabal
             <DetalhePub key={sel.id} t={sel} vendas={vendas} pessoas={pessoas}
               localPub={trabLink ? trabLink.localPublicacao : ""} onSetLocal={(local) => trabLink && onSetLocalTrabalho(trabLink.id, local)}
               statusTrab={trabLink ? (trabLink.status || "A fazer") : null} onSetStatus={(s) => trabLink && onSetStatusTrabalho(trabLink.id, s)}
-              onEdit={onEdit} onEditNome={onEditNome} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa} onExcluir={() => excluir(sel)} />
+              onEdit={onEdit} onEditNome={onEditNome} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa}
+              onFechar={fechar} onReabrir={reabrir} dataAbertura={abertura.get(sel.id) || ""} onPorNoCalendario={onPorNoCalendario}
+              onExcluir={() => excluir(sel)} />
           )}
         </div>
       </div>
 
-      {modalTema && <FormTema onSalvar={criar} onClose={() => setModalTema(false)} />}
+      {modalTema && <FormTema comTaxa comData onSalvar={criar} onClose={() => setModalTema(false)} />}
     </>
   );
 }
 
-function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, statusTrab = null, onSetStatus, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onExcluir }) {
+function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, statusTrab = null, onSetStatus, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onFechar, onReabrir, dataAbertura = "", onPorNoCalendario, onExcluir }) {
   const { tipos, status: statusDisp } = useContext(ListasCtx);
   const restantes = t.maxVagas - t.participantes.length;
   const cheio = restantes <= 0;
@@ -1974,6 +2109,7 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
   // do lançamento automático), o valor aparece preenchido — não faz sentido redigitar
   const [taxaVal, setTaxaVal] = useState("");
   const [taxaData, setTaxaData] = useState(hojeIso());
+  const [dataCal, setDataCal] = useState(hojeIso()); // data para pôr a publicação no calendário
   useEffect(() => {
     setTaxaVal(!t.taxaLancada && (t.taxa || 0) > 0 ? String(t.taxa).replace(".", ",") : "");
     setTaxaData(t.taxaData || hojeIso());
@@ -2094,6 +2230,42 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
               <input className="inp sm dp-taxa-val" inputMode="decimal" placeholder="R$" aria-label="Valor da taxa de publicação" value={taxaVal} onChange={(e) => setTaxaVal(e.target.value)} />
               <input className="inp sm" type="date" aria-label="Data da taxa" value={taxaData} onChange={(e) => setTaxaData(e.target.value)} />
               <button className="btn sm" onClick={lancar}>lançar no financeiro</button>
+            </span>
+          )}
+        </div>
+        <div className="dp-prop full">
+          <span className="dp-prop-lab">Calendário</span>
+          {dataAbertura ? (
+            <span className="dp-fechada-txt">Abre em {fmtData(dataAbertura)}</span>
+          ) : (
+            <span className="dp-taxa-form">
+              <span className="dp-fechada-txt">Fora do calendário</span>
+              <input className="inp sm" type="date" aria-label="Data de abertura no calendário"
+                value={dataCal} onChange={(e) => setDataCal(e.target.value)} />
+              <button className="mini" onClick={() => onPorNoCalendario(t, dataCal)}
+                title="Põe esta publicação no calendário nesta data. Nada é criado de novo — ela passa a ter data de abertura e sai de Anteriores.">
+                pôr no calendário
+              </button>
+            </span>
+          )}
+        </div>
+        <div className="dp-prop full">
+          <span className="dp-prop-lab">Vendas</span>
+          {t.fechadaEm ? (
+            <span className="dp-fechada">
+              <b>Fechada</b> em {fmtData(t.fechadaEm.slice(0, 10))} · não vende mais vaga
+              <button className="mini" onClick={() => onReabrir(t)}
+                title="Volta a publicação para a lista de quem está vendendo">reabrir</button>
+            </span>
+          ) : cheio ? (
+            <span className="dp-fechada"><b>Lotada</b> · todas as vagas preenchidas</span>
+          ) : (
+            <span className="dp-taxa-form">
+              <span className="dp-fechada-txt">Aberta · {t.maxVagas - t.participantes.length} vaga(s) por vender</span>
+              <button className="mini fechar-pub" onClick={() => onFechar(t)}
+                title="Use quando o trabalho já foi publicado: encerra as vendas mesmo com vaga sobrando e tira a publicação da lista Em venda">
+                fechar publicação
+              </button>
             </span>
           )}
         </div>
@@ -2270,11 +2442,16 @@ function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
 // custo do lançamento já é conhecido na hora). A taxa é digitada como no resto do painel
 // ("1.650,00"), convertida por numBR ao salvar, e quem cria é que decide o que fazer com ela —
 // no cronograma, ela já é lançada no Financeiro do mês do lançamento.
-function FormTema({ onSalvar, onClose, inicial, titulo = "Nova publicação", aviso: avisoTopo, comTaxa = false }) {
+function FormTema({ onSalvar, onClose, inicial, titulo = "Nova publicação", aviso: avisoTopo, comTaxa = false, comData = false }) {
+  const { tipos: tiposDisp } = useContext(ListasCtx); // padrões + os já usados no sistema
   const [f, setF] = useState(() => {
     const base = { nome: "", tipo: "Artigo", area: "", maxVagas: 6, requiresGrad: false, ...(inicial || {}) };
     // a taxa pode chegar como número (vinda do plano) — o input trabalha com texto
-    return { ...base, taxa: base.taxa == null || base.taxa === "" ? "" : String(base.taxa).replace(".", ",") };
+    return {
+      ...base,
+      taxa: base.taxa == null || base.taxa === "" ? "" : String(base.taxa).replace(".", ","),
+      dataAbertura: base.dataAbertura || base.taxaData || hojeIso(),
+    };
   });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   return (
@@ -2283,11 +2460,20 @@ function FormTema({ onSalvar, onClose, inicial, titulo = "Nova publicação", av
       <Campo label="Tema da publicação"><textarea className="inp ta-tema" rows={3} value={f.nome} onChange={(e) => set("nome", e.target.value)} /></Campo>
       <div className="form-grid">
         <Campo label="Tipo de trabalho">
-          <input className="inp" list="tipos-datalist" placeholder="Escolha ou digite um novo" value={f.tipo} onChange={(e) => set("tipo", e.target.value)} />
+          <SelectComNovo valor={f.tipo} opcoes={tiposDisp} onChange={(v) => set("tipo", v)} rotuloNovo="Criar novo tipo…" />
         </Campo>
         <Campo label="Número de vagas"><input type="number" min="1" className="inp" value={f.maxVagas} onChange={(e) => set("maxVagas", parseInt(e.target.value, 10) || 1)} /></Campo>
       </div>
       <Campo label="Área (opcional)"><input className="inp" placeholder="Ex.: Cirurgia Geral · Emergência" value={f.area} onChange={(e) => set("area", e.target.value)} /></Campo>
+      {comData && (
+        <div className="form-grid form-grid-taxa">
+          <Campo label="Data de abertura">
+            <input className="inp" type="date" value={f.dataAbertura} onChange={(e) => set("dataAbertura", e.target.value)} />
+          </Campo>
+          <p className="form-dica">O dia em que este trabalho entra em venda. Ele passa a aparecer
+            no Calendário nessa data, e é por ela que os filtros de Publicações e vagas se orientam.</p>
+        </div>
+      )}
       {comTaxa && (
         <div className="form-grid form-grid-taxa">
           <Campo label="Taxa de publicação (opcional)">
@@ -2331,10 +2517,90 @@ const semelhanca = (a, b) => {
   return inter / (a.size + b.size - inter); // Jaccard
 };
 const LIMIAR_TITULO = 0.6;
+const chaveTipo = (s) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+/* Índice das publicações para casar com o cronograma.
+ * A chave inclui o TIPO de propósito: é comum existir um capítulo e uma apresentação com o
+ * mesmo título (ou quase), e são trabalhos diferentes, com vagas próprias. Casar só pelo
+ * título fazia um puxar as vagas do outro. */
+const indicePubs = (temas) => {
+  const idx = (temas || []).map((t) => ({
+    pub: t, tipo: chaveTipo(t.tipo), chave: chaveTitulo(t.nome), toks: tokensTitulo(t.nome),
+  }));
+  return { idx, porChave: new Map(idx.map((x) => [x.tipo + "|" + x.chave, x.pub])) };
+};
+// casa pelo título exato dentro do mesmo tipo e, se falhar, pelo mais parecido acima do
+// limiar — também só entre publicações do mesmo tipo. Tipo diferente nunca é o mesmo trabalho.
+const casarPub = (titulo, tipo, ix) => {
+  const tp = chaveTipo(tipo);
+  const exato = ix.porChave.get(tp + "|" + chaveTitulo(titulo));
+  if (exato) return exato;
+  const toks = tokensTitulo(titulo);
+  let melhor = null, score = 0;
+  for (const x of ix.idx) {
+    if (x.tipo !== tp) continue;
+    const s = semelhanca(toks, x.toks);
+    if (s > score) { score = s; melhor = x.pub; }
+  }
+  return melhor && score >= LIMIAR_TITULO ? melhor : null;
+};
+/* Data de abertura de cada publicação = o dia do lançamento do cronograma em que ela entra.
+ * É o que separa "o trabalho de hoje" do resto: publicação fora do cronograma (as anteriores
+ * ao calendário editorial) fica sem data, e é justamente por isso que ela não polui a lista
+ * de quem está vendendo agora. Devolve Map(pubId -> data ISO). */
+function aberturaDasPublicacoes(planejamentos, temas) {
+  const ix = indicePubs(temas);
+  const abertura = new Map();   // pubId -> data ISO de abertura
+  const temasDaPub = new Map(); // pubId -> [ids dos temas do cronograma]
+  for (const p of planejamentos || []) {
+    for (const l of p.lancamentos || []) {
+      const data = `${p.ano}-${String(p.mes + 1).padStart(2, "0")}-${String(l.dia).padStart(2, "0")}`;
+      for (const t of l.temas || []) {
+        if (t.removido) continue;
+        const pub = casarPub(t.titulo, t.tipo || l.tipo, ix);
+        if (!pub) continue;
+        const atual = abertura.get(pub.id);
+        // o mesmo trabalho pode constar em mais de um dia: vale o primeiro, que é quando abriu
+        if (!atual || data < atual) abertura.set(pub.id, data);
+        if (t.id) temasDaPub.set(pub.id, [...(temasDaPub.get(pub.id) || []), t.id]);
+      }
+    }
+  }
+  return { abertura, temasDaPub };
+}
+/* Situação de uma publicação, na ordem em que importa para o dia a dia. */
+const SITUACOES = [
+  ["venda", "Em venda"],
+  ["programada", "Programadas"],
+  ["fechada", "Fechadas"],
+  ["anterior", "Anteriores"],
+  ["todas", "Todas"],
+];
+const DICA_SITUACAO = {
+  venda: "Já abriram no cronograma e ainda vendem — é aqui que se lança quem comprou",
+  programada: "Criadas com antecedência; a data de abertura ainda não chegou",
+  fechada: "Não vendem mais: lotaram as vagas ou foram fechadas na mão (trabalho publicado)",
+  anterior: "Não estão no cronograma (anteriores ao calendário editorial)",
+};
+// selo de data mostrado em cada item da lista
+const rotuloAbertura = (data, hoje) => {
+  if (!data) return "";
+  const [a, m, d] = data.split("-");
+  const curto = `${d}/${m}`;
+  if (data === hoje) return "abre hoje";
+  return data > hoje ? `abre ${curto}` : `aberta ${curto}`;
+};
+const situacaoDaPub = (t, abertura, hoje) => {
+  // sai de venda por dois caminhos: lotar as vagas, ou ser fechada na mão quando o
+  // trabalho é publicado (acontece de publicar sem ter esgotado as vagas)
+  if (t.fechadaEm || t.participantes.length >= t.maxVagas) return "fechada";
+  const data = abertura.get(t.id);
+  if (!data) return "anterior";           // fora do cronograma
+  return data > hoje ? "programada" : "venda";
+};
 // `editavel` é falso enquanto o cronograma ainda não está no banco (SQL 11-planejamento.sql
 // não aplicado): a tela mostra o plano do arquivo, mas sem os botões que gravariam.
 function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false,
-                        onAbrirPublicacao, onCriarPublicacao, onAddTema, onTirarTema, onRestaurarTema }) {
+                        onAbrirPublicacao, onCriarPublicacao, onCriarNoDia, onTirarTema, onRestaurarTema }) {
   const [planId, setPlanId] = useState(planejamentos[0]?.id || "");
   const plano = planejamentos.find((p) => p.id === planId) || planejamentos[0] || null;
   const [diaSel, setDiaSel] = useState(plano?.lancamentos[0]?.dia ?? null);
@@ -2347,6 +2613,7 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
   const abrirCriacao = (l, t) => setCriando({
     dia: l.dia,
     lancamentoId: l.id,
+    dataIso: `${plano.ano}-${String(plano.mes + 1).padStart(2, "0")}-${String(l.dia).padStart(2, "0")}`,
     novo: !t,
     dados: {
       nome: t?.titulo || "",
@@ -2360,14 +2627,20 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
       taxaData: `${plano.ano}-${String(plano.mes + 1).padStart(2, "0")}-${String(l.dia).padStart(2, "0")}`,
     },
   });
+  const isoDoDia = (dia) => `${plano.ano}-${String(plano.mes + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+  // trabalho avulso: dia que não tem lançamento planejado. O dia (e o mês, se preciso) é
+  // criado no banco na hora de salvar; o tema carrega o próprio tipo e vagas.
+  const abrirCriacaoNoDia = (dia) => setCriando({
+    dia, novo: true, dataIso: isoDoDia(dia),
+    dados: { nome: "", tipo: "Artigo", area: "", maxVagas: 6, requiresGrad: false, taxaData: isoDoDia(dia) },
+  });
   const confirmarCriacao = async (form) => {
     const ctx = criando;
     setCriando(null);
-    const nova = await onCriarPublicacao(form); // a taxa vem do próprio formulário
-    // tema novo (não estava no plano do mês): passa a constar no cronograma daquele dia
-    if (nova && ctx?.novo && ctx.lancamentoId) {
-      await onAddTema(ctx.lancamentoId, { titulo: form.nome, areas: form.area });
-    }
+    // tema novo entra no cronograma do dia junto com a publicação; tema que já estava no
+    // plano só precisa da publicação
+    if (ctx?.novo) await onCriarNoDia(ctx.dataIso, form);
+    else await onCriarPublicacao(form);
   };
   // tira o tema do cronograma — NÃO mexe na publicação nem nos participantes
   const tirarDoCronograma = (l, tema) => {
@@ -2378,29 +2651,23 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
     onTirarTema(l.id, tema);
   };
 
-  // publicação real correspondente a cada tema planejado: casa pelo título exato e,
-  // se não achar, pelo mais parecido acima do limiar (redação do cadastro costuma variar)
+  // publicação real correspondente a cada tema planejado. A chave é tipo+título: um capítulo
+  // e uma apresentação de mesmo nome são trabalhos distintos e não podem se cruzar.
   const pubPorTitulo = useMemo(() => {
-    const idx = (temas || []).map((t) => ({ pub: t, chave: chaveTitulo(t.nome), toks: tokensTitulo(t.nome) }));
-    const porChave = new Map(idx.map((x) => [x.chave, x.pub]));
+    const ix = indicePubs(temas);
     const map = new Map();
     for (const l of plano?.lancamentos || []) {
       for (const t of temasDe(l)) {
-        const ch = chaveTitulo(t.titulo);
+        const ch = chaveTipo(t.tipo || l.tipo) + "|" + chaveTitulo(t.titulo);
         if (map.has(ch)) continue;
-        const exato = porChave.get(ch);
-        if (exato) { map.set(ch, exato); continue; }
-        const toks = tokensTitulo(t.titulo);
-        let melhor = null, score = 0;
-        for (const x of idx) {
-          const s = semelhanca(toks, x.toks);
-          if (s > score) { score = s; melhor = x.pub; }
-        }
-        if (melhor && score >= LIMIAR_TITULO) map.set(ch, melhor);
+        const pub = casarPub(t.titulo, t.tipo || l.tipo, ix);
+        if (pub) map.set(ch, pub);
       }
     }
     return map;
   }, [temas, plano]);
+  // sempre consultado com o tipo do lançamento junto
+  const pubDoTema = (l, t) => pubPorTitulo.get(chaveTipo(t.tipo || l.tipo) + "|" + chaveTitulo(t.titulo));
   // índices de venda p/ apurar o que já foi pago sem varrer a lista inteira por participante
   const idxVendas = useMemo(() => {
     const porPart = new Map(), porTemaNome = new Map();
@@ -2421,16 +2688,39 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
   };
 
   // planejado (projeção) e realizado (o que já existe no sistema), lado a lado
+  /* Separa os temas do dia por TIPO de trabalho. Um capítulo e uma apresentação marcados para
+   * o mesmo dia são trabalhos distintos — com vagas, preço e publicação próprios —, e listá-los
+   * juntos passava a impressão de serem temas do mesmo trabalho. */
+  const gruposDoDia = (l) => {
+    const porTipo = new Map();
+    for (const t of temasDe(l)) {
+      const tipo = t.tipo || l.tipo;
+      const chave = chaveTipo(tipo);
+      if (!porTipo.has(chave)) {
+        porTipo.set(chave, {
+          chave, tipo, temas: [],
+          vagas: t.vagas ?? l.vagas,
+          preco: t.preco ?? l.preco,
+          doPlano: chave === chaveTipo(l.tipo) && !l.avulso,
+        });
+      }
+      porTipo.get(chave).temas.push(t);
+    }
+    // o tipo do lançamento planejado vem primeiro; os avulsos, depois
+    return [...porTipo.values()].sort((a, b) => (b.doPlano ? 1 : 0) - (a.doPlano ? 1 : 0));
+  };
+  // soma tema a tema: um trabalho avulso no mesmo dia pode ter vagas e preço próprios
   const calc = (l) => {
-    const n = temasDe(l).length;
-    const teto = l.vagas * l.preco * n;
+    const ts = temasDe(l);
+    const teto = ts.reduce((s, t) => s + (t.vagas ?? l.vagas) * (t.preco ?? l.preco), 0);
+    const vagas = ts.reduce((s, t) => s + (t.vagas ?? l.vagas), 0);
     const receita = teto * plano.conversao;
-    return { teto, receita, custo: l.custo || 0, lucro: receita - (l.custo || 0), vagas: l.vagas * n };
+    return { teto, receita, custo: l.custo || 0, lucro: receita - (l.custo || 0), vagas };
   };
   const real = (l) => {
     let criadas = 0, ocupadas = 0, receita = 0, custo = 0;
     temasDe(l).forEach((t) => {
-      const pub = pubPorTitulo.get(chaveTitulo(t.titulo));
+      const pub = pubDoTema(l, t);
       if (!pub) return;
       criadas += 1;
       ocupadas += pub.participantes.length;
@@ -2449,7 +2739,7 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
       a.teto += c.teto; a.receita += c.receita; a.custo += c.custo; a.lucro += c.lucro;
       a.temas += temasDe(l).length; a.vagas += c.vagas;
       for (const t of temasDe(l)) {
-        const pub = pubPorTitulo.get(chaveTitulo(t.titulo));
+        const pub = pubDoTema(l, t);
         if (!pub || vistos.has(pub.id)) continue;
         vistos.add(pub.id);
         a.criadas += 1;
@@ -2522,13 +2812,21 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
 
       <div className="cal-split">
         <div className="card cal-card">
-          <div className="card-head"><h3>{MESES[plano.mes]} · {plano.ano}</h3><span className="hint">clique num dia com lançamento</span></div>
+          <div className="card-head"><h3>{MESES[plano.mes]} · {plano.ano}</h3>
+            <span className="hint">{editavel ? "clique em qualquer dia — inclusive vazio — para ver ou adicionar trabalho" : "clique num dia com lançamento"}</span></div>
           <div className="cal-grid">
             {DIAS_SEMANA.map((d) => <div key={d} className="cal-dow">{d}</div>)}
             {celulas.map((dia, i) => {
               if (dia == null) return <div key={`v${i}`} className="cal-cel vazia" />;
               const l = porDia.get(dia);
-              if (!l) return <div key={dia} className="cal-cel"><span className="cal-num">{dia}</span></div>;
+              // dia sem lançamento continua selecionável: é por onde se cria um trabalho avulso
+              if (!l) return (
+                <button key={dia} className={"cal-cel livre" + (diaSel === dia ? " sel" : "") + (dia === diaHoje ? " hoje" : "")}
+                  onClick={() => setDiaSel(dia)} title={editavel ? `Adicionar trabalho em ${dia}/${String(plano.mes + 1).padStart(2, "0")}` : undefined}>
+                  <span className="cal-num">{dia}</span>
+                  {editavel && <span className="cal-mais" aria-hidden="true">+</span>}
+                </button>
+              );
               const r = real(l), c = calc(l);
               // o dia só ganha a cor do tipo quando pelo menos um tema dele foi aberto no sistema
               const ativo = r.criadas > 0;
@@ -2549,32 +2847,44 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
         </div>
 
         <div className="card cal-detalhe">
-          {!lanc ? (
-            <div className="pub-vazio-det"><div className="pub-vazio-ic">◧</div><p>Selecione um dia com lançamento para ver os temas planejados.</p></div>
+          {!lanc && diaSel != null && editavel ? (
+            // dia sem nada planejado: dá para pendurar um trabalho avulso nele
+            <div className="pub-vazio-det">
+              <div className="pub-vazio-ic">＋</div>
+              <p><b>{DIAS_SEMANA_LONGO[new Date(plano.ano, plano.mes, diaSel).getDay()]}, {diaSel} de {MESES[plano.mes]}</b><br />
+                Nenhum lançamento planejado para este dia.</p>
+              <button className="btn" onClick={() => abrirCriacaoNoDia(diaSel)}>+ adicionar trabalho neste dia</button>
+            </div>
+          ) : !lanc ? (
+            <div className="pub-vazio-det"><div className="pub-vazio-ic">◧</div><p>Selecione um dia para ver os temas planejados.</p></div>
           ) : (() => {
             const c = calc(lanc), r = real(lanc);
             const dow = new Date(plano.ano, plano.mes, lanc.dia).getDay();
+            const grupos = gruposDoDia(lanc);
+            const misto = grupos.length > 1;
             return (
               <>
                 <div className="cal-det-head">
                   <div>
                     <div className="dp-sub">{DIAS_SEMANA_LONGO[dow]}, {lanc.dia} de {MESES[plano.mes]}</div>
-                    <h3 className="cal-det-tit">{lanc.produto}</h3>
+                    <h3 className="cal-det-tit">{misto ? `${grupos.length} trabalhos neste dia` : lanc.produto}</h3>
                   </div>
                   <div className="cal-det-acoes">
-                    <span className="tipo-pill" style={{ "--tc": corTipo(lanc.tipo) }}>{lanc.tipo}</span>
+                    {!misto && <span className="tipo-pill" style={{ "--tc": corTipo(lanc.tipo) }}>{lanc.tipo}</span>}
                     {editavel && (
                       <button className="mini" onClick={() => abrirCriacao(lanc, null)}
-                        title={`Adiciona um tema ao lançamento de ${lanc.dia}/${String(plano.mes + 1).padStart(2, "0")} e cria a publicação`}>
+                        title={`Adiciona um trabalho ao dia ${lanc.dia}/${String(plano.mes + 1).padStart(2, "0")} e cria a publicação`}>
                         + adicionar tema
                       </button>
                     )}
                   </div>
                 </div>
-                <div className="dp-meta">
-                  <span className="dp-meta-txt">{lanc.vagas} vagas por tema · {brl(lanc.preco)} por vaga</span>
-                </div>
-                {lanc.veiculo && <div className="cal-veiculo">{lanc.veiculo}</div>}
+                {!misto && (
+                  <div className="dp-meta">
+                    <span className="dp-meta-txt">{lanc.vagas} vagas por tema · {brl(lanc.preco)} por vaga</span>
+                  </div>
+                )}
+                {lanc.veiculo && !misto && <div className="cal-veiculo">{lanc.veiculo}</div>}
 
                 <div className="cal-cmp">
                   <div className="cal-cmp-row cab"><span /><span>Realizado</span><span>Planejado ({Math.round(plano.conversao * 100)}%)</span></div>
@@ -2584,51 +2894,72 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
                 </div>
 
                 <div className="dp-sec-head">
-                  <h4 className="dp-sub">Temas ({temasDe(lanc).length})</h4>
+                  <h4 className="dp-sub">{grupos.length > 1 ? `Trabalhos do dia (${grupos.length})` : `Temas (${temasDe(lanc).length})`}</h4>
                   <span className="hint">{r.criadas} de {temasDe(lanc).length} abertos · {r.ocupadas}/{c.vagas} vagas vendidas</span>
                 </div>
-                <ul className="cal-temas">
-                  {temasDe(lanc).map((t) => {
-                    const pub = pubPorTitulo.get(chaveTitulo(t.titulo));
-                    return (
-                      <li key={t.id || t.titulo} className={pub ? "aberta" : "fechada"}>
-                        <div className="cal-tema-topo">
-                          <div className="cal-tema-areas">{t.areas}</div>
-                          {editavel && (
-                            <button className="mini tirar-tema" onClick={() => tirarDoCronograma(lanc, t)}
-                              title="Tira o tema deste dia do cronograma. A publicação e os participantes continuam no sistema.">
-                              tirar do cronograma
-                            </button>
-                          )}
-                        </div>
-                        {pub ? (
-                          <a className="link-titulo" href={`#pub=${encodeURIComponent(pub.nome)}`} title="Abrir em Publicações e vagas"
-                            onClick={(e) => { if (abrirForaDoApp(e)) return; e.preventDefault(); onAbrirPublicacao(pub.nome); }}>{t.titulo}</a>
-                        ) : (
-                          <span className="cal-tema-tit">{t.titulo}</span>
-                        )}
-                        {pub ? (
-                          <>
-                            <span className="cal-tema-st ok">
-                              ✓ aberta · {pub.participantes.length}/{pub.maxVagas} vagas · {brl(faturamentoDaPub(pub))} vendidos
-                            </span>
-                            {chaveTitulo(pub.nome) !== chaveTitulo(t.titulo) && (
-                              <span className="cal-tema-st cadastro" title="Título cadastrado no sistema">no sistema: “{pub.nome}”</span>
+
+                {/* um bloco por TIPO de trabalho: capítulo, apresentação e artigo do mesmo dia
+                    são trabalhos distintos, e misturá-los numa lista só sugeria que os temas
+                    pertenciam todos ao lançamento planejado */}
+                {grupos.map((g) => (
+                  <section key={g.chave} className={grupos.length > 1 ? "cal-grupo" : ""} style={{ "--tc": corTipo(g.tipo) }}>
+                    {grupos.length > 1 && (
+                      <header className="cal-grupo-head">
+                        <span className="tipo-pill" style={{ "--tc": corTipo(g.tipo) }}>{g.tipo}</span>
+                        <span className="cal-grupo-meta">
+                          {g.temas.length} tema{g.temas.length > 1 ? "s" : ""} · {g.vagas} vagas por tema
+                          {g.preco > 0 ? ` · ${brl(g.preco)} por vaga` : ""}
+                        </span>
+                        {g.doPlano
+                          ? <span className="cal-grupo-tag">do planejamento</span>
+                          : <span className="cal-grupo-tag avulso">avulso</span>}
+                      </header>
+                    )}
+                    <ul className="cal-temas">
+                      {g.temas.map((t) => {
+                        const pub = pubDoTema(lanc, t);
+                        const vagasPrev = t.vagas ?? lanc.vagas;
+                        return (
+                          <li key={t.id || t.titulo} className={pub ? "aberta" : "fechada"}>
+                            <div className="cal-tema-topo">
+                              <div className="cal-tema-areas">{t.areas}</div>
+                              {editavel && (
+                                <button className="mini tirar-tema" onClick={() => tirarDoCronograma(lanc, t)}
+                                  title="Tira o tema deste dia do cronograma. A publicação e os participantes continuam no sistema.">
+                                  tirar do cronograma
+                                </button>
+                              )}
+                            </div>
+                            {pub ? (
+                              <a className="link-titulo" href={`#pub=${encodeURIComponent(pub.nome)}::${encodeURIComponent(pub.tipo || "")}`} title="Abrir em Publicações e vagas"
+                                onClick={(e) => { if (abrirForaDoApp(e)) return; e.preventDefault(); onAbrirPublicacao(pub.nome, pub.tipo); }}>{t.titulo}</a>
+                            ) : (
+                              <span className="cal-tema-tit">{t.titulo}</span>
                             )}
-                          </>
-                        ) : (
-                          <div className="cal-tema-acao">
-                            <span className="cal-tema-st">ainda não aberta · {lanc.vagas} vagas previstas</span>
-                            <button className="mini criar-pub" onClick={() => abrirCriacao(lanc, t)}
-                              title="Abre o formulário de publicação já preenchido com os dados do planejamento">
-                              + criar publicação no sistema
-                            </button>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+                            {pub ? (
+                              <>
+                                <span className="cal-tema-st ok">
+                                  ✓ aberta · {pub.participantes.length}/{pub.maxVagas} vagas · {brl(faturamentoDaPub(pub))} vendidos
+                                </span>
+                                {chaveTitulo(pub.nome) !== chaveTitulo(t.titulo) && (
+                                  <span className="cal-tema-st cadastro" title="Título cadastrado no sistema">no sistema: “{pub.nome}”</span>
+                                )}
+                              </>
+                            ) : (
+                              <div className="cal-tema-acao">
+                                <span className="cal-tema-st">ainda não aberta · {vagasPrev} vagas previstas</span>
+                                <button className="mini criar-pub" onClick={() => abrirCriacao(lanc, t)}
+                                  title="Abre o formulário de publicação já preenchido com os dados do planejamento">
+                                  + criar publicação no sistema
+                                </button>
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                ))}
 
                 {tiradosDe(lanc).length > 0 && (
                   <div className="cal-tirados">
@@ -2655,7 +2986,7 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
           aviso={criando.novo
             ? `O tema entra no cronograma do dia ${criando.dia} e a publicação é criada no sistema (e na aba Trabalhos). Tipo e vagas já vêm do lançamento.`
             : "Dados vindos do cronograma — ajuste o que precisar antes de criar. A publicação também entra na aba Trabalhos."}
-          comTaxa onSalvar={confirmarCriacao} onClose={() => setCriando(null)} />
+          comTaxa comData={false} onSalvar={confirmarCriacao} onClose={() => setCriando(null)} />
       )}
 
       {plano.nota && <p className="nota cal-nota"><b>Regras do mês:</b> {plano.nota}</p>}
@@ -2980,6 +3311,12 @@ select.inp{ cursor:pointer; }
 .b-ok{ background:var(--ok-soft); color:var(--ok); }
 .b-quase{ background:var(--warn-soft); color:var(--warn); }
 .b-cheio{ background:var(--danger-soft); color:var(--danger); }
+.b-fechada{ background:var(--soft); color:var(--muted2); border:1px solid var(--border); }
+/* fechar / reabrir vendas da publicação */
+.dp-fechada{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; font-size:12px; color:var(--muted); }
+.dp-fechada b{ color:var(--ink); }
+.dp-fechada-txt{ font-size:12px; color:var(--muted); }
+.fechar-pub:hover{ border-color:var(--warn); color:var(--warn); background:var(--warn-soft); }
 .pub-grad{ margin:4px 0 2px; }
 .max-inp{ width:64px; border:1px solid var(--border); border-radius:var(--r-sm); padding:5px 8px; font-size:12px;
   font-family:inherit; color:var(--ink); background:var(--surface); outline:none; transition:border-color .14s ease; }
@@ -3012,6 +3349,21 @@ select.inp{ cursor:pointer; }
 .pub-split{ display:grid; grid-template-columns:330px 1fr; gap:16px; align-items:start; }
 /* precisa vencer o .card.no-pad{overflow:hidden}, senão a lista corta em vez de rolar */
 .pub-lista.card.no-pad{ max-height:calc(100vh - 240px); overflow-y:auto; overscroll-behavior:contain; }
+/* filtros por situação da publicação */
+.sit-bar{ display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin:-4px 0 14px; }
+.sit-chip{ display:inline-flex; align-items:center; gap:6px; padding:5px 11px; font-size:12px; font-weight:500;
+  color:var(--muted); background:var(--surface); border:1px solid var(--border); border-radius:var(--r-full);
+  cursor:pointer; font-family:inherit; transition:background .12s, border-color .12s, color .12s; }
+.sit-chip:hover{ color:var(--ink); border-color:var(--brand); }
+.sit-chip.ativo{ background:var(--brand); border-color:var(--brand); color:#fff; font-weight:600; }
+.sit-chip:focus-visible{ box-shadow:var(--ring); outline:none; }
+.sit-num{ font-size:11px; font-variant-numeric:tabular-nums; opacity:.7; }
+.sit-chip.ativo .sit-num{ opacity:.85; }
+.sit-aviso{ font-size:11px; color:var(--muted2); font-style:italic; }
+/* data de abertura no item da lista */
+.pub-item-data{ font-size:11px; color:var(--muted2); }
+.pub-item-data.hoje{ color:var(--ok); font-weight:600; }
+.pub-item-data.futura{ color:var(--muted2); font-style:italic; }
 .pub-item{ display:block; width:100%; text-align:left; background:transparent; border:none; border-bottom:1px solid var(--divider);
   padding:12px 14px; cursor:pointer; font-family:inherit; transition:.12s; text-decoration:none; color:inherit; box-sizing:border-box; }
 .pub-item:hover{ background:var(--hover); }
@@ -3131,6 +3483,27 @@ select.inp{ cursor:pointer; }
 .cal-info.pendente{ font-style:italic; }
 .cal-det-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
 .cal-det-acoes{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex-shrink:0; }
+/* dia sem lançamento: clicável, para pendurar um trabalho avulso */
+.cal-cel.livre{ background:transparent; border:1px dashed var(--divider); font-family:inherit; cursor:pointer;
+  position:relative; text-align:left; transition:border-color .12s, background .12s; }
+.cal-cel.livre:hover{ border-color:var(--brand); background:color-mix(in srgb, var(--brand) 5%, transparent); }
+.cal-cel.livre .cal-mais{ position:absolute; right:8px; bottom:6px; font-size:15px; color:var(--muted2); opacity:0; transition:opacity .12s; }
+.cal-cel.livre:hover .cal-mais{ opacity:1; }
+.cal-cel.livre.sel{ border-style:solid; border-color:var(--brand); }
+/* cada TIPO de trabalho do dia vira um bloco próprio, com a cor do tipo na borda */
+/* fundo NEUTRO de propósito: a cor do tipo fica só na borda e no cabeçalho, senão ela
+   cobriria o verde que marca "tema já aberto" e os dois estados ficariam iguais */
+.cal-grupo{ border:1px solid var(--border); border-left:3px solid var(--tc); border-radius:var(--r-md);
+  margin-bottom:12px; overflow:hidden; background:transparent; }
+.cal-grupo:last-of-type{ margin-bottom:0; }
+.cal-grupo-head{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding:9px 12px;
+  border-bottom:1px solid var(--divider); background:color-mix(in srgb, var(--tc) 6%, transparent); }
+.cal-grupo-meta{ font-size:11px; color:var(--muted); }
+.cal-grupo-tag{ margin-left:auto; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--muted2); background:var(--soft); border:1px solid var(--border); border-radius:var(--r-full); padding:2px 8px; }
+.cal-grupo-tag.avulso{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 40%, transparent); }
+.cal-grupo .cal-temas li{ padding-left:12px; }
+.cal-grupo .cal-temas li:last-child{ border-bottom:none; }
 .cal-tema-topo{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .tirar-tema{ font-size:10px; padding:2px 8px; opacity:0; transition:opacity .14s ease; }
 .cal-temas li:hover .tirar-tema, .tirar-tema:focus-visible{ opacity:1; }
@@ -3153,7 +3526,10 @@ select.inp{ cursor:pointer; }
 .cal-temas{ list-style:none; display:flex; flex-direction:column; }
 .cal-temas li{ padding:11px 6px 11px 12px; border-bottom:1px solid var(--divider); border-left:2px solid transparent; }
 .cal-temas li:last-child{ border-bottom:none; }
-.cal-temas li.aberta{ border-left-color:var(--ok); background:color-mix(in srgb, var(--ok) 4%, transparent); }
+/* aberta = já existe publicação vendendo · fechada = ainda não aberta no sistema.
+   A diferença precisa saltar aos olhos: é o que diz o que ainda falta fazer no dia. */
+.cal-temas li.aberta{ border-left-color:var(--ok); background:color-mix(in srgb, var(--ok) 9%, transparent); }
+.cal-temas li.fechada{ border-left:2px dashed var(--border); background:transparent; }
 .cal-temas li.fechada .cal-tema-tit{ color:var(--muted); font-weight:500; }
 .cal-tema-areas{ font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
 .cal-temas li.aberta .cal-tema-areas{ color:var(--ok); }
