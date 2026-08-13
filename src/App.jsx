@@ -2270,15 +2270,15 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
           {vagasOcupadas === 0 ? (
             <div className="vazio">Sem participantes ainda.</div>
           ) : (
-            <div className="tabela-wrap">
-              <table className="tabela dp-tabela">
+            <div className="card no-pad dp-tabela-box">
+              <table className="tab dp-tabela">
                 <thead>
                   <tr>
                     <th scope="col">Participante</th>
                     <th scope="col">Faculdade</th>
                     <th scope="col">Marcações</th>
                     <th scope="col" className="r">Valor pago</th>
-                    <th scope="col" className="r" />
+                    <th scope="col" className="r"><span className="sr-only">Ações</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2291,7 +2291,7 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
                           {p.email && <div className="p-fac">{p.email}</div>}
                           {p.orcid ? <div className="p-orcid"><a href={`https://orcid.org/${p.orcid.trim()}`} target="_blank" rel="noreferrer">ORCID: {p.orcid}</a></div> : null}
                         </td>
-                        <td className="muted">{p.faculdade}</td>
+                        <td className="dp-fac">{p.faculdade}</td>
                         <td>
                           <span className="dp-marcas">
                             {p.autorPrincipal && <span className="tag-autor">Autor principal</span>}
@@ -2299,7 +2299,7 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
                           </span>
                         </td>
                         <td className="r p-valor" title="Valor pago na vaga">{vd ? brl(vd.valor) : "—"}</td>
-                        <td className="r nowrap">
+                        <td className="r nowrap dp-acoes">
                           <button className="mini" onClick={() => setEditP(p)}>editar</button>
                           <button className="mini del" onClick={() => onRemPart(t.id, p.id)}>×</button>
                         </td>
@@ -2308,13 +2308,14 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
                   })}
                 </tbody>
               </table>
+              {/* a nota fecha a caixa, como uma última linha da tabela */}
+              <div className="dp-rodape-nota">
+                {cheio
+                  ? `Publicação lotada (${t.maxVagas}/${t.maxVagas}).`
+                  : `${restantes} vaga${restantes > 1 ? "s" : ""} ainda livre${restantes > 1 ? "s" : ""} nesta publicação`}
+              </div>
             </div>
           )}
-          <div className="dp-rodape-nota">
-            {cheio
-              ? `Publicação lotada (${t.maxVagas}/${t.maxVagas}).`
-              : `${restantes} vaga${restantes > 1 ? "s" : ""} ainda livre${restantes > 1 ? "s" : ""} nesta publicação`}
-          </div>
         </>
       )}
 
@@ -2425,10 +2426,10 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
           {vagasOcupadas === 0 ? (
             <div className="vazio">Sem participantes ainda.</div>
           ) : (
-            <div className="tabela-wrap">
-              <table className="tabela dp-tabela">
+            <div className="card no-pad dp-tabela-box">
+              <table className="tab dp-tabela">
                 <thead>
-                  <tr><th scope="col">Participante</th><th scope="col">Situação</th><th scope="col" className="r" /></tr>
+                  <tr><th scope="col">Participante</th><th scope="col">Situação</th><th scope="col" className="r"><span className="sr-only">Enviar</span></th></tr>
                 </thead>
                 <tbody>
                   {t.participantes.map((p) => (
@@ -3483,9 +3484,13 @@ select.inp{ cursor:pointer; }
 .p-nome{ font-size:13px; font-weight:600; }
 .p-fac{ font-size:11px; color:var(--muted2); margin-top:2px; }
 .p-vazio{ justify-content:center; color:var(--muted2); font-size:12px; padding:14px 6px; }
-.tag-autor{ font-size:10px; font-weight:600; background:rgba(232,131,58,.14); color:#B4610F; padding:1px 7px; border-radius:999px; margin-left:6px; }
+/* marcações: pílula contornada, cada uma com a sua cor (laranja = autor, azul = graduado) */
+.tag-autor{ font-size:11px; font-weight:500; background:rgba(232,163,61,.14); color:#B4610F;
+  border:1px solid rgba(232,163,61,.45); padding:2px 9px; border-radius:999px; white-space:nowrap; }
 .root.dark .tag-autor{ color:#E8A33D; }
-.tag-grad{ font-size:10px; font-weight:600; background:var(--ok-soft); color:var(--ok); padding:1px 7px; border-radius:999px; margin-left:5px; }
+.root.dark .tag-grad{ color:#8CC9EE; }
+.tag-grad{ font-size:11px; font-weight:500; background:rgba(59,158,222,.14); color:#1E5F82;
+  border:1px solid rgba(59,158,222,.45); padding:2px 9px; border-radius:999px; white-space:nowrap; }
 /* PERIODO BAR */
 .periodo-bar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--surface);
   border:1px solid var(--border); border-radius:var(--r-lg); padding:10px 14px; margin-bottom:16px; }
@@ -3532,10 +3537,20 @@ select.inp{ cursor:pointer; }
 .dp-barra-txt{ font-size:12px; color:var(--muted); }
 .dp-barra-acoes{ display:flex; align-items:center; gap:10px; margin-left:auto; }
 .dp-lotado-inline{ font-size:12px; color:var(--muted2); }
-.dp-tabela .p-nome{ font-weight:600; color:var(--ink); }
-.dp-tabela .p-fac{ font-size:11px; color:var(--brand); margin-top:2px; }
+/* tabela de participantes/certificados: caixa fechada, com a nota como última linha */
+.dp-tabela-box{ overflow:hidden; }
+.dp-tabela .p-nome{ font-weight:600; color:var(--ink); font-size:13px; }
+.dp-tabela .p-fac{ font-size:11px; color:var(--brand); margin-top:3px; font-weight:400; }
+.dp-tabela .p-orcid{ font-size:11px; margin-top:2px; }
+.dp-tabela td.dp-fac{ color:var(--brand); }
+.dp-tabela td.p-valor{ color:var(--ink); font-weight:500; }
 .dp-marcas{ display:inline-flex; gap:6px; flex-wrap:wrap; }
-.dp-rodape-nota{ font-size:11px; color:var(--muted2); margin-top:12px; }
+/* as ações não estão no desenho: aparecem só ao passar o mouse na linha */
+.dp-tabela td.dp-acoes{ white-space:nowrap; }
+.dp-tabela td.dp-acoes > *{ opacity:0; transition:opacity .14s ease; }
+.dp-tabela tbody tr:hover td.dp-acoes > *,
+.dp-tabela td.dp-acoes > *:focus-visible{ opacity:1; }
+.dp-rodape-nota{ font-size:12px; color:var(--muted2); padding:12px 14px; border-top:1px solid var(--divider); }
 
 .dp-dados{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:18px 20px; }
 .dp-campo{ display:flex; flex-direction:column; gap:6px; min-width:0; }
