@@ -3542,7 +3542,8 @@ select.inp{ cursor:pointer; }
 .dp-tabela .p-nome{ font-weight:600; color:var(--ink); font-size:13px; }
 .dp-tabela .p-fac{ font-size:11px; color:var(--brand); margin-top:3px; font-weight:400; }
 .dp-tabela .p-orcid{ font-size:11px; margin-top:2px; }
-.dp-tabela td.dp-fac{ color:var(--brand); }
+/* azul é reservado a link/acento: o e-mail fica azul, a faculdade é texto comum */
+.dp-tabela td.dp-fac{ color:var(--muted); }
 .dp-tabela td.p-valor{ color:var(--ink); font-weight:500; }
 .dp-marcas{ display:inline-flex; gap:6px; flex-wrap:wrap; }
 /* as ações não estão no desenho: aparecem só ao passar o mouse na linha */
