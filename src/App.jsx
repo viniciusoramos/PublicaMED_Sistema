@@ -853,7 +853,9 @@ function calcMetricas(vendas) {
 
   const clientesMap = {};
   vendas.forEach((v) => {
-    const k = (v.email || "").trim() || v.nome.trim().toLowerCase();
+    // e-mail não diferencia maiúsculas: sem o toLowerCase, "Flavio.JR@" e "flavio.jr@"
+    // viravam dois clientes distintos
+    const k = (v.email || "").trim().toLowerCase() || v.nome.trim().toLowerCase();
     if (!k) return;
     if (!clientesMap[k]) {
       clientesMap[k] = { chave: k, nome: v.nome, email: v.email, faculdade: v.faculdade, uf: v.uf, qtd: 0, total: 0, compras: [] };

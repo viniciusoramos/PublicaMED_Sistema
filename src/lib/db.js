@@ -10,6 +10,23 @@ export const ENV_OK = !!supabase;
  *  CRUD por linha. Substitui o antigo `store` (window.storage).
  * ============================================================ */
 
+/* Nome de pessoa no padrão de nome próprio, seja como for digitado:
+ *   "FLÁVIO RUI DE SOUZA JÚNIOR" e "flávio rui de souza júnior"
+ *   viram "Flávio Rui de Souza Júnior".
+ * Conectivos ficam minúsculos (menos quando abrem o nome), como se escreve em português,
+ * e o que vem depois de hífen ou apóstrofo continua maiúsculo (D'Ávila, Silva-Souza).
+ * Fica aqui, na camada de dados, para valer em qualquer tela que grave nome. */
+const CONECTIVOS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'di', 'du', 'del', 'della', 'la', 'le', 'van', 'von', 'y']);
+export const nomeProprio = (s) => {
+  const limpo = String(s ?? '').trim().replace(/\s+/g, ' ');
+  if (!limpo) return '';
+  return limpo.split(' ').map((palavra, i) => {
+    const min = palavra.toLocaleLowerCase('pt-BR');
+    if (i > 0 && CONECTIVOS.has(min)) return min;
+    return min.replace(/(^|[-'’])(\p{L})/gu, (_, sep, letra) => sep + letra.toLocaleUpperCase('pt-BR'));
+  }).join(' ');
+};
+
 /* ---------- mapeamento banco -> componente ---------- */
 const vendaDe = (r) => ({
   id: r.id,
@@ -98,7 +115,7 @@ async function faculdadeId(nome, uf) {
 
 const vendaLinha = async (d) => ({
   data: d.data || null,
-  nome: d.nome || '',
+  nome: nomeProprio(d.nome),
   email: d.email || '',
   faculdade_id: await faculdadeId(d.faculdade, d.uf),
   uf: d.uf || 'N/I',
@@ -242,7 +259,7 @@ export async function removerPublicacao(id) {
 export async function adicionarParticipante(publicacaoId, p) {
   const { data, error } = await supabase.from('participantes').insert({
     publicacao_id: publicacaoId,
-    nome: p.nome || '',
+    nome: nomeProprio(p.nome),
     email: p.email || '',
     faculdade: p.faculdade || '',
     orcid: p.orcid || '',
@@ -255,7 +272,7 @@ export async function adicionarParticipante(publicacaoId, p) {
 }
 export async function atualizarParticipante(id, p) {
   const { data, error } = await supabase.from('participantes').update({
-    nome: p.nome || '',
+    nome: nomeProprio(p.nome),
     email: p.email || '',
     faculdade: p.faculdade || '',
     orcid: p.orcid || '',
