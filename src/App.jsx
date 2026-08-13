@@ -46,8 +46,9 @@ const TIPOS = ["Artigo","Capítulo","Apresentação","Combo","Artigo PSU","Outro
 // Paleta categórica validada (CVD ΔE 16.2 claro / 14.7 escuro, croma e contraste ≥3:1 nas duas superfícies)
 // mantendo as matizes que os usuários já associam a cada tipo
 const TIPO_COR = {
-  "Artigo":"#1878B8","Capítulo":"#6D5DD3","Apresentação":"#DD6B20",
-  "Combo":"#D8315E","Artigo PSU":"#0B9B80","Outro":"#9C6B10",
+  "Artigo":"#4C9AE0","Artigo PSU":"#34B58A","Capítulo":"#8B7BE8",
+  "Apresentação":"#E0913C","Artigo Internacional":"#46B8CE","Artigo Qualis A3":"#D9647E",
+  "Combo":"#C57BD6","Personalizado":"#7E8E9C","Outro":"#7E8E9C",
 };
 const STATUS = ["A fazer","Aguardando certificado","Concluído","Certificado emitido"];
 const STATUS_COR = {
@@ -55,7 +56,7 @@ const STATUS_COR = {
   "Concluído":"#0E7490","Certificado emitido":"#12805C",
 };
 // cores para tipos/status criados pelo usuário (fora dos padrões): paleta estável por hash
-const PALETA = ["#1878B8","#D8315E","#0B9B80","#DD6B20","#6D5DD3","#0E7490","#9C6B10","#7E57C2"];
+const PALETA = ["#4C9AE0","#34B58A","#8B7BE8","#E0913C","#46B8CE","#D9647E","#C57BD6","#7E8E9C"];
 const hashCor = (s) => PALETA[[...String(s || "")].reduce((a, c) => a + c.charCodeAt(0), 0) % PALETA.length];
 const corTipo = (v) => TIPO_COR[v] || hashCor(v);
 const corStatus = (v) => STATUS_COR[v] || hashCor(v);
@@ -2116,6 +2117,10 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
   }, [t.id, t.taxa, t.taxaLancada, t.taxaData]);
   const [subindoCert, setSubindoCert] = useState(false);
   const [copiado, setCopiado] = useState(false);
+  const [aba, setAba] = useState("participantes");
+  const [addAberto, setAddAberto] = useState(false);
+  // trocar de publicação volta para a primeira aba e fecha o formulário aberto
+  useEffect(() => { setAba("participantes"); setAddAberto(false); }, [t.id]);
   const lancar = () => {
     const v = numBR(taxaVal);
     if (v <= 0) { alert("Informe o valor da taxa."); return; }
@@ -2164,180 +2169,291 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
     if (navigator.clipboard) navigator.clipboard.writeText(txt).then(ok, () => alert(txt));
     else alert(txt);
   };
+  const vagasOcupadas = t.participantes.length;
+  const graduados = t.participantes.filter((p) => p.graduado).length;
+  // valor por vaga: quando todos pagaram igual mostra o valor; senão, a média
+  const valoresPagos = t.participantes.map((p) => vendaDoPart(p)?.valor).filter((v) => v != null);
+  const porVaga = valoresPagos.length
+    ? (valoresPagos.every((v) => v === valoresPagos[0]) ? valoresPagos[0] : faturamento / valoresPagos.length)
+    : null;
+
   return (
     <div className="dp">
-      <div className="dp-head">
-        {editandoNome ? (
-          <div className="dp-nome-edit">
-            <input className="inp" autoFocus value={nomeTmp} onChange={(e) => setNomeTmp(e.target.value)} />
-            <button className="btn sm" onClick={() => { if (nomeTmp.trim()) { onEditNome(t, nomeTmp); setEditandoNome(false); } }}>salvar</button>
-            <button className="mini" onClick={() => setEditandoNome(false)}>cancelar</button>
-          </div>
-        ) : (
-          <h3 className="dp-nome">{t.nome} <button className="mini dp-edit-nome" onClick={() => { setNomeTmp(t.nome); setEditandoNome(true); }}>editar nome</button></h3>
-        )}
-      </div>
-      <div className="dp-meta">
-        <span className={"vagas-badge " + (cheio ? "b-cheio" : restantes <= 2 ? "b-quase" : "b-ok")}>
-          {cheio ? "Lotado" : `${restantes} vaga${restantes > 1 ? "s" : ""}`}
-        </span>
+      {/* cabeçalho: chips, título e linha de contexto */}
+      <div className="dp-chips">
         <span className="tipo-pill" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo || "Artigo"}</span>
-        <span className="dp-meta-txt">{t.participantes.length}/{t.maxVagas} ocupadas{t.area ? ` · ${t.area}` : ""}</span>
-      </div>
-
-      <div className="dp-fin">
-        <div className="dp-fin-item"><span>Faturamento</span><b>{brl(faturamento)}</b></div>
-        <div className="dp-fin-item"><span>Taxa de publicação</span><b className={(t.taxa || 0) > 0 ? "negv" : ""}>{brl(t.taxa || 0)}</b></div>
-        <div className="dp-fin-lucro"><span>Lucro</span><b className={lucro >= 0 ? "pos" : "negv"}>{brl(lucro)}</b></div>
-      </div>
-
-      <div className="dp-props">
-        <div className="dp-prop">
-          <span className="dp-prop-lab" id={`lab-tipo-${t.id}`}>Tipo</span>
-          <select className="max-inp wide" aria-labelledby={`lab-tipo-${t.id}`} value={t.tipo || "Artigo"} onChange={(e) => onEdit(t.id, { tipo: e.target.value })}>
-            {tipos.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
-          </select>
-        </div>
-        <div className="dp-prop">
-          <span className="dp-prop-lab" id={`lab-vagas-${t.id}`}>Vagas</span>
-          <input type="number" min="1" className="max-inp" aria-labelledby={`lab-vagas-${t.id}`} value={t.maxVagas} onChange={(e) => onEdit(t.id, { maxVagas: parseInt(e.target.value, 10) || 1 })} />
-        </div>
-        <div className="dp-prop">
-          <span className="dp-prop-lab">Graduado</span>
-          <label className="check sm"><input type="checkbox" checked={!!t.requiresGrad} onChange={(e) => onEdit(t.id, { requiresGrad: e.target.checked })} /> exige um graduado</label>
-        </div>
+        {localPub && <span className="dp-chip">{localPub}</span>}
         {statusTrab != null && (
-          <div className="dp-prop">
-            <span className="dp-prop-lab" id={`lab-status-${t.id}`}>Status do trabalho</span>
-            <select className="status-sel" style={{ "--tc": corStatus(statusTrab) }} aria-labelledby={`lab-status-${t.id}`} value={statusTrab}
-              onChange={(e) => { if (e.target.value === "__novo") { const s = prompt("Nome do novo status:"); if (s && s.trim()) onSetStatus(s.trim()); } else onSetStatus(e.target.value); }}>
-              {statusDisp.map((s) => <option key={s} value={s}>{s}</option>)}
-              <option value="__novo">Criar novo status…</option>
+          <span className="dp-chip status" style={{ "--tc": corStatus(statusTrab) }}>{statusTrab}</span>
+        )}
+        {t.fechadaEm && <span className="dp-chip fechada">Fechada</span>}
+      </div>
+
+      {editandoNome ? (
+        <div className="dp-nome-edit">
+          <input className="inp" autoFocus value={nomeTmp} onChange={(e) => setNomeTmp(e.target.value)} />
+          <button className="btn sm" onClick={() => { if (nomeTmp.trim()) { onEditNome(t, nomeTmp); setEditandoNome(false); } }}>salvar</button>
+          <button className="mini" onClick={() => setEditandoNome(false)}>cancelar</button>
+        </div>
+      ) : (
+        <h3 className="dp-titulo">{t.nome}
+          <button className="mini dp-edit-nome" onClick={() => { setNomeTmp(t.nome); setEditandoNome(true); }}>editar nome</button>
+        </h3>
+      )}
+      <div className="dp-contexto">
+        {t.area ? `${t.area} · ` : ""}criada em {t.criadoEm ? fmtData(t.criadoEm.slice(0, 10)) : "—"}
+        {dataAbertura ? ` · abre em ${fmtData(dataAbertura)}` : ""}
+      </div>
+
+      {/* indicadores */}
+      <div className="dp-kpis">
+        <div className="dp-kpi">
+          <span className="dp-kpi-lab">Vagas</span>
+          <span className="dp-kpi-val">
+            {vagasOcupadas} de {t.maxVagas}
+            {restantes > 0 && <em className="dp-kpi-livres">{restantes} livre{restantes > 1 ? "s" : ""}</em>}
+          </span>
+          <span className="dp-vagas-barra" role="img" aria-label={`${vagasOcupadas} de ${t.maxVagas} vagas ocupadas`}>
+            {Array.from({ length: t.maxVagas }, (_, i) => (
+              <i key={i} className={i < vagasOcupadas ? "cheia" : ""} />
+            ))}
+          </span>
+        </div>
+        <div className="dp-kpi">
+          <span className="dp-kpi-lab">Faturamento</span>
+          <span className="dp-kpi-val">{brl(faturamento)}</span>
+        </div>
+        <div className="dp-kpi">
+          <span className="dp-kpi-lab">Taxa de publicação</span>
+          <span className="dp-kpi-val">{brl(t.taxa || 0)}</span>
+        </div>
+        <div className="dp-kpi">
+          <span className="dp-kpi-lab">Lucro</span>
+          <span className={"dp-kpi-val " + (lucro >= 0 ? "pos" : "negv")}>{brl(lucro)}</span>
+        </div>
+      </div>
+
+      {/* abas */}
+      <div className="dp-abas" role="tablist">
+        {[["participantes", "Participantes"], ["dados", "Dados da publicação"], ["certificados", "Certificados"]].map(([id, lab]) => (
+          <button key={id} role="tab" aria-selected={aba === id}
+            className={"dp-aba" + (aba === id ? " ativo" : "")} onClick={() => setAba(id)}>{lab}</button>
+        ))}
+      </div>
+
+      {aba === "participantes" && (
+        <>
+          <div className="dp-barra">
+            <span className="dp-barra-txt">
+              {vagasOcupadas} participante{vagasOcupadas === 1 ? "" : "s"}
+              {graduados > 0 ? ` · ${graduados} graduado${graduados > 1 ? "s" : ""}` : ""}
+              {porVaga != null ? ` · ${brl(porVaga)} por vaga` : ""}
+            </span>
+            <span className="dp-barra-acoes">
+              {vagasOcupadas > 0 && <button className="mini copiar-btn" onClick={copiarAutores}>{copiado ? "✓ copiado!" : "copiar autores"}</button>}
+              {cheio
+                ? <span className="dp-lotado-inline">Lotada — aumente as vagas para adicionar</span>
+                : <button className="btn" onClick={() => setAddAberto((v) => !v)}>{addAberto ? "Cancelar" : "Adicionar participante"}</button>}
+            </span>
+          </div>
+
+          {semGraduado && (
+            cheio
+              ? <div className="aviso-grad erro">Lotada sem nenhum graduado — esta publicação exige pelo menos um participante graduado.</div>
+              : <div className="aviso-grad">Exige graduado · ainda não há nenhum graduado entre os participantes.</div>
+          )}
+
+          {addAberto && !cheio && (
+            <FormPart tema={t} pessoas={pessoas} onAdd={(d) => { onAddPart(t, d); setAddAberto(false); }} />
+          )}
+
+          {vagasOcupadas === 0 ? (
+            <div className="vazio">Sem participantes ainda.</div>
+          ) : (
+            <div className="tabela-wrap">
+              <table className="tabela dp-tabela">
+                <thead>
+                  <tr>
+                    <th scope="col">Participante</th>
+                    <th scope="col">Faculdade</th>
+                    <th scope="col">Marcações</th>
+                    <th scope="col" className="r">Valor pago</th>
+                    <th scope="col" className="r" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {t.participantes.map((p) => {
+                    const vd = vendaDoPart(p);
+                    return (
+                      <tr key={p.id}>
+                        <td>
+                          <span className="p-nome">{p.nome}</span>
+                          {p.email && <div className="p-fac">{p.email}</div>}
+                          {p.orcid ? <div className="p-orcid"><a href={`https://orcid.org/${p.orcid.trim()}`} target="_blank" rel="noreferrer">ORCID: {p.orcid}</a></div> : null}
+                        </td>
+                        <td className="muted">{p.faculdade}</td>
+                        <td>
+                          <span className="dp-marcas">
+                            {p.autorPrincipal && <span className="tag-autor">Autor principal</span>}
+                            {p.graduado && <span className="tag-grad">Graduado</span>}
+                          </span>
+                        </td>
+                        <td className="r p-valor" title="Valor pago na vaga">{vd ? brl(vd.valor) : "—"}</td>
+                        <td className="r nowrap">
+                          <button className="mini" onClick={() => setEditP(p)}>editar</button>
+                          <button className="mini del" onClick={() => onRemPart(t.id, p.id)}>×</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="dp-rodape-nota">
+            {cheio
+              ? `Publicação lotada (${t.maxVagas}/${t.maxVagas}).`
+              : `${restantes} vaga${restantes > 1 ? "s" : ""} ainda livre${restantes > 1 ? "s" : ""} nesta publicação`}
+          </div>
+        </>
+      )}
+
+      {aba === "dados" && (
+        <div className="dp-dados">
+          <div className="dp-campo">
+            <span className="dp-prop-lab" id={`lab-tipo-${t.id}`}>Tipo de trabalho</span>
+            <select className="inp" aria-labelledby={`lab-tipo-${t.id}`} value={t.tipo || "Artigo"} onChange={(e) => onEdit(t.id, { tipo: e.target.value })}>
+              {tipos.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
             </select>
           </div>
-        )}
-        <div className="dp-prop full">
-          <span className="dp-prop-lab" id={`lab-local-${t.id}`}>Onde será publicado</span>
-          <input className="inp sm dp-prop-flex" aria-labelledby={`lab-local-${t.id}`} defaultValue={localPub} placeholder="Revista / evento (ex.: Revista Brasileira de Cardiologia)"
-            onBlur={(e) => { const v = e.target.value.trim(); if (onSetLocal && v !== (localPub || "")) onSetLocal(v); }} />
-        </div>
-        <div className="dp-prop full">
-          <span className="dp-prop-lab">Taxa de publicação</span>
-          {t.taxaLancada ? (
-            <span className="dp-taxa-ok">{brl(t.taxa)} · lançada no financeiro</span>
-          ) : (
-            <span className="dp-taxa-form">
-              <input className="inp sm dp-taxa-val" inputMode="decimal" placeholder="R$" aria-label="Valor da taxa de publicação" value={taxaVal} onChange={(e) => setTaxaVal(e.target.value)} />
-              <input className="inp sm" type="date" aria-label="Data da taxa" value={taxaData} onChange={(e) => setTaxaData(e.target.value)} />
-              <button className="btn sm" onClick={lancar}>lançar no financeiro</button>
-            </span>
+          <div className="dp-campo">
+            <span className="dp-prop-lab" id={`lab-vagas-${t.id}`}>Total de vagas</span>
+            <input type="number" min="1" className="inp" aria-labelledby={`lab-vagas-${t.id}`} value={t.maxVagas}
+              onChange={(e) => onEdit(t.id, { maxVagas: parseInt(e.target.value, 10) || 1 })} />
+          </div>
+          <div className="dp-campo">
+            <span className="dp-prop-lab" id={`lab-local-${t.id}`}>Onde será publicado</span>
+            <input className="inp" aria-labelledby={`lab-local-${t.id}`} defaultValue={localPub} placeholder="Revista / evento (ex.: Revista Brasileira de Cardiologia)"
+              onBlur={(e) => { const v = e.target.value.trim(); if (onSetLocal && v !== (localPub || "")) onSetLocal(v); }} />
+          </div>
+
+          {statusTrab != null && (
+            <div className="dp-campo">
+              <span className="dp-prop-lab" id={`lab-status-${t.id}`}>Status do trabalho</span>
+              <select className="inp" aria-labelledby={`lab-status-${t.id}`} value={statusTrab}
+                onChange={(e) => { if (e.target.value === "__novo") { const s = prompt("Nome do novo status:"); if (s && s.trim()) onSetStatus(s.trim()); } else onSetStatus(e.target.value); }}>
+                {statusDisp.map((s) => <option key={s} value={s}>{s}</option>)}
+                <option value="__novo">Criar novo status…</option>
+              </select>
+            </div>
           )}
+          <div className="dp-campo">
+            <span className="dp-prop-lab">Taxa de publicação</span>
+            {t.taxaLancada ? (
+              <span className="dp-taxa-ok">{brl(t.taxa)} · lançada no financeiro</span>
+            ) : (
+              <span className="dp-taxa-form">
+                <input className="inp sm dp-taxa-val" inputMode="decimal" placeholder="R$" aria-label="Valor da taxa de publicação" value={taxaVal} onChange={(e) => setTaxaVal(e.target.value)} />
+                <input className="inp sm" type="date" aria-label="Data da taxa" value={taxaData} onChange={(e) => setTaxaData(e.target.value)} />
+                <button className="btn sm" onClick={lancar}>lançar no financeiro</button>
+              </span>
+            )}
+          </div>
+          <div className="dp-campo">
+            <span className="dp-prop-lab">Exigências</span>
+            <label className="check sm"><input type="checkbox" checked={!!t.requiresGrad} onChange={(e) => onEdit(t.id, { requiresGrad: e.target.checked })} /> Exige ao menos um graduado</label>
+          </div>
+
+          <div className="dp-campo full">
+            <span className="dp-prop-lab">Calendário</span>
+            {dataAbertura ? (
+              <span className="dp-fechada-txt">Abre em {fmtData(dataAbertura)}</span>
+            ) : (
+              <span className="dp-taxa-form">
+                <span className="dp-fechada-txt">Fora do calendário</span>
+                <input className="inp sm" type="date" aria-label="Data de abertura no calendário"
+                  value={dataCal} onChange={(e) => setDataCal(e.target.value)} />
+                <button className="mini" onClick={() => onPorNoCalendario(t, dataCal)}
+                  title="Põe esta publicação no calendário nesta data. Nada é criado de novo — ela passa a ter data de abertura e sai de Anteriores.">
+                  pôr no calendário
+                </button>
+              </span>
+            )}
+          </div>
+          <div className="dp-campo full">
+            <span className="dp-prop-lab">Vendas</span>
+            {t.fechadaEm ? (
+              <span className="dp-fechada">
+                <b>Fechada</b> em {fmtData(t.fechadaEm.slice(0, 10))} · não vende mais vaga
+                <button className="mini" onClick={() => onReabrir(t)}
+                  title="Volta a publicação para a lista de quem está vendendo">reabrir</button>
+              </span>
+            ) : cheio ? (
+              <span className="dp-fechada"><b>Lotada</b> · todas as vagas preenchidas</span>
+            ) : (
+              <span className="dp-taxa-form">
+                <span className="dp-fechada-txt">Aberta · {restantes} vaga(s) por vender</span>
+                <button className="mini fechar-pub" onClick={() => onFechar(t)}
+                  title="Use quando o trabalho já foi publicado: encerra as vendas mesmo com vaga sobrando e tira a publicação da lista Em venda">
+                  fechar publicação
+                </button>
+              </span>
+            )}
+          </div>
+
+          <div className="dp-footer full">
+            <button className="mini del" onClick={onExcluir}>excluir esta publicação</button>
+          </div>
         </div>
-        <div className="dp-prop full">
-          <span className="dp-prop-lab">Calendário</span>
-          {dataAbertura ? (
-            <span className="dp-fechada-txt">Abre em {fmtData(dataAbertura)}</span>
-          ) : (
-            <span className="dp-taxa-form">
-              <span className="dp-fechada-txt">Fora do calendário</span>
-              <input className="inp sm" type="date" aria-label="Data de abertura no calendário"
-                value={dataCal} onChange={(e) => setDataCal(e.target.value)} />
-              <button className="mini" onClick={() => onPorNoCalendario(t, dataCal)}
-                title="Põe esta publicação no calendário nesta data. Nada é criado de novo — ela passa a ter data de abertura e sai de Anteriores.">
-                pôr no calendário
-              </button>
-            </span>
-          )}
-        </div>
-        <div className="dp-prop full">
-          <span className="dp-prop-lab">Vendas</span>
-          {t.fechadaEm ? (
-            <span className="dp-fechada">
-              <b>Fechada</b> em {fmtData(t.fechadaEm.slice(0, 10))} · não vende mais vaga
-              <button className="mini" onClick={() => onReabrir(t)}
-                title="Volta a publicação para a lista de quem está vendendo">reabrir</button>
-            </span>
-          ) : cheio ? (
-            <span className="dp-fechada"><b>Lotada</b> · todas as vagas preenchidas</span>
-          ) : (
-            <span className="dp-taxa-form">
-              <span className="dp-fechada-txt">Aberta · {t.maxVagas - t.participantes.length} vaga(s) por vender</span>
-              <button className="mini fechar-pub" onClick={() => onFechar(t)}
-                title="Use quando o trabalho já foi publicado: encerra as vendas mesmo com vaga sobrando e tira a publicação da lista Em venda">
-                fechar publicação
-              </button>
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="dp-sec-head">
-        <h4 className="dp-sub">Participantes ({t.participantes.length})</h4>
-        {t.participantes.length > 0 && <button className="mini copiar-btn" onClick={copiarAutores}>{copiado ? "✓ copiado!" : "copiar autores"}</button>}
-      </div>
-
-      {semGraduado && (
-        cheio
-          ? <div className="aviso-grad erro">Lotada sem nenhum graduado — esta publicação exige pelo menos um participante graduado.</div>
-          : <div className="aviso-grad">Exige graduado · ainda não há nenhum graduado entre os participantes.</div>
-      )}
-      <ul className="parts">
-        {t.participantes.map((p) => {
-          const vd = vendaDoPart(p);
-          return (
-            <li key={p.id}>
-              <div>
-                <span className="p-nome">{p.nome}</span>
-                {p.autorPrincipal && <span className="tag-autor">autor principal</span>}
-                {p.graduado && <span className="tag-grad">graduado</span>}
-                <div className="p-fac">{p.faculdade}{p.email ? ` · ${p.email}` : ""}</div>
-                {p.orcid ? <div className="p-orcid"><a href={`https://orcid.org/${p.orcid.trim()}`} target="_blank" rel="noreferrer">ORCID: {p.orcid}</a></div> : null}
-              </div>
-              <div className="p-acoes">
-                <span className="p-valor" title="Valor pago na vaga">{vd ? brl(vd.valor) : "—"}</span>
-                <button className="mini" onClick={() => setEditP(p)}>editar</button>
-                <button className="mini del" onClick={() => onRemPart(t.id, p.id)}>×</button>
-              </div>
-            </li>
-          );
-        })}
-        {t.participantes.length === 0 && <li className="p-vazio">Sem participantes ainda.</li>}
-      </ul>
-
-      {cheio
-        ? <div className="dp-lotado">Publicação lotada ({t.maxVagas}/{t.maxVagas}). Aumente as vagas para adicionar mais pessoas.</div>
-        : <FormPart tema={t} pessoas={pessoas} onAdd={(d) => onAddPart(t, d)} />}
-
-      <div className="dp-sec-head">
-        <h4 className="dp-sub">Certificados</h4>
-        {t.certificadoUrl ? (
-          <span className="cert-status">
-            <a href={t.certificadoUrl} target="_blank" rel="noreferrer">ver PDF</a>
-            <label className="mini cert-file">{subindoCert ? "enviando…" : "trocar"}<input type="file" accept="application/pdf" onChange={enviarCert} /></label>
-          </span>
-        ) : (
-          <label className="btn sm cert-file">{subindoCert ? "enviando…" : "Subir certificado (PDF)"}<input type="file" accept="application/pdf" onChange={enviarCert} /></label>
-        )}
-      </div>
-      {t.certificadoUrl ? (
-        <ul className="cert-lista">
-          {t.participantes.map((p) => (
-            <li key={p.id}>
-              <span className="cert-nome">{p.nome}</span>
-              {p.telefone
-                ? <a className="btn sm wa-btn" href={linkWhats(p)} target="_blank" rel="noreferrer">Enviar no WhatsApp</a>
-                : <span className="cert-sem-tel">sem telefone — adicione no “editar”</span>}
-            </li>
-          ))}
-          {t.participantes.length === 0 && <li className="cert-sem-tel">Sem participantes ainda.</li>}
-        </ul>
-      ) : (
-        <p className="cert-hint">Suba o PDF do certificado pra liberar o envio pra cada participante pelo WhatsApp. (O “Enviar a todos” automático entra depois, quando o número/API estiver configurado.)</p>
       )}
 
-      <div className="dp-footer">
-        <button className="mini del" onClick={onExcluir}>excluir esta publicação</button>
-      </div>
+      {aba === "certificados" && (
+        <>
+          <div className="dp-barra">
+            <div>
+              <div className="dp-cert-tit">Certificado da publicação</div>
+              <p className="dp-cert-txt">Suba o PDF do certificado para liberar o envio a cada participante pelo WhatsApp.
+                O envio automático a todos entra depois, quando o número e a API estiverem configurados.</p>
+            </div>
+            <span className="dp-barra-acoes">
+              {t.certificadoUrl && <a className="mini" href={t.certificadoUrl} target="_blank" rel="noreferrer">ver PDF</a>}
+              <label className="btn cert-file">{subindoCert ? "enviando…" : t.certificadoUrl ? "Trocar certificado" : "Subir certificado"}
+                <input type="file" accept="application/pdf" onChange={enviarCert} /></label>
+            </span>
+          </div>
+
+          {vagasOcupadas === 0 ? (
+            <div className="vazio">Sem participantes ainda.</div>
+          ) : (
+            <div className="tabela-wrap">
+              <table className="tabela dp-tabela">
+                <thead>
+                  <tr><th scope="col">Participante</th><th scope="col">Situação</th><th scope="col" className="r" /></tr>
+                </thead>
+                <tbody>
+                  {t.participantes.map((p) => (
+                    <tr key={p.id}>
+                      <td><span className="p-nome">{p.nome}</span></td>
+                      <td>
+                        {!t.certificadoUrl
+                          ? <span className="cert-pendente">Aguardando PDF</span>
+                          : p.telefone
+                            ? <span className="cert-pronto">Pronto para envio</span>
+                            : <span className="cert-sem-tel">sem telefone — adicione no “editar”</span>}
+                      </td>
+                      <td className="r">
+                        {t.certificadoUrl && p.telefone
+                          ? <a className="btn sm wa-btn" href={linkWhats(p)} target="_blank" rel="noreferrer">Enviar</a>
+                          : <button className="mini" disabled>Enviar</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
 
       {editP && (
         <Modal titulo="Editar participante" onClose={() => setEditP(null)}>
@@ -2375,24 +2491,25 @@ function FormPart({ tema, pessoas = [], onAdd }) {
   };
   return (
     <div className="form-part">
-      <div className="fp-titulo">Adicionar pessoa{p.lancarVenda ? " + lançar venda" : ""}</div>
       <div className="fp-grid">
-        <input className="inp sm" placeholder="Nome (digite p/ buscar quem já comprou)" list="pessoas-datalist" value={p.nome} onChange={(e) => aoMudarNome(e.target.value)} />
-        <input className="inp sm" placeholder="Faculdade" list="fac-datalist" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
-        <input className="inp sm" placeholder="Email" value={p.email} onChange={(e) => set("email", e.target.value)} />
-        <input className="inp sm" placeholder="ORCID (opcional)" value={p.orcid} onChange={(e) => set("orcid", e.target.value)} />
-        <input className="inp sm" placeholder="Telefone / WhatsApp" value={p.telefone} onChange={(e) => set("telefone", e.target.value)} />
-        <input className="inp sm" inputMode="decimal" placeholder="Valor pago (R$)" value={p.valor} onChange={(e) => set("valor", e.target.value)} />
-        <input className="inp sm" type="date" value={p.data} onChange={(e) => set("data", e.target.value)} />
+        <input className="inp" placeholder="Nome (busca quem já comprou)" list="pessoas-datalist" value={p.nome} onChange={(e) => aoMudarNome(e.target.value)} />
+        <input className="inp" placeholder="Faculdade" list="fac-datalist" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
+        <input className="inp" placeholder="Email" value={p.email} onChange={(e) => set("email", e.target.value)} />
+        <input className="inp" placeholder="Telefone / WhatsApp" value={p.telefone} onChange={(e) => set("telefone", e.target.value)} />
+        <input className="inp" placeholder="ORCID (opcional)" value={p.orcid} onChange={(e) => set("orcid", e.target.value)} />
+        <input className="inp" inputMode="decimal" placeholder="Valor pago (R$)" value={p.valor} onChange={(e) => set("valor", e.target.value)} />
+        <input className="inp" type="date" aria-label="Data da venda" value={p.data} onChange={(e) => set("data", e.target.value)} />
       </div>
       <datalist id="fac-datalist">{FAC_BASE.nomes.map((n) => <option key={n} value={n} />)}</datalist>
       <datalist id="pessoas-datalist">{pessoas.map((x) => <option key={x.nome} value={x.nome}>{x.faculdade || x.email || ""}</option>)}</datalist>
       {reconhecida && <div className="fp-reconhecida" role="status">✓ {reconhecida} já está na base — dados preenchidos, confira e ajuste se precisar.</div>}
       <div className="fp-opts">
-        <label className="check sm"><input type="checkbox" checked={p.lancarVenda} onChange={(e) => set("lancarVenda", e.target.checked)} /> lançar venda ({tema.tipo})</label>
-        <label className="check sm"><input type="checkbox" checked={p.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> autor principal</label>
-        <label className="check sm"><input type="checkbox" checked={p.graduado} onChange={(e) => set("graduado", e.target.checked)} /> graduado</label>
-        <button className="btn sm" onClick={enviar}>adicionar</button>
+        {/* o tipo da venda sai do rótulo (fica no title) para bater com o desenho aprovado */}
+        <label className="check sm" title={`A venda entra no Financeiro como ${tema.tipo}`}>
+          <input type="checkbox" checked={p.lancarVenda} onChange={(e) => set("lancarVenda", e.target.checked)} /> Lançar venda</label>
+        <label className="check sm"><input type="checkbox" checked={p.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> Autor principal</label>
+        <label className="check sm"><input type="checkbox" checked={p.graduado} onChange={(e) => set("graduado", e.target.checked)} /> Graduado</label>
+        <button className="btn" onClick={enviar}>Salvar</button>
       </div>
     </div>
   );
@@ -3036,25 +3153,56 @@ function Estilos() {
   --sel-chevron:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%235D6D7D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
 }
 .root.dark{
-  --ink:#E7EDF3; --muted:#A7B4C2; --muted2:#8B99A9;
-  --brand:#5AA7CC; --brand-hover:#74B7D8; --brand-deep:#A8CFE3; --accent:#E8833A;
-  --brand-solid:#27719A; --brand-solid-hover:#2E80AC;
-  --bg:#0E141C; --surface:#151C26; --soft:#11171F; --hover:#1A222D; --track:#222D3A;
-  --border:#28323F; --border-strong:#3A4654; --divider:#1E2833;
-  --brand-soft:rgba(90,167,204,.13); --ring:0 0 0 3px rgba(90,167,204,.30);
-  --ok:#3FB380; --ok-soft:rgba(63,179,128,.13); --ok-border:rgba(63,179,128,.30);
-  --warn:#D9A84E; --warn-soft:rgba(217,168,78,.13); --warn-border:rgba(217,168,78,.32);
-  --danger:#E2739E; --danger-soft:rgba(226,115,158,.12); --danger-border:rgba(226,115,158,.30);
-  --shadow-1:0 1px 2px rgba(0,0,0,.32);
-  --shadow-2:0 2px 4px rgba(0,0,0,.35), 0 6px 16px rgba(0,0,0,.35);
-  --shadow-3:0 4px 12px rgba(0,0,0,.45), 0 20px 48px rgba(0,0,0,.55);
-  --sel-chevron:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%238B99A9" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
+  /* texto */
+  --ink:#F5F5F7; --muted:#A1A1A6; --muted2:#8A8A8F; --apagado:#6E6E73;
+  /* ação: uma cor só. --brand-solid preenche (botão/menu ativo); --brand é o acento de link */
+  --brand:#8CC9EE; --brand-hover:#B0DBF5; --brand-deep:#8CC9EE; --accent:#E8A33D;
+  --brand-solid:#2C7BB6; --brand-solid-hover:#3B9EDE;
+  /* superfícies */
+  --bg:#000000; --surface:#161617; --soft:#101011; --hover:#1F1F21; --track:#2E2E30;
+  /* bordas sempre translúcidas, nunca cinza sólido */
+  --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.12); --divider:rgba(255,255,255,.06);
+  --brand-soft:rgba(59,158,222,.14); --ring:0 0 0 3px rgba(59,158,222,.35);
+  /* sinais: cada cor com um trabalho só */
+  --ok:#57CF9A; --ok-soft:rgba(87,207,154,.15); --ok-border:rgba(87,207,154,.32);
+  --warn:#E8A33D; --warn-soft:rgba(232,163,61,.15); --warn-border:rgba(232,163,61,.34);
+  --danger:#E4837E; --danger-soft:rgba(228,131,126,.15); --danger-border:rgba(228,131,126,.32);
+  --shadow-1:0 1px 2px rgba(0,0,0,.5);
+  --shadow-2:0 2px 4px rgba(0,0,0,.5), 0 6px 16px rgba(0,0,0,.5);
+  --shadow-3:0 4px 12px rgba(0,0,0,.6), 0 20px 48px rgba(0,0,0,.7);
+  --sel-chevron:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%238A8A8F" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
 }
 .root{ display:flex; min-height:100vh; background:var(--bg); color-scheme:light;
   font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; color:var(--ink);
   font-size:14px; line-height:1.45; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
 .root.dark{ color-scheme:dark; }
 .root :is(table,td,th,.kpi-valor,.barra-val,.leg-val,.p-valor,.mov-val,.dp-fin-item b,.dp-fin-lucro b){ font-variant-numeric:tabular-nums; }
+
+/* ── TEMA ESCURO: peças com cor fixa fora das variáveis ──────────────────────
+   A sidebar e a topbar são navy nos dois temas. No escuro elas passam a
+   acompanhar as superfícies do sistema; o tema claro fica como está. */
+.root.dark .side{ background:#161617; color:var(--muted); border-right:1px solid rgba(255,255,255,.07); }
+.root.dark .topbar{ background:#161617; box-shadow:0 2px 12px rgba(0,0,0,.5); }
+.root.dark .brand-sub{ color:var(--muted2); }
+.root.dark .nav{ color:var(--muted); }
+.root.dark .nav:hover{ background:#242426; color:var(--ink); }
+.root.dark .nav.ativo{ background:rgba(59,158,222,.14); color:var(--ink); box-shadow:none; }
+.root.dark .nav.ativo .nav-ic{ color:var(--brand); }
+.root.dark .nav:focus-visible{ box-shadow:inset 0 0 0 2px var(--brand); }
+.root.dark .persist{ color:var(--muted2); }
+.root.dark .persist.on .pdot{ background:var(--ok); box-shadow:0 0 0 3px rgba(87,207,154,.18); }
+.root.dark .tema-btn{ color:var(--muted); border-color:rgba(255,255,255,.12); }
+.root.dark .tema-btn:hover{ background:#242426; }
+.root.dark .side-backdrop{ background:rgba(0,0,0,.65); }
+.root.dark .side-close{ color:var(--muted); }
+/* chip de tipo: fundo é a própria cor do tipo com alpha 0.15 */
+.root.dark .tipo-pill{ background:color-mix(in srgb, var(--tc, #7E8E9C) 15%, transparent);
+  border-color:color-mix(in srgb, var(--tc, #7E8E9C) 30%, transparent); color:var(--ink); }
+/* vazio/desabilitado (ex.: meses sem movimento) */
+.root.dark .vazio{ color:var(--apagado); }
+/* scrollbar: thumb sólido discreto sobre trilho transparente */
+.root.dark *::-webkit-scrollbar-thumb{ background:#2E2E30; }
+.root.dark *::-webkit-scrollbar-thumb:hover{ background-color:#3A3A3D; }
 
 /* SIDEBAR — âncora navy da marca nos dois temas */
 .side{ width:236px; flex-shrink:0; background:#1C3252; color:#CFE0E3; display:flex; flex-direction:column;
@@ -3160,7 +3308,8 @@ select.inp{ cursor:pointer; }
 .resumo-filtro b{ color:var(--ink); font-size:13px; }
 .check{ display:flex; align-items:center; gap:7px; font-size:13px; color:var(--muted); cursor:pointer; }
 .check.sm{ font-size:12px; }
-.check input{ accent-color:var(--brand); }
+/* a cor de preenchimento da ação, não a de link (idêntica no tema claro) */
+.check input{ accent-color:var(--brand-solid); }
 
 /* TABELAS */
 .scroll-x{ overflow-x:auto; }
@@ -3241,11 +3390,11 @@ select.inp{ cursor:pointer; }
 .negv{ color:var(--danger); }
 /* Recharts nos dois temas */
 .recharts-default-tooltip{ border-radius:10px !important; box-shadow:var(--shadow-2); }
-.root.dark .recharts-cartesian-grid line{ stroke:#26323F; }
-.root.dark .recharts-cartesian-axis-tick text{ fill:#98A8BA; }
-.root.dark .recharts-default-tooltip{ background:#161E2B !important; border:1px solid #263243 !important; }
+.root.dark .recharts-cartesian-grid line{ stroke:rgba(255,255,255,.08); }
+.root.dark .recharts-cartesian-axis-tick text{ fill:#8A8A8F; }
+.root.dark .recharts-default-tooltip{ background:#1F1F21 !important; border:1px solid rgba(255,255,255,.12) !important; }
 .root.dark .recharts-default-tooltip .recharts-tooltip-label,
-.root.dark .recharts-default-tooltip .recharts-tooltip-item{ color:#E6EDF5 !important; }
+.root.dark .recharts-default-tooltip .recharts-tooltip-item{ color:#F5F5F7 !important; }
 .root.dark .recharts-tooltip-cursor{ fill:rgba(255,255,255,.05); }
 
 /* BOTÕES */
@@ -3270,13 +3419,13 @@ select.inp{ cursor:pointer; }
   cursor:pointer; font-family:inherit; outline:none; transition:border-color .14s ease, background-color .14s ease; }
 .status-sel:hover{ border-color:color-mix(in srgb, var(--tc,#5D6D7D) 70%, transparent); background-color:var(--hover); }
 .status-sel:focus-visible{ border-color:var(--brand); box-shadow:var(--ring); }
-.root.dark .status-sel{ color:color-mix(in srgb, var(--tc,#8B99A9) 55%, #E7EDF3); border-color:color-mix(in srgb, var(--tc,#8B99A9) 55%, transparent); }
-.root.dark .status-sel:hover{ border-color:color-mix(in srgb, var(--tc,#8B99A9) 80%, transparent); }
+.root.dark .status-sel{ color:color-mix(in srgb, var(--tc,#8A8A8F) 55%, #F5F5F7); border-color:color-mix(in srgb, var(--tc,#8A8A8F) 55%, transparent); }
+.root.dark .status-sel:hover{ border-color:color-mix(in srgb, var(--tc,#8A8A8F) 80%, transparent); }
 
 /* MODAL */
 .modal-bg{ position:fixed; inset:0; background:rgba(15,23,42,.45); display:grid; place-items:center; z-index:70; padding:20px;
   backdrop-filter:blur(4px); }
-.root.dark .modal-bg{ background:rgba(0,0,0,.55); }
+.root.dark .modal-bg{ background:rgba(0,0,0,.7); }
 .modal{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); width:100%; max-width:440px; max-height:90vh; overflow:auto;
   box-shadow:var(--shadow-3); animation:pop .16s cubic-bezier(.16,1,.3,1); }
 @keyframes pop{ from{ opacity:0; transform:scale(.98) translateY(4px); } }
@@ -3335,7 +3484,7 @@ select.inp{ cursor:pointer; }
 .p-fac{ font-size:11px; color:var(--muted2); margin-top:2px; }
 .p-vazio{ justify-content:center; color:var(--muted2); font-size:12px; padding:14px 6px; }
 .tag-autor{ font-size:10px; font-weight:600; background:rgba(232,131,58,.14); color:#B4610F; padding:1px 7px; border-radius:999px; margin-left:6px; }
-.root.dark .tag-autor{ color:#F0A468; }
+.root.dark .tag-autor{ color:#E8A33D; }
 .tag-grad{ font-size:10px; font-weight:600; background:var(--ok-soft); color:var(--ok); padding:1px 7px; border-radius:999px; margin-left:5px; }
 /* PERIODO BAR */
 .periodo-bar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--surface);
@@ -3349,6 +3498,55 @@ select.inp{ cursor:pointer; }
 .pub-split{ display:grid; grid-template-columns:330px 1fr; gap:16px; align-items:start; }
 /* precisa vencer o .card.no-pad{overflow:hidden}, senão a lista corta em vez de rolar */
 .pub-lista.card.no-pad{ max-height:calc(100vh - 240px); overflow-y:auto; overscroll-behavior:contain; }
+/* ── PAINEL DA PUBLICAÇÃO ──────────────────────────────────────── */
+.dp-chips{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+.dp-chip{ font-size:11px; font-weight:500; padding:2px 9px; border-radius:var(--r-full); white-space:nowrap;
+  color:var(--muted); background:var(--soft); border:1px solid var(--border); }
+.dp-chip.status{ color:var(--tc); border-color:color-mix(in srgb, var(--tc) 40%, transparent);
+  background:color-mix(in srgb, var(--tc) 14%, transparent); }
+.dp-chip.fechada{ color:var(--muted2); }
+.dp-titulo{ font-size:19px; font-weight:700; letter-spacing:-.01em; line-height:1.32; color:var(--ink); }
+.dp-titulo .dp-edit-nome{ margin-left:10px; vertical-align:middle; opacity:0; transition:opacity .14s ease; }
+.dp-titulo:hover .dp-edit-nome, .dp-edit-nome:focus-visible{ opacity:1; }
+.dp-contexto{ font-size:12px; color:var(--muted2); margin-top:7px; }
+
+.dp-kpis{ display:flex; gap:38px; flex-wrap:wrap; margin:20px 0 4px; }
+.dp-kpi{ display:flex; flex-direction:column; gap:5px; min-width:120px; }
+.dp-kpi-lab{ font-size:11px; color:var(--muted2); }
+.dp-kpi-val{ font-size:19px; font-weight:600; color:var(--ink); letter-spacing:-.01em; }
+.dp-kpi-val.pos{ color:var(--ok); }
+.dp-kpi-val.negv{ color:var(--danger); }
+.dp-kpi-livres{ font-size:11px; font-weight:500; font-style:normal; color:var(--brand); margin-left:8px; }
+.dp-vagas-barra{ display:flex; gap:4px; margin-top:3px; }
+.dp-vagas-barra i{ width:22px; height:3px; border-radius:2px; background:var(--track); }
+.dp-vagas-barra i.cheia{ background:var(--brand-solid); }
+
+.dp-abas{ display:flex; gap:22px; border-bottom:1px solid var(--divider); margin:22px 0 18px; }
+.dp-aba{ background:transparent; border:none; padding:0 0 10px; font-size:13px; font-family:inherit; cursor:pointer;
+  color:var(--muted2); border-bottom:2px solid transparent; margin-bottom:-1px; transition:color .12s, border-color .12s; }
+.dp-aba:hover{ color:var(--ink); }
+.dp-aba.ativo{ color:var(--ink); font-weight:600; border-bottom-color:var(--ink); }
+.dp-aba:focus-visible{ box-shadow:var(--ring); outline:none; border-radius:var(--r-sm); }
+
+.dp-barra{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
+.dp-barra-txt{ font-size:12px; color:var(--muted); }
+.dp-barra-acoes{ display:flex; align-items:center; gap:10px; margin-left:auto; }
+.dp-lotado-inline{ font-size:12px; color:var(--muted2); }
+.dp-tabela .p-nome{ font-weight:600; color:var(--ink); }
+.dp-tabela .p-fac{ font-size:11px; color:var(--brand); margin-top:2px; }
+.dp-marcas{ display:inline-flex; gap:6px; flex-wrap:wrap; }
+.dp-rodape-nota{ font-size:11px; color:var(--muted2); margin-top:12px; }
+
+.dp-dados{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:18px 20px; }
+.dp-campo{ display:flex; flex-direction:column; gap:6px; min-width:0; }
+.dp-campo.full{ grid-column:1 / -1; }
+.dp-cert-tit{ font-size:13px; font-weight:600; color:var(--ink); }
+.dp-cert-txt{ font-size:12px; color:var(--muted2); line-height:1.5; margin-top:4px; max-width:520px; }
+.cert-pendente{ font-size:12px; color:var(--warn); }
+.cert-pronto{ font-size:12px; color:var(--ok); }
+@media (max-width:1100px){ .dp-dados{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
+@media (max-width:700px){ .dp-dados{ grid-template-columns:1fr; } .dp-kpis{ gap:22px; } }
+
 /* filtros por situação da publicação */
 .sit-bar{ display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin:-4px 0 14px; }
 .sit-chip{ display:inline-flex; align-items:center; gap:6px; padding:5px 11px; font-size:12px; font-weight:500;
@@ -3430,14 +3628,16 @@ select.inp{ cursor:pointer; }
 .fatura-auto b{ font-size:15px; }
 
 /* FORM PARTICIPANTE (com venda) */
-.form-part{ margin-top:14px; padding:14px 16px; background:var(--soft); border:1px solid var(--border); border-radius:var(--r-md); }
+.form-part{ margin-bottom:16px; padding:16px; background:transparent; border:1px solid var(--border); border-radius:var(--r-md); }
 .form-part .inp{ background:var(--surface); }
-.fp-titulo{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; margin-bottom:10px; }
-.fp-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+/* 4 colunas: nome, faculdade, email, telefone na 1a linha; orcid, valor e data na 2a */
+.fp-grid{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; }
 .fp-grid .inp{ width:100%; }
-.fp-opts{ display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-top:11px; }
+.fp-opts{ display:flex; flex-wrap:wrap; align-items:center; gap:18px; margin-top:14px; }
 .fp-opts .btn{ margin-left:auto; }
 .fp-reconhecida{ font-size:12px; font-weight:600; color:var(--ok); margin-top:9px; }
+@media (max-width:1100px){ .fp-grid{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
+@media (max-width:640px){ .fp-grid{ grid-template-columns:1fr; } }
 
 /* PLANEJAMENTO — calendário editorial */
 .meta-bar{ display:flex; flex-direction:column; gap:10px; }
@@ -3574,8 +3774,8 @@ select.inp{ cursor:pointer; }
   padding:10px 18px; border-radius:var(--r-md); font-size:13px; font-weight:500; z-index:90; box-shadow:var(--shadow-3);
   animation:up .2s ease; }
 .toast.erro{ background:var(--danger); }
-.root.dark .toast{ background:#1E2833; color:#E7EDF3; border:1px solid rgba(255,255,255,.10); }
-.root.dark .toast.erro{ background:#8C2A50; }
+.root.dark .toast{ background:#1F1F21; color:#F5F5F7; border:1px solid rgba(255,255,255,.12); }
+.root.dark .toast.erro{ background:#5E2E2C; }
 @keyframes up{ from{ opacity:0; transform:translate(-50%,8px); } }
 
 /* ============ PRIMITIVOS DO SISTEMA ============ */
