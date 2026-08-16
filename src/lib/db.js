@@ -275,6 +275,27 @@ export async function adicionarParticipante(publicacaoId, p) {
   if (error) throw error;
   return partDe(data);
 }
+/* O CPF é da pessoa, não da participação: ao gravar num participante, as outras
+ * participações da mesma pessoa que ainda estão sem CPF recebem o mesmo valor.
+ * Casamos por e-mail (chave que o resto do sistema já usa para identificar cliente);
+ * sem e-mail, exigimos nome e faculdade iguais para não misturar homônimos. */
+export async function propagarCpf(p) {
+  const cpf = soDigitos(p.cpf);
+  if (!cpf) return [];
+  let q = supabase.from('participantes').update({ cpf }).eq('cpf', '');
+  const email = (p.email || '').trim();
+  if (email) {
+    q = q.ilike('email', email);
+  } else {
+    const nome = nomeProprio(p.nome);
+    const fac = (p.faculdade || '').trim();
+    if (!nome || !fac) return [];
+    q = q.eq('nome', nome).eq('faculdade', fac);
+  }
+  const { data, error } = await q.select('id');
+  if (error) throw error;
+  return data || [];
+}
 export async function atualizarParticipante(id, p) {
   const { data, error } = await supabase.from('participantes').update({
     nome: nomeProprio(p.nome),

@@ -632,6 +632,19 @@ export default function App() {
     const salva = await db.atualizarFinanceiro(linha.id, { ...linha, taxaPublicacao: (linha.taxaPublicacao || 0) + taxa });
     setFinanceiro((fs) => fs.map((f) => (f.id === salva.id ? salva : f)));
   };
+  // CPF informado numa participação passa a valer para as outras da mesma pessoa
+  // que ainda estavam sem ele (participações antigas, anteriores ao campo).
+  const propagarCpf = async (dados) => {
+    if (!dados.cpf) return 0;
+    try {
+      const tocados = await db.propagarCpf(dados);
+      if (!tocados.length) return 0;
+      const ids = new Set(tocados.map((x) => x.id));
+      const cpf = String(dados.cpf).replace(/\D/g, "");
+      setTemas((ts) => ts.map((t) => ({ ...t, participantes: t.participantes.map((p) => (ids.has(p.id) ? { ...p, cpf } : p)) })));
+      return tocados.length;
+    } catch (e) { return 0; } // não atrapalha o cadastro em si
+  };
   const addParticipante = async (tema, dados) => {
     try {
       const part = await db.adicionarParticipante(tema.id, dados);
@@ -647,6 +660,8 @@ export default function App() {
         setVendas((vs) => [venda, ...vs]);
         acoes.push("venda lançada");
       }
+      const outras = await propagarCpf(dados);
+      if (outras) acoes.push(`CPF aplicado em ${outras} participação(ões) anterior(es)`);
       // exige graduado e acabou de lotar sem nenhum graduado?
       const lotouSemGrad = tema.requiresGrad && (tema.participantes.length + 1) >= tema.maxVagas
         && !dados.graduado && !tema.participantes.some((p) => p.graduado);
@@ -678,7 +693,8 @@ export default function App() {
         const nova = await db.criarVenda({ data: hojeIso(), nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, tipo: tema.tipo, valor: dados.valor, tema: tema.nome, participanteId: part.id });
         setVendas((vs) => [nova, ...vs]);
       }
-      aviso("Participante atualizado");
+      const outras = await propagarCpf(dados);
+      aviso("Participante atualizado" + (outras ? ` · CPF aplicado em ${outras} participação(ões) anterior(es)` : ""));
     } catch (e) { aviso("Erro: " + e.message); setTemas(antesT); setVendas(antesV); }
   };
   // taxa de publicação = valor único da publicação, lançado uma vez no financeiro
