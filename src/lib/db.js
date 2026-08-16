@@ -27,6 +27,9 @@ export const nomeProprio = (s) => {
   }).join(' ');
 };
 
+/* CPF é guardado só com os dígitos; a formatação fica na tela. */
+const soDigitos = (s) => String(s ?? '').replace(/\D/g, '');
+
 /* ---------- mapeamento banco -> componente ---------- */
 const vendaDe = (r) => ({
   id: r.id,
@@ -61,6 +64,7 @@ const partDe = (x) => ({
   email: x.email || '',
   orcid: x.orcid || '',
   telefone: x.telefone || '',
+  cpf: x.cpf || '',
   autorPrincipal: !!x.autor_principal,
   graduado: !!x.graduado,
 });
@@ -264,6 +268,7 @@ export async function adicionarParticipante(publicacaoId, p) {
     faculdade: p.faculdade || '',
     orcid: p.orcid || '',
     telefone: p.telefone || '',
+    cpf: soDigitos(p.cpf),
     autor_principal: !!p.autorPrincipal,
     graduado: !!p.graduado,
   }).select().single();
@@ -277,6 +282,7 @@ export async function atualizarParticipante(id, p) {
     faculdade: p.faculdade || '',
     orcid: p.orcid || '',
     telefone: p.telefone || '',
+    cpf: soDigitos(p.cpf),
     autor_principal: !!p.autorPrincipal,
     graduado: !!p.graduado,
   }).eq('id', id).select().single();

@@ -76,6 +76,7 @@ create table if not exists public.participantes (
   graduado         boolean     not null default false,
   orcid            text        not null default '',
   telefone         text        not null default '',
+  cpf              text        not null default '',
   criado_em        timestamptz not null default now()
 );
 create index if not exists participantes_pub_idx on public.participantes (publicacao_id);

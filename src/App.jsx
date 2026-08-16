@@ -98,6 +98,16 @@ const numBR = (v) => {
   const n = parseFloat(s);
   return isNaN(n) ? 0 : n;
 };
+// CPF: guardamos só os dígitos e mostramos 000.000.000-00 (formata enquanto digita)
+const fmtCPF = (v) => {
+  const d = String(v ?? "").replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+};
+// ORCID: alguns cadastros trazem a URL inteira — ao copiar, sai só o identificador
+const soOrcid = (v) => String(v ?? "").trim().replace(/^https?:\/\/(www\.)?orcid\.org\//i, "");
 // telefone -> formato WhatsApp (só dígitos, com DDI 55 se faltar)
 const waTel = (tel) => {
   const d = String(tel || "").replace(/\D/g, "");
@@ -1976,7 +1986,7 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
       const atual = map.get(k);
       if (!atual) { map.set(k, { ...dados, nome: dados.nome.trim(), _data: data || "" }); return; }
       const maisNovo = (data || "") >= (atual._data || "");
-      for (const c of ["email", "faculdade", "orcid", "telefone"]) {
+      for (const c of ["email", "faculdade", "orcid", "telefone", "cpf"]) {
         if (dados[c] && (maisNovo || !atual[c])) atual[c] = dados[c];
       }
       if (dados.graduado) atual.graduado = true;
@@ -1984,7 +1994,7 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
     };
     vendas.forEach((v) => upsert({ nome: v.nome || "", email: v.email || "", faculdade: v.faculdade || "" }, v.data));
     temas.forEach((tm) => tm.participantes.forEach((p) =>
-      upsert({ nome: p.nome || "", email: p.email || "", faculdade: p.faculdade || "", orcid: p.orcid || "", telefone: p.telefone || "", graduado: !!p.graduado }, "")));
+      upsert({ nome: p.nome || "", email: p.email || "", faculdade: p.faculdade || "", orcid: p.orcid || "", telefone: p.telefone || "", cpf: p.cpf || "", graduado: !!p.graduado }, "")));
     return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   }, [vendas, temas]);
 
@@ -2165,7 +2175,9 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
   const copiarAutores = () => {
     const txt = t.participantes.map((p) => {
       const nome = p.nome + (p.autorPrincipal ? " (autor principal)" : "") + (p.graduado ? " (graduado)" : "");
-      return `Nome: ${nome}\nFaculdade: ${p.faculdade || ""}\nEmail: ${p.email || ""}`;
+      return `Nome: ${nome}\nFaculdade: ${p.faculdade || ""}\nEmail: ${p.email || ""}`
+        + (p.cpf ? `\nCPF: ${fmtCPF(p.cpf)}` : "")
+        + (p.orcid ? `\nORCID: ${soOrcid(p.orcid)}` : "");
     }).join("\n\n");
     const ok = () => { setCopiado(true); setTimeout(() => setCopiado(false), 1600); };
     if (navigator.clipboard) navigator.clipboard.writeText(txt).then(ok, () => alert(txt));
@@ -2291,6 +2303,7 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
                         <td>
                           <span className="p-nome">{p.nome}</span>
                           {p.email && <div className="p-fac">{p.email}</div>}
+                          {p.cpf ? <div className="p-cpf">CPF: {fmtCPF(p.cpf)}</div> : null}
                           {p.orcid ? <div className="p-orcid"><a href={`https://orcid.org/${p.orcid.trim()}`} target="_blank" rel="noreferrer">ORCID: {p.orcid}</a></div> : null}
                         </td>
                         <td className="dp-fac">{p.faculdade}</td>
@@ -2468,7 +2481,7 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
 }
 
 function FormPart({ tema, pessoas = [], onAdd }) {
-  const vazio = { nome: "", faculdade: "", email: "", orcid: "", telefone: "", autorPrincipal: false, graduado: false, valor: "", data: hojeIso(), lancarVenda: true };
+  const vazio = { nome: "", faculdade: "", email: "", orcid: "", telefone: "", cpf: "", autorPrincipal: false, graduado: false, valor: "", data: hojeIso(), lancarVenda: true };
   const [p, setP] = useState(vazio);
   const [reconhecida, setReconhecida] = useState(null);
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
@@ -2482,6 +2495,7 @@ function FormPart({ tema, pessoas = [], onAdd }) {
       email: x.email || ph.email || "",
       orcid: x.orcid || ph.orcid || "",
       telefone: x.telefone || ph.telefone || "",
+      cpf: x.cpf || ph.cpf || "",
       graduado: x.graduado || !!ph.graduado,
     } : { ...x, nome: v });
   };
@@ -2499,6 +2513,7 @@ function FormPart({ tema, pessoas = [], onAdd }) {
         <input className="inp" placeholder="Faculdade" list="fac-datalist" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
         <input className="inp" placeholder="Email" value={p.email} onChange={(e) => set("email", e.target.value)} />
         <input className="inp" placeholder="Telefone / WhatsApp" value={p.telefone} onChange={(e) => set("telefone", e.target.value)} />
+        <input className="inp" inputMode="numeric" placeholder="CPF" value={fmtCPF(p.cpf)} onChange={(e) => set("cpf", e.target.value)} />
         <input className="inp" placeholder="ORCID (opcional)" value={p.orcid} onChange={(e) => set("orcid", e.target.value)} />
         <input className="inp" inputMode="decimal" placeholder="Valor pago (R$)" value={p.valor} onChange={(e) => set("valor", e.target.value)} />
         <input className="inp" type="date" aria-label="Data da venda" value={p.data} onChange={(e) => set("data", e.target.value)} />
@@ -2520,7 +2535,7 @@ function FormPart({ tema, pessoas = [], onAdd }) {
 
 function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
   const [f, setF] = useState({
-    nome: part.nome || "", faculdade: part.faculdade || "", email: part.email || "", orcid: part.orcid || "", telefone: part.telefone || "",
+    nome: part.nome || "", faculdade: part.faculdade || "", email: part.email || "", orcid: part.orcid || "", telefone: part.telefone || "", cpf: part.cpf || "",
     autorPrincipal: !!part.autorPrincipal, graduado: !!part.graduado,
     valor: valorAtual === "" || valorAtual == null ? "" : String(valorAtual),
   });
@@ -2544,6 +2559,9 @@ function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
       <div className="form-grid">
         <Campo label="ORCID (opcional)"><input className="inp" placeholder="0000-0000-0000-0000" value={f.orcid} onChange={(e) => set("orcid", e.target.value)} /></Campo>
         <Campo label="Telefone / WhatsApp"><input className="inp" placeholder="(31) 99999-9999" value={f.telefone} onChange={(e) => set("telefone", e.target.value)} /></Campo>
+      </div>
+      <div className="form-grid">
+        <Campo label="CPF"><input className="inp" inputMode="numeric" placeholder="000.000.000-00" value={fmtCPF(f.cpf)} onChange={(e) => set("cpf", e.target.value)} /></Campo>
       </div>
       <div className="fp-opts">
         <label className="check sm"><input type="checkbox" checked={f.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> autor principal</label>
@@ -3362,6 +3380,7 @@ select.inp{ cursor:pointer; }
 .wa-btn:hover{ background:#1FB855 !important; }
 .cert-sem-tel{ font-size:11px; color:var(--muted2); }
 .cert-hint{ font-size:12px; color:var(--muted); line-height:1.5; }
+.p-cpf{ font-size:11px; margin-top:2px; color:var(--muted2); font-variant-numeric:tabular-nums; }
 .p-orcid{ font-size:11px; margin-top:2px; }
 .p-orcid a{ color:var(--brand); text-decoration:none; }
 .p-orcid a:hover{ text-decoration:underline; }
@@ -3648,7 +3667,7 @@ select.inp{ cursor:pointer; }
 /* FORM PARTICIPANTE (com venda) */
 .form-part{ margin-bottom:16px; padding:16px; background:transparent; border:1px solid var(--border); border-radius:var(--r-md); }
 .form-part .inp{ background:var(--surface); }
-/* 4 colunas: nome, faculdade, email, telefone na 1a linha; orcid, valor e data na 2a */
+/* 4 colunas: nome, faculdade, email, telefone na 1a linha; CPF, orcid, valor e data na 2a */
 .fp-grid{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; }
 .fp-grid .inp{ width:100%; }
 .fp-opts{ display:flex; flex-wrap:wrap; align-items:center; gap:18px; margin-top:14px; }
