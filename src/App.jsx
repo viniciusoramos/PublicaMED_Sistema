@@ -108,6 +108,24 @@ const fmtCPF = (v) => {
 };
 // ORCID: alguns cadastros trazem a URL inteira — ao copiar, sai só o identificador
 const soOrcid = (v) => String(v ?? "").trim().replace(/^https?:\/\/(www\.)?orcid\.org\//i, "");
+// Campo de dinheiro que também aceita conta, pra não ter que somar de cabeça:
+//   "226,10"            -> substitui pelo valor
+//   "+54"               -> soma 54 ao que já estava no mês (base)
+//   "-20"               -> desconta 20 do que já estava
+//   "25+281,08+359,99"  -> soma os itens (útil pro custo extra)
+const temConta = (v) => /[+-]/.test(String(v ?? "").trim());
+const numExpr = (v, base = 0) => {
+  if (typeof v === "number") return v;
+  const s = String(v ?? "").trim().replace(/\s+/g, "");
+  if (!s) return 0;
+  const termos = s.match(/[+-]?[\d.,]+/g);
+  if (!termos) return 0;
+  let total = /^[+-]/.test(s) ? (Number(base) || 0) : 0;   // começou com sinal? parte do valor do mês
+  for (const t of termos) total += (t.startsWith("-") ? -1 : 1) * numBR(t.replace(/^[+-]/, ""));
+  return Math.round(total * 100) / 100;
+};
+// número no padrão brasileiro, sem "R$" (para preencher campo de digitação)
+const numTxt = (n) => (Number(n) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // telefone -> formato WhatsApp (só dígitos, com DDI 55 se faltar)
 const waTel = (tel) => {
   const d = String(tel || "").replace(/\D/g, "");
@@ -336,6 +354,7 @@ export default function App() {
   const [vendas, setVendas] = useState([]);
   const [trabalhos, setTrabalhos] = useState([]);
   const [financeiro, setFinanceiro] = useState([]);
+  const [finItens, setFinItens] = useState([]); // detalhamento dos custos do mês
   const [temas, setTemas] = useState([]);
   // cronograma: vem do banco. Enquanto o SQL não for aplicado, cai no arquivo em modo leitura.
   const [planejamentos, setPlanejamentos] = useState(PLANEJAMENTOS);
@@ -361,7 +380,7 @@ export default function App() {
         const [d, plan] = await Promise.all([db.carregarTudo(), db.carregarPlanejamentos()]);
         if (!vivo) return;
         setVendas(d.vendas); setTrabalhos(d.trabalhos);
-        setFinanceiro(d.financeiro); setTemas(d.temas);
+        setFinanceiro(d.financeiro); setTemas(d.temas); setFinItens(d.financeiroItens || []);
         // sem cronograma no banco (SQL ainda não aplicado): segue com o do arquivo, sem edição
         setPlanejamentos(plan || PLANEJAMENTOS);
         setPlanoNoBanco(!!plan);
@@ -390,6 +409,51 @@ export default function App() {
     const antes = financeiro; setFinanceiro(nf);
     try { for (const f of nf) { const old = antes.find((x) => x.id === f.id); if (old && finMudou(old, f)) await db.atualizarFinanceiro(f.id, f); } }
     catch (e) { aviso("Erro ao salvar: " + e.message); setFinanceiro(antes); }
+  };
+  /* Itens de custo: o item entra somando no total do mês e sai descontando,
+     para o número da planilha e o detalhamento nunca se contradizerem. */
+  // deste mês em diante (o custo fixo vale para os próximos, não para o passado)
+  const mesesDaquiEmDiante = (linha) => financeiro.filter((f) =>
+    f.ano > linha.ano || (f.ano === linha.ano && f.ordem >= linha.ordem));
+  const addItemFin = async (mesId, campo, valor, descricao, repetir = false) => {
+    const linha = financeiro.find((f) => f.id === mesId);
+    if (!linha || !valor) return;
+    const alvos = repetir ? mesesDaquiEmDiante(linha) : [linha];
+    const antes = financeiro, antesI = finItens;
+    const ids = new Set(alvos.map((f) => f.id));
+    const atualizadas = financeiro.map((f) => (ids.has(f.id) ? { ...f, [campo]: (f[campo] || 0) + valor } : f));
+    setFinanceiro(atualizadas);
+    try {
+      const novos = await db.criarItensFinanceiro(alvos.map((f) => ({ mesId: f.id, campo, valor, descricao, recorrente: repetir })));
+      setFinItens((is) => [...is, ...novos]);
+      for (const f of atualizadas.filter((x) => ids.has(x.id))) await db.atualizarFinanceiro(f.id, f);
+      aviso(`${brl(valor)} somado${descricao ? " · " + descricao : ""}` + (repetir ? ` · em ${alvos.length} meses` : ""));
+    } catch (e) { aviso("Erro: " + e.message); setFinanceiro(antes); setFinItens(antesI); }
+  };
+  const remItemFin = async (item, tambemFuturos = false) => {
+    const linha = financeiro.find((f) => f.id === item.mesId);
+    if (!linha) return;
+    // mesma recorrência = mesmo custo, valor e descrição, deste mês para a frente
+    const alvos = tambemFuturos
+      ? finItens.filter((i) => {
+          const m = financeiro.find((f) => f.id === i.mesId);
+          return m && i.campo === item.campo && i.valor === item.valor && i.descricao === item.descricao
+            && (m.ano > linha.ano || (m.ano === linha.ano && m.ordem >= linha.ordem));
+        })
+      : [item];
+    const antes = financeiro, antesI = finItens;
+    const porMes = new Map();
+    alvos.forEach((i) => porMes.set(i.mesId, (porMes.get(i.mesId) || 0) + i.valor));
+    const atualizadas = financeiro.map((f) => (porMes.has(f.id)
+      ? { ...f, [item.campo]: Math.max(0, (f[item.campo] || 0) - porMes.get(f.id)) } : f));
+    const idsItens = alvos.map((i) => i.id);
+    setFinanceiro(atualizadas);
+    setFinItens((is) => is.filter((x) => !idsItens.includes(x.id)));
+    try {
+      await db.removerItensFinanceiro(idsItens);
+      for (const f of atualizadas.filter((x) => porMes.has(x.id))) await db.atualizarFinanceiro(f.id, f);
+      aviso(`Removido de ${alvos.length} ${alvos.length === 1 ? "mês" : "meses"}`);
+    } catch (e) { aviso("Erro: " + e.message); setFinanceiro(antes); setFinItens(antesI); }
   };
   /* Acha a publicação pelo título: exato e, se falhar, ignorando acento/pontuação/espaço
    * (a mesma obra costuma estar escrita com pequenas diferenças em cada tela).
@@ -849,7 +913,8 @@ export default function App() {
           <Trabalhos trabalhos={trabalhos} salvar={salvarTrabalhos} aviso={aviso} onAbrirPublicacao={abrirPublicacao} />
         )}
         {tab === "financeiro" && (
-          <Financeiro financeiro={financeiro} salvar={salvarFinanceiro} vendas={vendas} aviso={aviso} onCriarAno={criarAnoFin} dark={dark} />
+          <Financeiro financeiro={financeiro} salvar={salvarFinanceiro} vendas={vendas} aviso={aviso} onCriarAno={criarAnoFin} dark={dark}
+            itens={finItens} onAddItem={addItemFin} onRemItem={remItemFin} />
         )}
         {tab === "temas" && (
           <Temas temas={temas} vendas={vendas} trabalhos={trabalhos} abertura={aberturaPub} onSetLocalTrabalho={setLocalTrabalho} onSetStatusTrabalho={setStatusTrabalho} alvoId={pubAlvo} onAlvoUsado={() => setPubAlvo(null)}
@@ -1636,7 +1701,7 @@ function FormTrabalho({ onSalvar, onClose }) {
 /* ============================================================
    FINANCEIRO
    ============================================================ */
-function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
+function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens = [], onAddItem, onRemItem }) {
   // séries dos gráficos calibradas por superfície (Recharts não lê var() no fill)
   const corSerie = dark ? "#5AA7CC" : "#2C7DA0";
   const corLucro = dark ? "#3FB380" : "#2E9E7B";
@@ -1690,6 +1755,59 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
   const salvarLinha = (id, dados) => {
     const nf = financeiro.map((f) => (f.id === id ? { ...f, ...dados } : f));
     salvar(nf); setEditId(null); aviso("Mês atualizado");
+  };
+
+  /* ---- acrescentar um custo direto na tabela (sem abrir o fechamento) ----
+     o "+" some no hover da linha; a caixinha soma ao que já está no mês. */
+  const [addCusto, setAddCusto] = useState(null); // { id, campo, label, mes, atual, x, y }
+  const [addVal, setAddVal] = useState("");
+  const [addDesc, setAddDesc] = useState("");
+  const [addRepetir, setAddRepetir] = useState(true);
+  const abrirAdd = (e, l, campo, label) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setAddVal(""); setAddDesc("");
+    setAddRepetir(campo === "custoFixo"); // custo fixo se repete; os outros são do mês
+    const seguintes = financeiro.filter((f) => f.ano > l.ano || (f.ano === l.ano && f.ordem >= l.ordem)).length;
+    setAddCusto({ id: l.id, campo, label, mes: l.mes, atual: l[campo] || 0, seguintes, x: r.right, y: r.bottom + 6 });
+  };
+  const confirmarAdd = () => {
+    const v = numBR(addVal);
+    if (!v) { aviso("Erro: informe o valor a acrescentar"); return; }
+    onAddItem(addCusto.id, addCusto.campo, v, addDesc, addRepetir);
+    setAddCusto(null);
+  };
+  const removerItem = (i) => {
+    if (i.recorrente) {
+      const sim = confirm(`"${i.descricao || "item"}" de ${brl(i.valor)} se repete nos meses seguintes.\n\nOK = tirar deste mês e dos próximos\nCancelar = tirar só deste mês`);
+      onRemItem(i, sim);
+    } else onRemItem(i, false);
+  };
+  // itens de um custo do mês, do mais antigo ao mais novo
+  const itensDe = (mesId, campo) => itens.filter((i) => i.mesId === mesId && i.campo === campo);
+  const celCusto = (l, campo, label, legado = "") => {
+    const lista = itensDe(l.id, campo);
+    return (
+      <td className="r muted cel-custo">
+        <span className="cel-custo-val">{brl(l[campo])}</span>
+        <button className="add-custo" title={`Acrescentar a ${label.toLowerCase()} de ${l.mes}`}
+          aria-label={`Acrescentar a ${label} de ${l.mes}`}
+          onClick={(e) => abrirAdd(e, l, campo, label)}>+</button>
+        {(lista.length > 0 || legado) && (
+          <ul className="itens-cel">
+            {lista.map((i) => (
+              <li key={i.id} title={`${i.descricao || "sem descrição"} · ${brl(i.valor)}${i.recorrente ? " · se repete todo mês" : ""}`}>
+                <span className="ic-val">{numTxt(i.valor)}</span>
+                <span className="ic-desc">{i.recorrente && <span className="ic-fixo" aria-hidden="true">↻ </span>}{i.descricao || "—"}</span>
+                <button className="ic-x" onClick={() => removerItem(i)} title="Remover este item e descontar do mês"
+                  aria-label={`Remover ${i.descricao || "item"} de ${brl(i.valor)}`}>×</button>
+              </li>
+            ))}
+            {/* anotação antiga, de quando a descrição era um texto só; fica até ser reescrita em itens */}
+            {legado && <li className="ic-legado" title={legado}>{legado}</li>}
+          </ul>
+        )}
+      </td>
+    );
   };
   const novoAno = async () => {
     const a = parseInt(window.prompt("Criar fechamento para qual ano? (ex.: 2026)") || "", 10);
@@ -1811,10 +1929,10 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
                         <div className="fat-real" title="Vendas do mês + ajuste manual">vendas {brl(fatVendasMes[l.ordem])} + ajuste {brl(l.faturamentoAjuste)}</div>
                       )}</td>
                       <td className="r">{brl(l.faturamento)}</td>
-                      <td className="r muted">{brl(l.taxaPublicacao)}</td>
-                      <td className="r muted">{brl(l.custoAds)}</td>
-                      <td className="r muted">{brl(l.custoFixo)}</td>
-                      <td className="r muted">{brl(l.custoExtra)}{l.custoExtraDesc ? <div className="extra-desc" title={l.custoExtraDesc}>{l.custoExtraDesc}</div> : null}</td>
+                      {celCusto(l, "taxaPublicacao", "Taxa de publicação")}
+                      {celCusto(l, "custoAds", "Custo com anúncios (Ads)")}
+                      {celCusto(l, "custoFixo", "Custo fixo")}
+                      {celCusto(l, "custoExtra", "Custo extra / variável", l.custoExtraDesc)}
                       <td className="r neg"><b>{brl(l.custoTotal)}</b></td>
                       <td className="r"><b className={l.lucro >= 0 ? "pos" : "negv"}>{brl(l.lucro)}</b></td>
                       <td className="acoes"><button className="mini" onClick={() => setEditId(l.id)} aria-label={`Editar fechamento de ${l.mes}`}>editar</button></td>
@@ -1894,20 +2012,74 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark }) {
       {editLinha && (
         <FormMes linha={editLinha} fatVendas={fatVendasMes[editLinha.ordem]} onSalvar={(d) => salvarLinha(editLinha.id, d)} onClose={() => setEditId(null)} />
       )}
+
+      {addCusto && (
+        <>
+          <div className="pop-fundo" onClick={() => setAddCusto(null)} />
+          <div className="pop-add" style={{ top: addCusto.y, left: addCusto.x }} role="dialog" aria-label={`Acrescentar a ${addCusto.label}`}
+            onKeyDown={(e) => { if (e.key === "Escape") setAddCusto(null); }}>
+            <div className="pop-tit">{addCusto.label} · {addCusto.mes}</div>
+            <div className="pop-atual">hoje: <b>{brl(addCusto.atual)}</b></div>
+            <input className="inp sm" autoFocus inputMode="decimal" placeholder="valor a acrescentar"
+              value={addVal} onChange={(e) => setAddVal(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") confirmarAdd(); }} />
+            <input className="inp sm" placeholder="do que é? (ex.: chip mentoria)" value={addDesc}
+              onChange={(e) => setAddDesc(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") confirmarAdd(); }} />
+            <label className="check sm pop-rep">
+              <input type="checkbox" checked={addRepetir} onChange={(e) => setAddRepetir(e.target.checked)} />
+              repetir nos meses seguintes
+            </label>
+            {numBR(addVal) > 0 && (
+              <div className="pop-preview">
+                fica <b>{brl(addCusto.atual + numBR(addVal))}</b>
+                {addRepetir && addCusto.seguintes > 1 && <> · em {addCusto.seguintes} meses</>}
+              </div>
+            )}
+            <div className="pop-acoes">
+              <button className="mini" onClick={() => setAddCusto(null)}>cancelar</button>
+              <button className="btn sm" onClick={confirmarAdd}>acrescentar</button>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }
 
 function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
-  const [f, setF] = useState({
+  // o que já está salvo no mês serve de base: digitar "+54" soma a isto
+  const base = {
     faturamentoAjuste: linha.faturamentoAjuste || 0, taxaPublicacao: linha.taxaPublicacao || 0,
     custoAds: linha.custoAds || 0, custoFixo: linha.custoFixo || 0, custoExtra: linha.custoExtra || 0,
-    custoExtraDesc: linha.custoExtraDesc || "",
+  };
+  const [txt, setTxtCampo] = useState(() => {
+    const o = {};
+    for (const k of Object.keys(base)) o[k] = numTxt(base[k]);
+    return o;
   });
-  const setn = (k, v) => setF((p) => ({ ...p, [k]: numBR(v) }));
-  const setTxt = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const [desc, setDesc] = useState(linha.custoExtraDesc || "");
+  const val = (k) => numExpr(txt[k], base[k]);
+  const f = {
+    faturamentoAjuste: val("faturamentoAjuste"), taxaPublicacao: val("taxaPublicacao"),
+    custoAds: val("custoAds"), custoFixo: val("custoFixo"), custoExtra: val("custoExtra"),
+    custoExtraDesc: desc,
+  };
   const ct = f.taxaPublicacao + f.custoAds + f.custoFixo + f.custoExtra;
   const fatTotal = (fatVendas || 0) + f.faturamentoAjuste;
+  // campo de dinheiro com o resultado da conta logo abaixo, enquanto se digita
+  const campo = (k, label) => (
+    <Campo label={label}>
+      <input className="inp" inputMode="text" value={txt[k]}
+        onChange={(e) => setTxtCampo((p) => ({ ...p, [k]: e.target.value }))} />
+      {temConta(txt[k]) && (
+        <span className="campo-calc">
+          = <b>{brl(val(k))}</b>
+          {/^[+-]/.test(txt[k].trim()) && <> · sobre os {brl(base[k])} do mês</>}
+        </span>
+      )}
+    </Campo>
+  );
   return (
     <Modal titulo={`Fechamento · ${linha.mes}`} onClose={onClose}>
       <div className="fatura-auto">
@@ -1916,14 +2088,18 @@ function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
         <div className="hint">As vendas somam sozinhas. Use o ajuste só pra registrar receita que não foi lançada venda a venda.</div>
       </div>
       <div className="form-grid">
-        <Campo label="Ajuste de faturamento (diferença)"><input className="inp" defaultValue={f.faturamentoAjuste} onChange={(e) => setn("faturamentoAjuste", e.target.value)} /></Campo>
-        <Campo label="Taxa de publicação"><input className="inp" defaultValue={f.taxaPublicacao} onChange={(e) => setn("taxaPublicacao", e.target.value)} /></Campo>
-        <Campo label="Custo com anúncios (Ads)"><input className="inp" defaultValue={f.custoAds} onChange={(e) => setn("custoAds", e.target.value)} /></Campo>
-        <Campo label="Custo fixo"><input className="inp" defaultValue={f.custoFixo} onChange={(e) => setn("custoFixo", e.target.value)} /></Campo>
-        <Campo label="Custo extra / variável"><input className="inp" defaultValue={f.custoExtra} onChange={(e) => setn("custoExtra", e.target.value)} /></Campo>
+        {campo("faturamentoAjuste", "Ajuste de faturamento (diferença)")}
+        {campo("taxaPublicacao", "Taxa de publicação")}
+        {campo("custoAds", "Custo com anúncios (Ads)")}
+        {campo("custoFixo", "Custo fixo")}
+        {campo("custoExtra", "Custo extra / variável")}
       </div>
+      <p className="hint dica-conta">
+        Para <b>acrescentar</b> um custo em vez de trocar o valor, digite com <b>+</b>:
+        “+54” soma 54 ao que já está no mês. Também dá para somar itens de uma vez: “25+281,08+359,99”.
+      </p>
       <Campo label="Descrição do custo extra (opcional)">
-        <input className="inp" placeholder="Ex.: Compra de celular" value={f.custoExtraDesc} onChange={(e) => setTxt("custoExtraDesc", e.target.value)} />
+        <input className="inp" placeholder="Ex.: Compra de celular" value={desc} onChange={(e) => setDesc(e.target.value)} />
       </Campo>
       <div className="resumo-mes">
         <div><span>Faturamento</span><b className="pos">{brl(fatTotal)}</b></div>
@@ -3476,6 +3652,41 @@ select.inp{ cursor:pointer; }
 .modal-body{ padding:20px; }
 .campo{ display:flex; flex-direction:column; gap:5px; margin-bottom:13px; }
 .campo span{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.05em; }
+/* resultado da conta digitada no campo (ex.: "+54" -> = R$ 226,10) */
+.campo .campo-calc{ font-size:11px; font-weight:500; color:var(--brand); text-transform:none; letter-spacing:0; margin-top:2px; }
+.campo .campo-calc b{ font-weight:700; }
+.dica-conta{ margin:-2px 0 14px; line-height:1.5; }
+/* "+" para acrescentar custo direto na tabela do fechamento */
+.cel-custo{ white-space:nowrap; }
+.add-custo{ border:1px solid var(--border); background:var(--surface); color:var(--muted2); width:19px; height:19px;
+  border-radius:var(--r-sm); font-size:13px; line-height:1; cursor:pointer; font-family:inherit; padding:0;
+  margin-left:6px; vertical-align:middle; opacity:0; transition:opacity .14s ease, border-color .14s ease, color .14s ease; }
+.tab tbody tr:hover .add-custo, .add-custo:focus-visible{ opacity:1; }
+.add-custo:hover{ border-color:var(--brand); color:var(--brand); background:var(--brand-soft); }
+.add-custo:focus-visible{ box-shadow:var(--ring); outline:none; }
+.pop-fundo{ position:fixed; inset:0; z-index:80; }
+.pop-add{ position:fixed; z-index:81; transform:translateX(-100%); width:236px; display:flex; flex-direction:column; gap:7px;
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:12px 13px; box-shadow:var(--shadow-3);
+  animation:pop .16s cubic-bezier(.16,1,.3,1); }
+.pop-tit{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.05em; line-height:1.35; }
+.pop-atual{ font-size:12px; color:var(--muted); margin-top:-3px; }
+.pop-atual b{ color:var(--ink); font-variant-numeric:tabular-nums; }
+.pop-preview{ font-size:12px; color:var(--brand); font-weight:500; }
+.pop-preview b{ font-weight:700; font-variant-numeric:tabular-nums; }
+.pop-acoes{ display:flex; justify-content:flex-end; gap:8px; margin-top:2px; }
+/* detalhamento do custo: uma linha por item, como as linhas de uma planilha */
+.itens-cel{ list-style:none; display:flex; flex-direction:column; gap:2px; margin-top:5px; text-align:right; }
+.itens-cel li{ display:flex; align-items:center; justify-content:flex-end; gap:7px; font-size:10px; line-height:1.35;
+  color:var(--muted2); font-weight:500; }
+.ic-val{ font-variant-numeric:tabular-nums; color:var(--muted); flex-shrink:0; }
+.ic-desc{ max-width:118px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; flex:1; }
+.ic-x{ border:none; background:transparent; color:var(--muted2); font-size:12px; line-height:1; cursor:pointer;
+  padding:0 1px; opacity:0; transition:opacity .14s ease, color .14s ease; flex-shrink:0; }
+.tab tbody tr:hover .ic-x, .ic-x:focus-visible{ opacity:1; }
+.ic-x:hover{ color:var(--danger); }
+.ic-legado{ font-style:italic; opacity:.75; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
+.ic-fixo{ color:var(--brand); font-weight:700; }
+.pop-rep{ font-size:11px; color:var(--muted); }
 .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:13px; }
 .form-grid .campo{ margin-bottom:0; }
 .form-grid-taxa{ margin-bottom:13px; }

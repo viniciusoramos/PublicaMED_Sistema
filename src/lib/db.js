@@ -87,18 +87,21 @@ const pubDe = (p) => ({
 
 /* ---------- carga inicial (tudo de uma vez) ---------- */
 export async function carregarTudo() {
-  const [v, t, f, p, fac] = await Promise.all([
+  const [v, t, f, p, fac, it] = await Promise.all([
     supabase.from('vendas').select('*, faculdades(nome)'),
     supabase.from('trabalhos').select('*').order('criado_em', { ascending: false }),
     supabase.from('financeiro').select('*'),
     supabase.from('publicacoes').select('*, participantes(*)').order('criado_em', { ascending: false }),
     supabase.from('faculdades').select('id, nome, uf').order('nome', { ascending: true }),
+    supabase.from('financeiro_itens').select('*').order('criado_em', { ascending: true }),
   ]);
   const erro = v.error || t.error || f.error || p.error || fac.error;
   if (erro) throw erro;
   return {
     vendas: v.data.map(vendaDe),
     trabalhos: t.data.map((x) => ({ id: x.id, titulo: x.titulo, tipo: x.tipo, status: x.status, criadoEm: x.criado_em, localPublicacao: x.local_publicacao || '' })),
+    // itens são opcionais: se a migração 19 ainda não rodou, a tela funciona sem detalhamento
+    financeiroItens: it.error ? [] : (it.data || []).map(itemDe),
     financeiro: f.data.map(finDe).sort((a, b) => (a.ano - b.ano) || (a.ordem - b.ordem)),
     temas: p.data.map(pubDe).sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || '')),
     faculdades: fac.data,
@@ -198,6 +201,29 @@ export async function atualizarLocalTrabalho(id, local) {
 }
 
 const MESES_DB = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+/* ---------- itens de custo (o "do que é" de cada custo do mês) ----------
+ * A coluna numérica do mês continua sendo o total — é dela que saem os
+ * relatórios. Os itens detalham esse total e são somados a ele ao entrar
+ * e descontados ao sair, então os dois nunca se contradizem. */
+const itemDe = (r) => ({ id: r.id, mesId: r.financeiro_id, campo: r.campo, descricao: r.descricao || '', valor: Number(r.valor) || 0, recorrente: !!r.recorrente, criadoEm: r.criado_em });
+/* Um custo fixo entra em vários meses de uma vez (ele se repete), então a
+ * inserção é em lote: uma linha por mês alvo. */
+export async function criarItensFinanceiro(linhas) {
+  const { data, error } = await supabase.from('financeiro_itens').insert(
+    linhas.map((l) => ({
+      financeiro_id: l.mesId, campo: l.campo, valor: l.valor || 0,
+      descricao: (l.descricao || '').trim(), recorrente: !!l.recorrente,
+    }))
+  ).select();
+  if (error) throw error;
+  return data.map(itemDe);
+}
+export async function removerItensFinanceiro(ids) {
+  if (!ids.length) return;
+  const { error } = await supabase.from('financeiro_itens').delete().in('id', ids);
+  if (error) throw error;
+}
 
 /* ---------- financeiro (por ano) ---------- */
 export async function criarAnoFinanceiro(ano) {
