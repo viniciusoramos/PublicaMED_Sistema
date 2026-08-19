@@ -1194,22 +1194,36 @@ function Vendas({ vendas, salvar, aviso, temasExist }) {
   const [fTipo, setFTipo] = useState("");
   const [fUF, setFUF] = useState("");
   const [fMes, setFMes] = useState("");
+  const [fDia, setFDia] = useState("");     // dia exato (ISO); vazio = sem filtro de dia
+  const [fPeriodo, setFPeriodo] = useState(""); // "" | "hoje" | "ontem" | "7d"
   const [limite, setLimite] = useState(60);
   const [modal, setModal] = useState(false);
   const [editando, setEditando] = useState(null);
 
+  // dia e mês são recortes concorrentes: escolher um limpa o outro, senão o
+  // resultado vira vazio sem o usuário entender por quê
+  const escolherPeriodo = (p) => { setFPeriodo(p); setFDia(""); setFMes(""); setLimite(60); };
+  const escolherDia = (d) => { setFDia(d); setFPeriodo(""); setFMes(""); setLimite(60); };
+  const escolherMes = (m) => { setFMes(m); setFPeriodo(""); setFDia(""); setLimite(60); };
+
   const filtradas = useMemo(() => {
     const b = busca.trim().toLowerCase();
+    const hoje = hojeIso();
+    const diasAtras = (n) => { const d = new Date(hoje + "T12:00:00"); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+    const de = fPeriodo === "hoje" ? hoje : fPeriodo === "ontem" ? diasAtras(1) : fPeriodo === "7d" ? diasAtras(6) : "";
+    const ate = fPeriodo === "ontem" ? diasAtras(1) : fPeriodo ? hoje : "";
     return vendas
       .filter((v) => {
         if (b && !(`${v.nome} ${v.email} ${v.faculdade} ${v.tema}`.toLowerCase().includes(b))) return false;
         if (fTipo && v.tipo !== fTipo) return false;
         if (fUF && v.uf !== fUF) return false;
+        if (fDia && v.data !== fDia) return false;
+        if (de && !(v.data >= de && v.data <= ate)) return false;
         if (fMes !== "" && mesDeIso(v.data) !== parseInt(fMes, 10)) return false;
         return true;
       })
       .sort((a, b) => (b.data || "").localeCompare(a.data || ""));
-  }, [vendas, busca, fTipo, fUF, fMes]);
+  }, [vendas, busca, fTipo, fUF, fMes, fDia, fPeriodo]);
 
   // opções de faculdade para o seletor: base canônica + qualquer faculdade já usada
   const facOpts = useMemo(() => {
@@ -1227,6 +1241,20 @@ function Vendas({ vendas, salvar, aviso, temasExist }) {
 
   const somaFiltro = filtradas.reduce((s, v) => s + v.valor, 0);
   const ufsDisponiveis = [...new Set(vendas.map((v) => v.uf))].sort();
+  // contagem no próprio chip, pra saber se vale clicar antes de filtrar
+  const contaPeriodo = (p) => {
+    const hoje = hojeIso();
+    const d = new Date(hoje + "T12:00:00");
+    if (p === "hoje") return vendas.filter((v) => v.data === hoje).length;
+    if (p === "ontem") { d.setDate(d.getDate() - 1); const o = d.toISOString().slice(0, 10); return vendas.filter((v) => v.data === o).length; }
+    d.setDate(d.getDate() - 6); const de = d.toISOString().slice(0, 10);
+    return vendas.filter((v) => v.data >= de && v.data <= hoje).length;
+  };
+  const rotuloPeriodo = fDia ? fmtData(fDia)
+    : fPeriodo === "hoje" ? `hoje, ${fmtData(hojeIso())}`
+    : fPeriodo === "ontem" ? "ontem"
+    : fPeriodo === "7d" ? "últimos 7 dias"
+    : fMes !== "" ? MESES[Number(fMes)] : "";
 
   const remover = (id) => {
     if (!confirm("Remover esta venda?")) return;
@@ -1264,14 +1292,32 @@ function Vendas({ vendas, salvar, aviso, temasExist }) {
           <option value="">Todos os estados</option>
           {ufsDisponiveis.map((u) => <option key={u} value={u}>{u}</option>)}
         </select>
-        <select className="inp" aria-label="Filtrar por mês" value={fMes} onChange={(e) => setFMes(e.target.value)}>
+        <select className="inp" aria-label="Filtrar por mês" value={fMes} onChange={(e) => escolherMes(e.target.value)}>
           <option value="">Todos os meses</option>
           {MESES.map((mez, i) => <option key={i} value={i}>{mez}</option>)}
         </select>
       </div>
 
+      <div className="status-filtros" role="group" aria-label="Filtrar por período">
+        {[["hoje", "Hoje"], ["ontem", "Ontem"], ["7d", "Últimos 7 dias"]].map(([id, lab]) => (
+          <button key={id} className={"chip-filtro" + (fPeriodo === id ? " ativo" : "")} aria-pressed={fPeriodo === id}
+            title={fPeriodo === id ? "Clique para limpar o filtro" : `Ver as vendas de ${lab.toLowerCase()}`}
+            onClick={() => escolherPeriodo(fPeriodo === id ? "" : id)}>
+            {lab}<b>{contaPeriodo(id)}</b>
+          </button>
+        ))}
+        <label className="chip-dia">
+          <span>dia</span>
+          <input type="date" className="inp sm" aria-label="Ver as vendas de um dia específico"
+            value={fDia} onChange={(e) => escolherDia(e.target.value)} />
+        </label>
+        {(fPeriodo || fDia || fMes !== "") && (
+          <button className="mini" onClick={() => { setFPeriodo(""); setFDia(""); setFMes(""); }}>limpar período</button>
+        )}
+      </div>
+
       <div className="resumo-filtro">
-        <span>{num(filtradas.length)} resultado(s)</span>
+        <span>{num(filtradas.length)} venda(s){rotuloPeriodo ? ` · ${rotuloPeriodo}` : ""}</span>
         <span><b>{brl(somaFiltro)}</b></span>
       </div>
 
@@ -3687,6 +3733,15 @@ select.inp{ cursor:pointer; }
 .ic-legado{ font-style:italic; opacity:.75; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
 .ic-fixo{ color:var(--brand); font-weight:700; }
 .pop-rep{ font-size:11px; color:var(--muted); }
+/* filtro de período em Vendas: chips rápidos + um dia específico */
+.chip-dia{ display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 12px 0 13px;
+  border:1px solid var(--border); background:var(--surface); border-radius:var(--r-full);
+  font-size:12px; color:var(--muted); }
+.chip-dia input[type=date]{ border:none; background:transparent; padding:0; font-size:12px; color:var(--ink);
+  font-family:inherit; outline:none; }
+.chip-dia input[type=date]:focus-visible{ box-shadow:var(--ring); border-radius:var(--r-sm); }
+.root.dark .chip-dia input[type=date]::-webkit-calendar-picker-indicator{ filter:invert(.7); }
+.status-filtros .mini{ align-self:center; }
 .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:13px; }
 .form-grid .campo{ margin-bottom:0; }
 .form-grid-taxa{ margin-bottom:13px; }
