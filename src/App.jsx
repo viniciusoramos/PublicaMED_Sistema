@@ -906,9 +906,9 @@ export default function App() {
       <main className="main">
         {tab === "overview" && <Overview vendas={vendas} financeiro={financeiro} trabalhos={trabalhos} dark={dark} />}
         {tab === "vendas" && (
-          <Vendas vendas={vendas} salvar={salvarVendas} aviso={aviso} temasExist={temas} />
+          <Vendas vendas={vendas} salvar={salvarVendas} aviso={aviso} temasExist={temas} onAbrirPublicacao={abrirPublicacao} />
         )}
-        {tab === "clientes" && <Clientes m={m} vendas={vendas} salvarCliente={salvarCliente} />}
+        {tab === "clientes" && <Clientes m={m} vendas={vendas} salvarCliente={salvarCliente} onAbrirPublicacao={abrirPublicacao} />}
         {tab === "trabalhos" && (
           <Trabalhos trabalhos={trabalhos} salvar={salvarTrabalhos} aviso={aviso} onAbrirPublicacao={abrirPublicacao} />
         )}
@@ -1188,7 +1188,7 @@ function Destaque({ rotulo, principal, detalhe }) {
 /* ============================================================
    VENDAS
    ============================================================ */
-function Vendas({ vendas, salvar, aviso, temasExist }) {
+function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao }) {
   const { tipos } = useContext(ListasCtx);
   const [busca, setBusca] = useState("");
   const [fTipo, setFTipo] = useState("");
@@ -1332,7 +1332,15 @@ function Vendas({ vendas, salvar, aviso, temasExist }) {
                 <td className="nowrap muted">{fmtData(v.data)}</td>
                 <td>
                   <div className="cel-nome">{v.nome || "—"}</div>
-                  {v.tema && <div className="cel-tema" title={v.tema}>{v.tema}</div>}
+                  {v.tema && (
+                    <div className="cel-tema">
+                      <a className="link-tema" href={`#pub=${encodeURIComponent(v.tema)}::${encodeURIComponent(v.tipo || "")}`}
+                        title={`${v.tema} — abrir em Publicações e vagas`}
+                        onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return; e.preventDefault(); onAbrirPublicacao(v.tema, v.tipo); }}>
+                        {v.tema}
+                      </a>
+                    </div>
+                  )}
                 </td>
                 <td className="cel-fac">{v.faculdade || "—"}</td>
                 <td><span className="uf-pill">{v.uf}</span></td>
@@ -1453,7 +1461,7 @@ function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts }) {
 /* ============================================================
    CLIENTES
    ============================================================ */
-function Clientes({ m, vendas, salvarCliente }) {
+function Clientes({ m, vendas, salvarCliente, onAbrirPublicacao }) {
   const [busca, setBusca] = useState("");
   const [ordem, setOrdem] = useState("total");
   const [limite, setLimite] = useState(50);
@@ -1552,7 +1560,17 @@ function Clientes({ m, vendas, salvarCliente }) {
                     <tr key={v.id}>
                       <td className="nowrap muted">{fmtData(v.data)}</td>
                       <td><span className="tipo-pill" style={{ "--tc": corTipo(v.tipo) }}>{v.tipo}</span></td>
-                      <td className="cel-fac">{v.tema || "—"}</td>
+                      <td className="cel-fac">
+                        {v.tema ? (
+                          // leva direto ao trabalho, em vez de copiar o título e procurar na outra aba.
+                          // o tipo vai junto porque o mesmo título pode existir como capítulo e apresentação
+                          <a className="link-titulo" href={`#pub=${encodeURIComponent(v.tema)}::${encodeURIComponent(v.tipo || "")}`}
+                            title="Abrir este trabalho em Publicações e vagas"
+                            onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return; e.preventDefault(); setSel(null); onAbrirPublicacao(v.tema, v.tipo); }}>
+                            {v.tema}
+                          </a>
+                        ) : "—"}
+                      </td>
                       <td className="r"><b>{brl(v.valor)}</b></td>
                     </tr>
                   ))}
@@ -3734,6 +3752,10 @@ select.inp{ cursor:pointer; }
 .ic-fixo{ color:var(--brand); font-weight:700; }
 .pop-rep{ font-size:11px; color:var(--muted); }
 /* filtro de período em Vendas: chips rápidos + um dia específico */
+/* tema da venda: linka para o trabalho sem virar um azulão na tabela inteira */
+.link-tema{ color:inherit; text-decoration:none; }
+.link-tema:hover{ color:var(--brand); text-decoration:underline; text-underline-offset:2px; }
+.link-tema:focus-visible{ box-shadow:var(--ring); outline:none; border-radius:3px; }
 .chip-dia{ display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 12px 0 13px;
   border:1px solid var(--border); background:var(--surface); border-radius:var(--r-full);
   font-size:12px; color:var(--muted); }
