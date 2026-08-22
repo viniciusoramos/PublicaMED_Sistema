@@ -789,6 +789,27 @@ export default function App() {
       aviso("Taxa lançada no financeiro");
     } catch (e) { aviso("Erro: " + e.message); }
   };
+  /* Corrigir uma taxa já lançada: estorna o valor antigo do mês em que entrou e
+   * lança o novo (que pode ser em outro mês). Valor zero só estorna, devolvendo
+   * a publicação ao estado de "taxa não lançada". */
+  const corrigirTaxaPub = async (tema, valor, data) => {
+    try {
+      if ((tema.taxa || 0) > 0) {
+        const ok = await estornarTaxaFinanceiro(tema.taxa, tema.taxaData);
+        if (!ok) { aviso("Erro: não achei o lançamento antigo no Financeiro — ajuste o mês por lá"); return; }
+      }
+      if (valor > 0) {
+        await lancarTaxaFinanceiro(data, valor);
+        await db.atualizarPublicacao(tema.id, { taxa: valor, taxaLancada: true, taxaData: data });
+        setTemas((ts) => ts.map((t) => (t.id === tema.id ? { ...t, taxa: valor, taxaLancada: true, taxaData: data } : t)));
+        aviso(`Taxa corrigida para ${brl(valor)} · ${brl(tema.taxa || 0)} estornado`);
+      } else {
+        await db.atualizarPublicacao(tema.id, { taxa: 0, taxaLancada: false, taxaData: null });
+        setTemas((ts) => ts.map((t) => (t.id === tema.id ? { ...t, taxa: 0, taxaLancada: false, taxaData: null } : t)));
+        aviso(`Taxa estornada · ${brl(tema.taxa || 0)} devolvido ao Financeiro`);
+      }
+    } catch (e) { aviso("Erro: " + e.message); }
+  };
   const criarAnoFin = async (ano) => {
     try { const linhas = await db.criarAnoFinanceiro(ano); setFinanceiro((f) => [...f, ...linhas]); aviso(`Ano ${ano} criado`); }
     catch (e) { aviso("Erro: " + e.message); }
@@ -938,7 +959,7 @@ export default function App() {
           <Temas temas={temas} vendas={vendas} trabalhos={trabalhos} abertura={aberturaPub} onSetLocalTrabalho={setLocalTrabalho} onSetStatusTrabalho={setStatusTrabalho} alvoId={pubAlvo} onAlvoUsado={() => setPubAlvo(null)}
             onAdd={addPublicacao} onCriarNoDia={criarPublicacaoNoDia} onPorNoCalendario={porPublicacaoNoCalendario} onRem={remPublicacao} onEdit={editPublicacao} onEditNome={editNomePublicacao}
             onAddPart={addParticipante} onEditPart={editParticipante} onRemPart={remParticipante}
-            onLancarTaxa={lancarTaxaPub} aviso={aviso} />
+            onLancarTaxa={lancarTaxaPub} onCorrigirTaxa={corrigirTaxaPub} aviso={aviso} />
         )}
         {tab === "planejamento" && (
           <Planejamento temas={temas} vendas={vendas} planejamentos={planejamentos} editavel={planoNoBanco}
@@ -2198,7 +2219,7 @@ function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
 /* ============================================================
    TEMAS E VAGAS
    ============================================================ */
-function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, onPorNoCalendario, onSetLocalTrabalho, onSetStatusTrabalho, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, aviso }) {
+function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, onPorNoCalendario, onSetLocalTrabalho, onSetStatusTrabalho, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onCorrigirTaxa, aviso }) {
   const [busca, setBusca] = useState("");
   const [soComVaga, setSoComVaga] = useState(false);
   const [situacao, setSituacao] = useState("venda"); // a tela abre no trabalho do dia
@@ -2372,7 +2393,7 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
             <DetalhePub key={sel.id} t={sel} vendas={vendas} pessoas={pessoas}
               localPub={trabLink ? trabLink.localPublicacao : ""} onSetLocal={(local) => trabLink && onSetLocalTrabalho(trabLink.id, local)}
               statusTrab={trabLink ? (trabLink.status || "A fazer") : null} onSetStatus={(s) => trabLink && onSetStatusTrabalho(trabLink.id, s)}
-              onEdit={onEdit} onEditNome={onEditNome} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa}
+              onEdit={onEdit} onEditNome={onEditNome} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa} onCorrigirTaxa={onCorrigirTaxa}
               onFechar={fechar} onReabrir={reabrir} dataAbertura={abertura.get(sel.id) || ""} onPorNoCalendario={onPorNoCalendario}
               onExcluir={() => excluir(sel)} />
           )}
@@ -2384,7 +2405,7 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
   );
 }
 
-function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, statusTrab = null, onSetStatus, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onFechar, onReabrir, dataAbertura = "", onPorNoCalendario, onExcluir }) {
+function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, statusTrab = null, onSetStatus, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onCorrigirTaxa, onFechar, onReabrir, dataAbertura = "", onPorNoCalendario, onExcluir }) {
   const { tipos, status: statusDisp } = useContext(ListasCtx);
   const restantes = t.maxVagas - t.participantes.length;
   const cheio = restantes <= 0;
@@ -2395,6 +2416,7 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
   // do lançamento automático), o valor aparece preenchido — não faz sentido redigitar
   const [taxaVal, setTaxaVal] = useState("");
   const [taxaData, setTaxaData] = useState(hojeIso());
+  const [editTaxa, setEditTaxa] = useState(false); // taxa ja lancada, em modo de correcao
   const [dataCal, setDataCal] = useState(hojeIso()); // data para pôr a publicação no calendário
   useEffect(() => {
     setTaxaVal(!t.taxaLancada && (t.taxa || 0) > 0 ? String(t.taxa).replace(".", ",") : "");
@@ -2510,10 +2532,12 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
           <span className="dp-kpi-lab">Faturamento</span>
           <span className="dp-kpi-val">{brl(faturamento)}</span>
         </div>
-        <div className="dp-kpi">
+        {/* clicável porque é aqui que se procura a taxa quando ela saiu errada */}
+        <button className="dp-kpi dp-kpi-btn" title={t.taxaLancada ? "Corrigir ou estornar a taxa" : "Lançar a taxa no financeiro"}
+          onClick={() => { setAba("dados"); if (t.taxaLancada) { setTaxaVal(numTxt(t.taxa)); setTaxaData(t.taxaData || hojeIso()); setEditTaxa(true); } }}>
           <span className="dp-kpi-lab">Taxa de publicação</span>
-          <span className="dp-kpi-val">{brl(t.taxa || 0)}</span>
-        </div>
+          <span className="dp-kpi-val">{brl(t.taxa || 0)}<span className="dp-kpi-edit" aria-hidden="true">corrigir</span></span>
+        </button>
         <div className="dp-kpi">
           <span className="dp-kpi-lab">Lucro</span>
           <span className={"dp-kpi-val " + (lucro >= 0 ? "pos" : "negv")}>{brl(lucro)}</span>
@@ -2638,8 +2662,21 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
           )}
           <div className="dp-campo">
             <span className="dp-prop-lab">Taxa de publicação</span>
-            {t.taxaLancada ? (
-              <span className="dp-taxa-ok">{brl(t.taxa)} · lançada no financeiro</span>
+            {t.taxaLancada && !editTaxa ? (
+              <span className="dp-taxa-form">
+                <span className="dp-taxa-ok">{brl(t.taxa)} · lançada no financeiro</span>
+                <button className="mini" onClick={() => { setTaxaVal(numTxt(t.taxa)); setTaxaData(t.taxaData || hojeIso()); setEditTaxa(true); }}>corrigir</button>
+              </span>
+            ) : t.taxaLancada && editTaxa ? (
+              <span className="dp-taxa-form">
+                <input className="inp sm dp-taxa-val" inputMode="decimal" placeholder="R$" aria-label="Novo valor da taxa" value={taxaVal} onChange={(e) => setTaxaVal(e.target.value)} />
+                <input className="inp sm" type="date" aria-label="Mês do lançamento" value={taxaData} onChange={(e) => setTaxaData(e.target.value)} />
+                <button className="btn sm" onClick={() => { const v = numBR(taxaVal); onCorrigirTaxa(t, v, taxaData); setEditTaxa(false); }}>salvar correção</button>
+                <button className="mini" onClick={() => setEditTaxa(false)}>cancelar</button>
+                <button className="mini del" title="Tira a taxa do Financeiro e volta ao estado de não lançada"
+                  onClick={() => { if (confirm(`Estornar a taxa de ${brl(t.taxa)} do Financeiro?\n\nA publicação volta a ficar sem taxa lançada.`)) { onCorrigirTaxa(t, 0, t.taxaData); setEditTaxa(false); } }}>estornar</button>
+                <span className="hint dp-taxa-hint">o valor antigo é descontado do mês em que entrou</span>
+              </span>
             ) : (
               <span className="dp-taxa-form">
                 <input className="inp sm dp-taxa-val" inputMode="decimal" placeholder="R$" aria-label="Valor da taxa de publicação" value={taxaVal} onChange={(e) => setTaxaVal(e.target.value)} />
@@ -3861,6 +3898,13 @@ select.inp{ cursor:pointer; }
 .dp-kpi{ display:flex; flex-direction:column; gap:5px; min-width:120px; }
 .dp-kpi-lab{ font-size:11px; color:var(--muted2); }
 .dp-kpi-val{ font-size:19px; font-weight:600; color:var(--ink); letter-spacing:-.01em; }
+/* a taxa é um atalho: mesma aparência dos outros números, com a ação no hover */
+.dp-kpi-btn{ background:transparent; border:none; padding:0; text-align:left; font-family:inherit; cursor:pointer;
+  border-radius:var(--r-sm); }
+.dp-kpi-btn:hover .dp-kpi-val{ color:var(--brand); }
+.dp-kpi-btn:focus-visible{ box-shadow:var(--ring); outline:none; }
+.dp-kpi-edit{ font-size:11px; font-weight:500; color:var(--brand); margin-left:8px; opacity:0; transition:opacity .14s ease; }
+.dp-kpi-btn:hover .dp-kpi-edit, .dp-kpi-btn:focus-visible .dp-kpi-edit{ opacity:1; }
 .dp-kpi-val.pos{ color:var(--ok); }
 .dp-kpi-val.negv{ color:var(--danger); }
 .dp-kpi-livres{ font-size:11px; font-weight:500; font-style:normal; color:var(--brand); margin-left:8px; }
@@ -3961,6 +4005,7 @@ select.inp{ cursor:pointer; }
 .dp-taxa-form{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .dp-taxa-val{ max-width:100px; }
 .dp-taxa-ok{ font-size:12px; color:var(--ok); font-weight:600; }
+.dp-taxa-hint{ flex-basis:100%; margin-top:-2px; }
 .dp-sub{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; }
 .dp-sec-head{ display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
   margin:22px 0 6px; padding-top:16px; border-top:1px solid var(--divider); }
