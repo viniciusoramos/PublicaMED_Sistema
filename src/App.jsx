@@ -1682,6 +1682,42 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
 
   const contagem = statusDisp.map((s) => ({ s, n: trabalhos.filter((t) => t.status === s).length }));
 
+  /* Ritmo de produção: quantos trabalhos entraram por mês, contados pela data de
+     criação lida no horário de Brasília. */
+  const porMesTrab = useMemo(() => {
+    const map = new Map();
+    trabalhos.forEach((t) => {
+      const d = diaDe(t.criadoEm);
+      if (!d) return;
+      const k = `${anoDeIso(d)}-${mesDeIso(d)}`;
+      map.set(k, (map.get(k) || 0) + 1);
+    });
+    return map;
+  }, [trabalhos]);
+  const hojeRef = hojeIso();
+  const anoHoje = anoDeIso(hojeRef), mesHoje = mesDeIso(hojeRef);
+  const contaMes = (a, m) => porMesTrab.get(`${a}-${m}`) || 0;
+  // o mês de comparação começa no anterior, mas pode ser trocado por qualquer outro
+  const [cmpMes, setCmpMes] = useState(() => {
+    const a = mesHoje === 0 ? anoHoje - 1 : anoHoje, m = mesHoje === 0 ? 11 : mesHoje - 1;
+    return `${a}-${m}`;
+  });
+  const opcoesMes = useMemo(() => {
+    const out = [];
+    let a = anoHoje, m = mesHoje;
+    for (let i = 0; i < 24; i++) {
+      out.push({ chave: `${a}-${m}`, rot: MESES[m] + (a !== anoHoje ? ` / ${a}` : "") });
+      m -= 1; if (m < 0) { m = 11; a -= 1; }
+    }
+    return out;
+  }, [anoHoje, mesHoje]);
+  const [cmpAno, cmpMesIdx] = cmpMes.split("-").map(Number);
+  const nEste = contaMes(anoHoje, mesHoje);
+  const nCmp = contaMes(cmpAno, cmpMesIdx);
+  const difCmp = nEste - nCmp;
+  const rotCmp = MESES[cmpMesIdx].toLowerCase() + (cmpAno !== anoHoje ? ` de ${cmpAno}` : "");
+  const noAno = [...porMesTrab].reduce((s, [k, n]) => (Number(k.split("-")[0]) === anoHoje ? s + n : s), 0);
+
   const mudarStatus = (id, status) => {
     salvar(trabalhos.map((t) => (t.id === id ? { ...t, status } : t)));
   };
@@ -1695,6 +1731,30 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
     <>
       <Header titulo="Trabalhos" sub={`${num(trabalhos.length)} trabalhos no controle de produção`}
         acao={<button className="btn" onClick={() => setModal(true)}>+ Novo trabalho</button>} />
+
+      <div className="kpis kpis-3">
+        <KPI label={`Este mês · ${MESES[mesHoje]}`} valor={num(nEste)}
+          sub={nCmp === 0 ? `nada em ${rotCmp} para comparar`
+            : difCmp === 0 ? `mesmo ritmo de ${rotCmp}`
+            : `${difCmp > 0 ? "+" : "−"}${Math.abs(difCmp)} em relação a ${rotCmp}`}
+          cor="var(--brand)" />
+        <div className="kpi">
+          <div className="kpi-body">
+            <span className="kpi-label">
+              <span className="kpi-dot" style={{ background: "#6D5DD3" }} />
+              <select className="kpi-sel" aria-label="Mês para comparar" value={cmpMes} onChange={(e) => setCmpMes(e.target.value)}>
+                {opcoesMes.map((o) => <option key={o.chave} value={o.chave}>{o.rot}</option>)}
+              </select>
+            </span>
+            <div className="kpi-valor">{num(nCmp)}</div>
+            <div className="kpi-sub">
+              {cmpAno === anoHoje && cmpMesIdx === mesHoje ? "mês em andamento" : `mês fechado · ${cmpAno}`}
+            </div>
+          </div>
+        </div>
+        <KPI label={`No ano · ${anoHoje}`} valor={num(noAno)}
+          sub={`${num(trabalhos.length)} desde o início`} cor="var(--ok)" />
+      </div>
 
       <div className="status-filtros" role="group" aria-label="Filtrar por status">
         {contagem.map(({ s, n }) => (
@@ -3582,6 +3642,13 @@ nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 .kpi-label{ font-size:11px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.06em;
   display:flex; align-items:center; gap:8px; }
 .kpi-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+/* mês de comparação escolhido no próprio rótulo do cartão */
+.kpi-sel{ appearance:none; border:none; background:transparent; color:inherit; font:inherit; letter-spacing:inherit;
+  text-transform:inherit; cursor:pointer; padding:0 16px 0 0; outline:none;
+  background-image:var(--sel-chevron); background-repeat:no-repeat; background-position:right center; background-size:11px 11px; }
+.kpi-sel:hover, .kpi-sel:focus-visible{ color:var(--brand); }
+.kpi-sel:focus-visible{ box-shadow:var(--ring); border-radius:3px; }
+.kpi-sel option{ text-transform:none; letter-spacing:normal; font-size:13px; color:var(--ink); background:var(--surface); }
 .kpi-valor{ font-size:24px; font-weight:600; margin-top:8px; letter-spacing:-.02em; line-height:1.15; }
 .kpi-sub{ font-size:12px; color:var(--muted2); margin-top:3px; }
 .kpi-click{ cursor:pointer; text-align:left; font-family:inherit; transition:border-color .14s ease, background .14s ease; }
