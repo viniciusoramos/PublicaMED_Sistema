@@ -859,19 +859,30 @@ export default function App() {
   // e vagas por situação em vez de por data de cadastro). Também antes dos returns condicionais.
   const vinculoCal = useMemo(() => aberturaDasPublicacoes(planejamentos, temas), [planejamentos, temas]);
   const aberturaPub = vinculoCal.abertura;
-  /* Quando cada trabalho aconteceu: a data de abertura no cronograma, e só na falta dela
-   * a data de criação do registro. Contar por criação distorce o histórico — os trabalhos
-   * importados de uma vez apareceriam todos no mês da importação. */
+  /* Quando cada trabalho aconteceu, na ordem do sinal mais confiável para o mais fraco:
+   *   1. a data de abertura no cronograma — existe só para o que está no calendário;
+   *   2. a primeira venda daquele trabalho — o sinal do histórico, que veio importado;
+   *   3. a criação do registro — último recurso, para trabalho sem venda nem cronograma.
+   * Contar pela criação distorceria tudo: os trabalhos importados de uma vez apareceriam
+   * todos no mês da importação. */
   const dataDoTrabalho = useMemo(() => {
     const ix = indicePubs(temas);
+    const primeiraVenda = new Map(); // tipo|titulo -> data da venda mais antiga
+    for (const v of vendas) {
+      if (!v.data || !v.tema) continue;
+      const k = chaveTipo(v.tipo) + "|" + chaveTitulo(v.tema);
+      const atual = primeiraVenda.get(k);
+      if (!atual || v.data < atual) primeiraVenda.set(k, v.data);
+    }
     const map = new Map();
     for (const t of trabalhos) {
       const pub = casarPub(t.titulo, t.tipo, ix);
       const ab = pub ? aberturaPub.get(pub.id) : null;
-      map.set(t.id, ab || diaDe(t.criadoEm));
+      const pv = primeiraVenda.get(chaveTipo(t.tipo) + "|" + chaveTitulo(t.titulo));
+      map.set(t.id, ab || pv || diaDe(t.criadoEm));
     }
     return map;
-  }, [trabalhos, temas, aberturaPub]);
+  }, [trabalhos, temas, vendas, aberturaPub]);
 
   if (sessao === undefined) {
     return (
