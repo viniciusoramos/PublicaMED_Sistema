@@ -74,7 +74,25 @@ const fmtData = (iso) => {
 };
 const mesDeIso = (iso) => (iso ? parseInt(iso.split("-")[1], 10) - 1 : null);
 const anoDeIso = (iso) => (iso ? parseInt(iso.split("-")[0], 10) : null);
-const hojeIso = () => new Date().toISOString().slice(0, 10);
+// "hoje" pelo horário de Brasília, não pelo UTC: das 21h à meia-noite o UTC já
+// virou o dia seguinte, e o sistema datava as vendas da noite no dia errado.
+// (sv-SE formata como AAAA-MM-DD; é o jeito curto de pedir ISO com fuso.)
+const hojeIso = () => new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+// dia (AAAA-MM-DD) de um instante gravado em UTC, lido no horário de Brasília:
+// cortar o ISO direto adiantava em um dia tudo que foi criado depois das 21h
+const diaDe = (ts) => {
+  if (!ts) return "";
+  if (String(ts).length <= 10) return String(ts); // já é data pura
+  const d = new Date(ts);
+  return isNaN(d) ? String(ts).slice(0, 10) : d.toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+};
+// soma/subtrai dias de uma data ISO sem passar por fuso nenhum
+const isoSomaDias = (iso, n) => {
+  const [y, m, d] = String(iso).split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+};
 // Lê número no padrão brasileiro: ponto = separador de milhar, vírgula = decimal.
 // Ex.: "1.260" -> 1260 · "1.260,50" -> 1260.5 · "124,17" -> 124.17 · "1260" -> 1260 · "124.17" -> 124.17
 /* Links internos do painel: são <a href="#..."> de verdade, para o botão direito oferecer
@@ -1209,7 +1227,7 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao }) {
   const filtradas = useMemo(() => {
     const b = busca.trim().toLowerCase();
     const hoje = hojeIso();
-    const diasAtras = (n) => { const d = new Date(hoje + "T12:00:00"); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+    const diasAtras = (n) => isoSomaDias(hoje, -n);
     const de = fPeriodo === "hoje" ? hoje : fPeriodo === "ontem" ? diasAtras(1) : fPeriodo === "7d" ? diasAtras(6) : "";
     const ate = fPeriodo === "ontem" ? diasAtras(1) : fPeriodo ? hoje : "";
     return vendas
@@ -1244,10 +1262,9 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao }) {
   // contagem no próprio chip, pra saber se vale clicar antes de filtrar
   const contaPeriodo = (p) => {
     const hoje = hojeIso();
-    const d = new Date(hoje + "T12:00:00");
     if (p === "hoje") return vendas.filter((v) => v.data === hoje).length;
-    if (p === "ontem") { d.setDate(d.getDate() - 1); const o = d.toISOString().slice(0, 10); return vendas.filter((v) => v.data === o).length; }
-    d.setDate(d.getDate() - 6); const de = d.toISOString().slice(0, 10);
+    if (p === "ontem") { const o = isoSomaDias(hoje, -1); return vendas.filter((v) => v.data === o).length; }
+    const de = isoSomaDias(hoje, -6);
     return vendas.filter((v) => v.data >= de && v.data <= hoje).length;
   };
   const rotuloPeriodo = fDia ? fmtData(fDia)
@@ -1397,7 +1414,7 @@ function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts }) {
   // se a venda em edição tem faculdade fora da lista, tratamos como "outra"
   const facNaLista = venda && venda.faculdade && opts.nomes.includes(venda.faculdade);
   const [f, setF] = useState(venda || {
-    data: new Date().toISOString().slice(0, 10), nome: "", email: "", faculdade: "",
+    data: hojeIso(), nome: "", email: "", faculdade: "",
     telefone: "", uf: "N/I", tipo: "Artigo", valor: "", tema: "",
   });
   const [outraFac, setOutraFac] = useState(!!(venda && venda.faculdade && !facNaLista));
@@ -1715,7 +1732,7 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
                     )}
                   </div>
                 </td>
-                <td className="nowrap cel-data">{t.criadoEm ? fmtData(t.criadoEm.slice(0, 10)) : "—"}</td>
+                <td className="nowrap cel-data">{t.criadoEm ? fmtData(diaDe(t.criadoEm)) : "—"}</td>
                 <td>
                   <select className="status-sel" style={{ "--tc": corStatus(t.status) }} aria-label={`Status do trabalho ${t.titulo}`}
                     value={t.status} onChange={(e) => { if (e.target.value === "__novo") { const s = prompt("Nome do novo status:"); if (s && s.trim()) mudarStatus(t.id, s.trim()); } else mudarStatus(t.id, e.target.value); }}>
@@ -2471,7 +2488,7 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
         </h3>
       )}
       <div className="dp-contexto">
-        {t.area ? `${t.area} · ` : ""}criada em {t.criadoEm ? fmtData(t.criadoEm.slice(0, 10)) : "—"}
+        {t.area ? `${t.area} · ` : ""}criada em {t.criadoEm ? fmtData(diaDe(t.criadoEm)) : "—"}
         {dataAbertura ? ` · abre em ${fmtData(dataAbertura)}` : ""}
       </div>
 
@@ -2656,7 +2673,7 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
             <span className="dp-prop-lab">Vendas</span>
             {t.fechadaEm ? (
               <span className="dp-fechada">
-                <b>Fechada</b> em {fmtData(t.fechadaEm.slice(0, 10))} · não vende mais vaga
+                <b>Fechada</b> em {fmtData(diaDe(t.fechadaEm))} · não vende mais vaga
                 <button className="mini" onClick={() => onReabrir(t)}
                   title="Volta a publicação para a lista de quem está vendendo">reabrir</button>
               </span>
