@@ -859,6 +859,19 @@ export default function App() {
   // e vagas por situação em vez de por data de cadastro). Também antes dos returns condicionais.
   const vinculoCal = useMemo(() => aberturaDasPublicacoes(planejamentos, temas), [planejamentos, temas]);
   const aberturaPub = vinculoCal.abertura;
+  /* Quando cada trabalho aconteceu: a data de abertura no cronograma, e só na falta dela
+   * a data de criação do registro. Contar por criação distorce o histórico — os trabalhos
+   * importados de uma vez apareceriam todos no mês da importação. */
+  const dataDoTrabalho = useMemo(() => {
+    const ix = indicePubs(temas);
+    const map = new Map();
+    for (const t of trabalhos) {
+      const pub = casarPub(t.titulo, t.tipo, ix);
+      const ab = pub ? aberturaPub.get(pub.id) : null;
+      map.set(t.id, ab || diaDe(t.criadoEm));
+    }
+    return map;
+  }, [trabalhos, temas, aberturaPub]);
 
   if (sessao === undefined) {
     return (
@@ -949,7 +962,7 @@ export default function App() {
         )}
         {tab === "clientes" && <Clientes m={m} vendas={vendas} salvarCliente={salvarCliente} onAbrirPublicacao={abrirPublicacao} />}
         {tab === "trabalhos" && (
-          <Trabalhos trabalhos={trabalhos} salvar={salvarTrabalhos} aviso={aviso} onAbrirPublicacao={abrirPublicacao} />
+          <Trabalhos trabalhos={trabalhos} salvar={salvarTrabalhos} aviso={aviso} onAbrirPublicacao={abrirPublicacao} datas={dataDoTrabalho} />
         )}
         {tab === "financeiro" && (
           <Financeiro financeiro={financeiro} salvar={salvarFinanceiro} vendas={vendas} aviso={aviso} onCriarAno={criarAnoFin} dark={dark}
@@ -1656,7 +1669,7 @@ function FormCliente({ cliente, onSalvar, onCancelar }) {
 /* ============================================================
    TRABALHOS (status)
    ============================================================ */
-function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
+function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao, datas = new Map() }) {
   const { tipos, status: statusDisp } = useContext(ListasCtx);
   const [busca, setBusca] = useState("");
   const [fStatus, setFStatus] = useState("");
@@ -1682,18 +1695,18 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
 
   const contagem = statusDisp.map((s) => ({ s, n: trabalhos.filter((t) => t.status === s).length }));
 
-  /* Ritmo de produção: quantos trabalhos entraram por mês, contados pela data de
-     criação lida no horário de Brasília. */
+  /* Ritmo de produção: quantos trabalhos por mês, pela data de abertura no cronograma
+     (na falta dela, pela criação do registro, lida no horário de Brasília). */
   const porMesTrab = useMemo(() => {
     const map = new Map();
     trabalhos.forEach((t) => {
-      const d = diaDe(t.criadoEm);
+      const d = datas.get(t.id) || diaDe(t.criadoEm);
       if (!d) return;
       const k = `${anoDeIso(d)}-${mesDeIso(d)}`;
       map.set(k, (map.get(k) || 0) + 1);
     });
     return map;
-  }, [trabalhos]);
+  }, [trabalhos, datas]);
   const hojeRef = hojeIso();
   const anoHoje = anoDeIso(hojeRef), mesHoje = mesDeIso(hojeRef);
   const contaMes = (a, m) => porMesTrab.get(`${a}-${m}`) || 0;
