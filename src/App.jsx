@@ -3128,12 +3128,195 @@ const situacaoDaPub = (t, abertura, hoje) => {
 };
 // `editavel` é falso enquanto o cronograma ainda não está no banco (SQL 11-planejamento.sql
 // não aplicado): a tela mostra o plano do arquivo, mas sem os botões que gravariam.
+/* ============================================================
+   MENSAGEM DE VENDAS (anúncio de abertura de vagas no grupo)
+   Modelos oficiais por tipo de trabalho. O texto fixo é sempre o
+   mesmo; só os temas do dia (emoji + áreas / título / vagas) e o
+   valor por vaga mudam. Regras: valor sempre "por vaga", título
+   completo em negrito (*...*), sem travessão, separador ━━━━━━━━━━━━.
+   ============================================================ */
+const SEP_MSG = "━━━━━━━━━━━━";
+const semAcento = (s) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+// emoji da especialidade principal (primeira área do tema); se não reconhecer, tenta as outras; senão 🩺
+const EMOJI_AREA = [
+  [/cardio|eletrofisio/, "❤️"], [/neuro/, "🧠"], [/pediatr|neonat|lactente/, "👶"], [/obstet|gineco|gesta/, "🤰"],
+  [/ortop|trauma/, "🦴"], [/fisioter|reabilit|esporte/, "🏃"], [/psiqui|psico/, "🧘"], [/endocrin|diabet/, "🧬"],
+  [/infecto|microbio/, "🦠"], [/dermato/, "🧴"], [/onco|cancer/, "🎗️"], [/nefro|urolog/, "🫘"],
+  [/pneumo/, "🫁"], [/hemato|vascular/, "🩸"], [/farmaco/, "💊"], [/oftalmo/, "👁️"], [/otorrino/, "👂"],
+  [/odonto/, "🦷"], [/anestes/, "💉"], [/radiolog|imagem/, "🩻"], [/geriatr/, "👴"], [/nutri/, "🥗"],
+  [/alergo|imuno/, "🤧"], [/publica|coletiva|familia|comunidade/, "🌎"], [/emergenc|urgenc/, "🚑"],
+  [/intensiva|uti/, "🏥"], [/reumato/, "🦴"], [/cirurg/, "🔪"], [/clinica/, "🩺"],
+];
+const emojiArea = (areas) => {
+  const partes = (areas || "").split("·").map((a) => semAcento(a.trim())).filter(Boolean);
+  for (const a of partes) { const hit = EMOJI_AREA.find(([re]) => re.test(a)); if (hit) return hit[1]; }
+  return "🩺";
+};
+// "600" quando é inteiro, "160,50" quando tem centavos
+const fmtValorMsg = (n) => { const v = Number(n) || 0; const c = Number.isInteger(v) ? 0 : 2; return v.toLocaleString("pt-BR", { minimumFractionDigits: c, maximumFractionDigits: c }); };
+const linhaVagas = (n) => `↳ ${n} ${n === 1 ? "vaga" : "vagas"}`;
+// rodapé comum: valor, parcelamento, desconto, prazo do certificado (+ linha extra opcional)
+const rodapeMsg = (valor, certDias, extra) => [
+  SEP_MSG,
+  `💰 R$ ${valor} por vaga`,
+  "💳 Até 12x no cartão",
+  "🤝 Desconto comprando mais de uma vaga ou com amigos",
+  `📄 Certificado em até ${certDias} dias`,
+  ...(extra ? [extra] : []),
+  SEP_MSG,
+  "Interesse? Chama no privado 👇",
+];
+const cabTemas = ["📌 TEMAS DISPONÍVEIS", SEP_MSG];
+const MODELOS_MSG = {
+  internacional: ({ blocos, valor }) => [
+    "🌐 VAGAS EM ARTIGO INTERNACIONAL INDEXADO", SEP_MSG,
+    "📄 Revista: International Health Sciences Review",
+    "✅ ISSN e DOI garantidos", SEP_MSG,
+    ...cabTemas, blocos,
+    ...rodapeMsg(valor, 7, "📊 Indexação: LATINDEX · LiVre · Google Acadêmico ResearchBid · Crossref · ORCID Eurasian Scientific Journal Index"),
+  ],
+  qualisA3: ({ blocos, valor }) => [
+    "🌐 VAGAS EM ARTIGO INDEXADO QUALIS A3", SEP_MSG,
+    "📄 Revista · REASE",
+    "📖 Qualis A3 CAPES",
+    "✅ ISSN e DOI garantidos", SEP_MSG,
+    ...cabTemas, blocos,
+    ...rodapeMsg(valor, 20),
+  ],
+  psu: ({ blocos, valor }) => [
+    "🌐 VAGAS EM ARTIGO INDEXADO LILACS", SEP_MSG,
+    "⭐ Qualis B2",
+    "⭐ Indexado no LILACS",
+    "✅ Válido no PSU · HCPA · SES GO · UNESP · AMRIGS",
+    "✅ Válido em diversos outros editais do Brasil", SEP_MSG,
+    ...cabTemas, blocos,
+    ...rodapeMsg(valor, 30),
+  ],
+  capitulo: ({ blocos, valor }) => [
+    "🌐 VAGAS EM CAPÍTULO DE LIVRO", SEP_MSG,
+    "✅ Válido no HCPA · FELUMA",
+    "✅ ISBN e DOI garantidos", SEP_MSG,
+    ...cabTemas, blocos,
+    ...rodapeMsg(valor, 7),
+  ],
+  apresentacao: ({ blocos, valor }) => [
+    "🎤 VAGAS EM APRESENTAÇÃO EM CONGRESSO", SEP_MSG,
+    "📄 {{nome do congresso}}",
+    "📑 Publicado nos Anais do Congresso",
+    "✅ Pontua em diversos editais do Brasil como UFCSPA e FELUMA", SEP_MSG,
+    ...cabTemas, blocos,
+    ...rodapeMsg(valor, 15),
+  ],
+  // combo: 1º tema = capítulo, 2º tema = apresentação
+  combo: ({ temas, valor, vagas }) => {
+    const [cap, apr] = temas;
+    return [
+      "🔥 COMBO CAPÍTULO + APRESENTAÇÃO EM CONGRESSO",
+      "*2 TRABALHOS PELO PREÇO DE UM!*", SEP_MSG,
+      "📚 *Capítulo de Livro*",
+      cap ? cap.titulo : "{{título capítulo}}",
+      cap ? cap.areas : "{{áreas}}",
+      "",
+      "🎤 *Apresentação em Congresso*",
+      apr ? apr.titulo : "{{título apresentação}}",
+      apr ? apr.areas : "{{áreas}}", SEP_MSG,
+      `💰 *Os dois trabalhos juntos por apenas R$ ${valor}* ✅`,
+      linhaVagas(vagas), SEP_MSG,
+      "💳 Até 12x no cartão",
+      "🤝 Desconto comprando com amigos",
+      "📄 Certificado em até 7 dias", SEP_MSG,
+      "Me chama no privado agora e garanta a sua! 👇",
+    ];
+  },
+  // tipo sem modelo oficial (ex.: "Artigo" genérico): estrutura padrão com o que se sabe do lançamento
+  generico: ({ blocos, valor, tipo, veiculo }) => [
+    `🌐 VAGAS EM ${(tipo || "TRABALHO").toUpperCase()}`, SEP_MSG,
+    ...(veiculo ? [`📄 ${veiculo}`, SEP_MSG] : []),
+    ...cabTemas, blocos,
+    SEP_MSG,
+    `💰 R$ ${valor} por vaga`,
+    "💳 Até 12x no cartão",
+    "🤝 Desconto comprando mais de uma vaga ou com amigos", SEP_MSG,
+    "Interesse? Chama no privado 👇",
+  ],
+};
+const modeloMsgDoTipo = (tipo) => {
+  const k = chaveTipo(tipo);
+  if (k.includes("internacional")) return MODELOS_MSG.internacional;
+  if (k.includes("qualis")) return MODELOS_MSG.qualisA3;
+  if (k.includes("psu") || k.includes("lilacs")) return MODELOS_MSG.psu;
+  if (k.includes("capitulo")) return MODELOS_MSG.capitulo;
+  if (k.includes("apresentacao") || k.includes("congresso")) return MODELOS_MSG.apresentacao;
+  if (k.includes("combo")) return MODELOS_MSG.combo;
+  return MODELOS_MSG.generico;
+};
+/* Monta a mensagem de um grupo (trabalho) do dia. `dadosTema(t)` devolve título/áreas/vagas
+ * restantes do tema já casado com a publicação do sistema. Tema sem vaga (lotado ou fechado)
+ * fica de fora da lista e é devolvido em `fora` para avisar. */
+const montarMensagemVendas = (grupo, lanc, dadosTema) => {
+  const todos = grupo.temas.map((t) => ({ ...dadosTema(t), emoji: emojiArea(dadosTema(t).areas) }));
+  const semVaga = (x) => x.fechada || !(x.vagas > 0);
+  const fora = todos.filter(semVaga);
+  const dentro = todos.filter((x) => !semVaga(x));
+  const blocos = dentro.map((x) => `${x.emoji} ${x.areas}\n*${x.titulo}*\n${linhaVagas(x.vagas)}`).join("\n\n")
+    || "{{emoji}} {{áreas}}\n*{{título completo}}*\n↳ {{vagas}} vagas";
+  const linhas = modeloMsgDoTipo(grupo.tipo)({
+    blocos, temas: dentro, valor: fmtValorMsg(grupo.preco), vagas: grupo.vagas, tipo: grupo.tipo, veiculo: lanc.veiculo,
+  });
+  const texto = linhas.join("\n");
+  return { texto, fora, pendencias: (texto.match(/\{\{[^}]+\}\}/g) || []) };
+};
+
+/* Caixa da mensagem: texto já pronto, editável, com copiar. Dia com mais de um trabalho
+ * (ex.: capítulo + apresentação) gera uma mensagem por trabalho, escolhida nas abas. */
+function GeradorMensagem({ lanc, grupos, dadosTema, onClose }) {
+  const [chave, setChave] = useState(grupos[0]?.chave);
+  const grupo = grupos.find((g) => g.chave === chave) || grupos[0];
+  const gerado = useMemo(() => montarMensagemVendas(grupo, lanc, dadosTema), [grupo, lanc]);
+  const [texto, setTexto] = useState(gerado.texto);
+  useEffect(() => { setTexto(gerado.texto); }, [gerado.texto]);
+  const [copiado, setCopiado] = useState(false);
+  const copiar = () => {
+    const ok = () => { setCopiado(true); setTimeout(() => setCopiado(false), 1600); };
+    if (navigator.clipboard) navigator.clipboard.writeText(texto).then(ok, () => alert(texto));
+    else alert(texto);
+  };
+  const editado = texto !== gerado.texto;
+  return (
+    <Modal titulo={`Mensagem de vendas · dia ${lanc.dia}`} onClose={onClose} wide>
+      {grupos.length > 1 && (
+        <div className="msg-grupos" role="tablist" aria-label="Trabalho do dia">
+          {grupos.map((g) => (
+            <button key={g.chave} role="tab" aria-selected={g.chave === grupo.chave}
+              className={"mini" + (g.chave === grupo.chave ? " ativo" : "")} onClick={() => setChave(g.chave)}>{g.tipo}</button>
+          ))}
+        </div>
+      )}
+      <p className="hint msg-hint">
+        Modelo padrão de <b>{grupo.tipo}</b> com os temas do dia e as vagas que ainda restam. Pode editar à vontade antes de copiar.
+      </p>
+      {gerado.fora.length > 0 && (
+        <p className="nota msg-nota">Sem vaga (ficaram de fora): {gerado.fora.map((x) => x.titulo).join(" · ")}</p>
+      )}
+      {gerado.pendencias.length > 0 && (
+        <p className="nota msg-nota">Preencha antes de enviar: {[...new Set(gerado.pendencias)].join(", ")}</p>
+      )}
+      <textarea className="inp msg-ta" rows={22} value={texto} onChange={(e) => setTexto(e.target.value)} spellCheck={false} />
+      <div className="form-acoes">
+        {editado && <button className="btn-ghost" onClick={() => setTexto(gerado.texto)}>voltar ao padrão</button>}
+        <button className="btn" onClick={copiar}>{copiado ? "✓ copiado!" : "Copiar mensagem"}</button>
+      </div>
+    </Modal>
+  );
+}
+
 function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false,
                         onAbrirPublicacao, onCriarPublicacao, onCriarNoDia, onTirarTema, onRestaurarTema }) {
   const [planId, setPlanId] = useState(planejamentos[0]?.id || "");
   const plano = planejamentos.find((p) => p.id === planId) || planejamentos[0] || null;
   const [diaSel, setDiaSel] = useState(plano?.lancamentos[0]?.dia ?? null);
   const [criando, setCriando] = useState(null); // { dados, taxa, dia, novo } — abre o form já preenchido
+  const [msgVendas, setMsgVendas] = useState(false); // caixa "Gerar mensagem de vendas" do dia selecionado
   // temas em cartaz no dia e temas que foram tirados dele (guardados, dá para restaurar)
   const temasDe = (l) => l.temas.filter((t) => !t.removido);
   const tiradosDe = (l) => l.temas.filter((t) => t.removido);
@@ -3400,6 +3583,10 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
                   </div>
                   <div className="cal-det-acoes">
                     {!misto && <span className="tipo-pill" style={{ "--tc": corTipo(lanc.tipo) }}>{lanc.tipo}</span>}
+                    {temasDe(lanc).length > 0 && (
+                      <button className="btn sm msg-btn" onClick={() => setMsgVendas(true)}
+                        title="Monta a mensagem padrão de abertura de vagas com os temas deste dia">💬 Gerar mensagem de vendas</button>
+                    )}
                     {editavel && (
                       <button className="mini" onClick={() => abrirCriacao(lanc, null)}
                         title={`Adiciona um trabalho ao dia ${lanc.dia}/${String(plano.mes + 1).padStart(2, "0")} e cria a publicação`}>
@@ -3516,6 +3703,20 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
             ? `O tema entra no cronograma do dia ${criando.dia} e a publicação é criada no sistema (e na aba Trabalhos). Tipo e vagas já vêm do lançamento.`
             : "Dados vindos do cronograma — ajuste o que precisar antes de criar. A publicação também entra na aba Trabalhos."}
           comTaxa comData={false} onSalvar={confirmarCriacao} onClose={() => setCriando(null)} />
+      )}
+
+      {msgVendas && lanc && (
+        <GeradorMensagem lanc={lanc} grupos={gruposDoDia(lanc)} onClose={() => setMsgVendas(false)}
+          dadosTema={(t) => {
+            // título e vagas vêm da publicação do sistema quando ela já existe; senão, do cronograma
+            const pub = pubDoTema(lanc, t);
+            return {
+              titulo: pub ? pub.nome : t.titulo,
+              areas: t.areas || (pub && pub.area) || "",
+              vagas: pub ? Math.max(0, (pub.maxVagas || 0) - pub.participantes.length) : (t.vagas ?? lanc.vagas),
+              fechada: !!(pub && pub.fechadaEm),
+            };
+          }} />
       )}
 
       {plano.nota && <p className="nota cal-nota"><b>Regras do mês:</b> {plano.nota}</p>}
@@ -4239,6 +4440,12 @@ select.inp{ cursor:pointer; }
 .cal-tema-st.ok{ color:var(--ok); font-weight:600; }
 .cal-tema-st.cadastro{ color:var(--muted2); font-style:italic; margin-top:2px; }
 .cal-nota{ border-top:none; margin-top:4px; }
+/* gerador de mensagem de vendas */
+.msg-ta{ width:100%; resize:vertical; line-height:1.5; font-family:inherit; font-size:13px; white-space:pre-wrap; margin-top:10px; }
+.msg-grupos{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+.msg-grupos .mini.ativo{ border-color:var(--brand); color:var(--brand); background:var(--soft); }
+.msg-hint{ display:block; }
+.msg-nota{ margin-top:8px; border-top:none; padding-top:0; }
 /* temas tirados do dia — ficam discretos, só para poder devolver ao cronograma */
 .cal-tirados{ margin-top:12px; border-top:1px dashed var(--divider); padding-top:10px; }
 .cal-tirados ul{ list-style:none; display:flex; flex-direction:column; gap:6px; margin-top:7px; }
