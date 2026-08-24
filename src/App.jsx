@@ -344,6 +344,12 @@ async function syncLista(prev, next, ops, mudou) {
 const vendaMudou = (a, b) =>
   a.data !== b.data || a.nome !== b.nome || a.email !== b.email || a.faculdade !== b.faculdade ||
   a.uf !== b.uf || a.tipo !== b.tipo || (a.valor || 0) !== (b.valor || 0) || a.tema !== b.tema;
+// gera um arquivo de texto e dispara o download no navegador
+const baixarTexto = (nome, conteudo) => {
+  const url = URL.createObjectURL(new Blob([conteudo], { type: "text/plain;charset=utf-8" }));
+  const a = document.createElement("a"); a.href = url; a.download = nome; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
 const trabalhoMudou = (a, b) => a.titulo !== b.titulo || a.tipo !== b.tipo || a.status !== b.status;
 const finMudou = (a, b) =>
   (a.faturamento || 0) !== (b.faturamento || 0) || (a.taxaPublicacao || 0) !== (b.taxaPublicacao || 0) ||
@@ -949,7 +955,7 @@ export default function App() {
         )}
         {tab === "clientes" && <Clientes m={m} vendas={vendas} salvarCliente={salvarCliente} onAbrirPublicacao={abrirPublicacao} />}
         {tab === "trabalhos" && (
-          <Trabalhos trabalhos={trabalhos} salvar={salvarTrabalhos} aviso={aviso} onAbrirPublicacao={abrirPublicacao} />
+          <Trabalhos trabalhos={trabalhos} temas={temas} salvar={salvarTrabalhos} aviso={aviso} onAbrirPublicacao={abrirPublicacao} />
         )}
         {tab === "financeiro" && (
           <Financeiro financeiro={financeiro} salvar={salvarFinanceiro} vendas={vendas} aviso={aviso} onCriarAno={criarAnoFin} dark={dark}
@@ -1656,7 +1662,7 @@ function FormCliente({ cliente, onSalvar, onCancelar }) {
 /* ============================================================
    TRABALHOS (status)
    ============================================================ */
-function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
+function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
   const { tipos, status: statusDisp } = useContext(ListasCtx);
   const [busca, setBusca] = useState("");
   const [fStatus, setFStatus] = useState("");
@@ -1728,10 +1734,24 @@ function Trabalhos({ trabalhos, salvar, aviso, onAbrirPublicacao }) {
   const remover = (id) => { if (confirm("Remover trabalho?")) { salvar(trabalhos.filter((t) => t.id !== id)); aviso("Removido"); } };
   const addTrab = (d) => { salvar([{ id: "t" + uid(), criadoEm: new Date().toISOString(), ...d }, ...trabalhos]); setModal(false); aviso("Trabalho adicionado"); };
 
+  // exporta o título de TODOS os trabalhos + o nome de TODAS as publicações (ignora filtros) num .txt,
+  // um por linha, sem repetir e em ordem alfabética — serve como lista de exclusão de temas já usados
+  const exportarTitulos = () => {
+    const brutos = [...trabalhos.map((t) => t.titulo), ...(temas || []).map((t) => t.nome)];
+    const titulos = [...new Set(brutos.map((x) => (x || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    if (!titulos.length) { aviso("Nenhum título para exportar."); return; }
+    const hoje = new Date().toISOString().slice(0, 10);
+    baixarTexto(`titulos-trabalhos-${hoje}.txt`, titulos.join("\n") + "\n");
+    aviso(`${num(titulos.length)} títulos exportados (trabalhos + publicações)`);
+  };
+
   return (
     <>
       <Header titulo="Trabalhos" sub={`${num(trabalhos.length)} trabalhos no controle de produção`}
-        acao={<button className="btn" onClick={() => setModal(true)}>+ Novo trabalho</button>} />
+        acao={<div className="head-acoes">
+          <button className="btn-ghost" onClick={exportarTitulos} title="Baixa um .txt com todos os títulos (trabalhos + publicações), um por linha">⬇ Exportar títulos</button>
+          <button className="btn" onClick={() => setModal(true)}>+ Novo trabalho</button>
+        </div>} />
 
       <div className="kpis kpis-3">
         <KPI label={`Este mês · ${MESES[mesHoje]}`} valor={num(nEste)}
@@ -3632,6 +3652,7 @@ nav{ display:flex; flex-direction:column; gap:2px; padding:8px 12px; }
 .head{ display:flex; justify-content:space-between; align-items:flex-end; gap:16px; margin-bottom:24px; }
 .head h1{ font-size:20px; font-weight:600; letter-spacing:-.02em; line-height:1.2; }
 .head-sub{ color:var(--muted); font-size:13px; margin-top:4px; }
+.head-acoes{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
 
 /* KPIs */
 .kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:20px; }
