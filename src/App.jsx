@@ -373,6 +373,7 @@ export default function App() {
   const [tab, setTab] = useState("overview");
   const [menuAberto, setMenuAberto] = useState(false);
   const [pubAlvo, setPubAlvo] = useState(null);
+  const [clienteAlvo, setClienteAlvo] = useState(null); // cliente aberto a partir de Vendas
   const [dark, setDark] = useState(() => { try { return localStorage.getItem("tema") === "dark"; } catch { return false; } });
   const toggleTema = () => setDark((d) => { const n = !d; try { localStorage.setItem("tema", n ? "dark" : "claro"); } catch (e) {} return n; });
   const [vendas, setVendas] = useState([]);
@@ -821,6 +822,14 @@ export default function App() {
     catch (e) { aviso("Erro: " + e.message); }
   };
   // edita os dados de um cliente -> aplica em TODAS as compras (vendas) dele
+  /* Clicar no nome do cliente em Vendas abre a ficha dele na aba Clientes.
+   * A chave e a mesma do agrupamento: e-mail em minusculas ou, sem e-mail, o nome. */
+  const abrirCliente = (venda) => {
+    const chave = (venda.email || "").trim().toLowerCase() || (venda.nome || "").trim().toLowerCase();
+    if (!chave) { aviso("Essa venda nao tem cliente identificado."); return; }
+    setClienteAlvo(chave);
+    irPara("clientes");
+  };
   const salvarCliente = async (cliente, dados) => {
     const uf = dados.uf && dados.uf !== "N/I" ? dados.uf : ufDaFaculdade(dados.faculdade);
     const ids = new Set((cliente.compras || []).map((v) => v.id));
@@ -830,12 +839,64 @@ export default function App() {
       for (const v of cliente.compras) {
         await db.atualizarVenda(v.id, { ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf });
       }
-      aviso("Cliente atualizado");
+      // CPF e telefone moram no participante: aplica nas participações da mesma pessoa
+      const n = await sincronizarContato(cliente, dados);
+      aviso("Cliente atualizado" + (n ? ` · contato em ${n} participação(ões)` : ""));
     } catch (e) { aviso("Erro: " + e.message); setVendas(antes); }
+  };
+  /* Espelha CPF/telefone editados na aba Clientes para as participações da pessoa
+   * (casadas por e-mail e, na falta dele, pelo nome). */
+  const sincronizarContato = async (cliente, dados) => {
+    const cpf = String(dados.cpf || "").replace(/\D/g, "");
+    const tel = (dados.telefone || "").trim();
+    if (!cpf && !tel) return 0;
+    const email = (cliente.email || "").trim().toLowerCase();
+    const nome = chaveTitulo(cliente.nome);
+    const alvos = [];
+    for (const t of temas) {
+      for (const p of t.participantes || []) {
+        const mesmo = email ? (p.email || "").trim().toLowerCase() === email : chaveTitulo(p.nome) === nome;
+        if (!mesmo) continue;
+        if ((cpf && p.cpf !== cpf) || (tel && p.telefone !== tel)) alvos.push({ tema: t, p });
+      }
+    }
+    if (!alvos.length) return 0;
+    for (const { p } of alvos) {
+      await db.atualizarParticipante(p.id, { ...p, cpf: cpf || p.cpf, telefone: tel || p.telefone });
+    }
+    const ids = new Set(alvos.map((x) => x.p.id));
+    setTemas((ts) => ts.map((t) => ({
+      ...t,
+      participantes: t.participantes.map((p) => (ids.has(p.id)
+        ? { ...p, cpf: cpf || p.cpf, telefone: tel || p.telefone } : p)),
+    })));
+    return alvos.length;
   };
 
   /* ---------- métricas ---------- */
   const m = useMemo(() => calcMetricas(vendas), [vendas]);
+  /* CPF, telefone e ORCID são dados do participante, não da venda — e o cliente é
+   * montado a partir das vendas. Este índice traz esses campos para a aba Clientes,
+   * casando por e-mail e, na falta dele, pelo nome. */
+  const contatoDaPessoa = useMemo(() => {
+    const porEmail = new Map(), porNome = new Map();
+    const juntar = (map, k, d) => {
+      if (!k) return;
+      const at = map.get(k) || {};
+      map.set(k, { cpf: at.cpf || d.cpf, telefone: at.telefone || d.telefone, orcid: at.orcid || d.orcid });
+    };
+    for (const t of temas) {
+      for (const p of t.participantes || []) {
+        const d = { cpf: p.cpf || "", telefone: p.telefone || "", orcid: p.orcid || "" };
+        if (!d.cpf && !d.telefone && !d.orcid) continue;
+        juntar(porEmail, (p.email || "").trim().toLowerCase(), d);
+        juntar(porNome, chaveTitulo(p.nome), d);
+      }
+    }
+    return { porEmail, porNome };
+  }, [temas]);
+  const contatoDe = (c) => (c && (contatoDaPessoa.porEmail.get((c.email || "").trim().toLowerCase())
+    || contatoDaPessoa.porNome.get(chaveTitulo(c.nome)))) || {};
 
   if (!db.ENV_OK) {
     return (
@@ -951,9 +1012,9 @@ export default function App() {
       <main className="main">
         {tab === "overview" && <Overview vendas={vendas} financeiro={financeiro} trabalhos={trabalhos} dark={dark} />}
         {tab === "vendas" && (
-          <Vendas vendas={vendas} salvar={salvarVendas} aviso={aviso} temasExist={temas} onAbrirPublicacao={abrirPublicacao} />
+          <Vendas vendas={vendas} salvar={salvarVendas} aviso={aviso} temasExist={temas} onAbrirPublicacao={abrirPublicacao} onAbrirCliente={abrirCliente} />
         )}
-        {tab === "clientes" && <Clientes m={m} vendas={vendas} salvarCliente={salvarCliente} onAbrirPublicacao={abrirPublicacao} />}
+        {tab === "clientes" && <Clientes m={m} vendas={vendas} salvarCliente={salvarCliente} onAbrirPublicacao={abrirPublicacao} contatoDe={contatoDe} alvo={clienteAlvo} onAlvoUsado={() => setClienteAlvo(null)} />}
         {tab === "trabalhos" && (
           <Trabalhos trabalhos={trabalhos} temas={temas} salvar={salvarTrabalhos} aviso={aviso} onAbrirPublicacao={abrirPublicacao} />
         )}
@@ -1084,6 +1145,7 @@ function Overview({ vendas, financeiro, trabalhos, dark }) {
 
   const [ano, setAno] = useState("");
   const [mes, setMes] = useState("");
+  const [todasFac, setTodasFac] = useState(false); // lista de faculdades: top 10 ou completa
   const anoSel = ano || (anos[0] != null ? String(anos[0]) : "todos");
 
   const vendasFiltradas = useMemo(() => vendas.filter((v) => {
@@ -1201,11 +1263,14 @@ function Overview({ vendas, financeiro, trabalhos, dark }) {
       </div>
 
       <div className="card">
-        <div className="card-head"><h3>Faculdades que mais compram</h3><span className="hint">top 10</span></div>
+        <div className="card-head">
+          <h3>Faculdades que mais compram</h3>
+          <span className="hint">{todasFac ? `todas · ${num(m.porFaculdade.length)}` : `top 10 de ${num(m.porFaculdade.length)}`}</span>
+        </div>
         <table className="tab">
           <thead><tr><th scope="col">#</th><th scope="col">Faculdade</th><th scope="col" className="r">Compras</th><th scope="col" className="r">Faturamento</th></tr></thead>
           <tbody>
-            {m.porFaculdade.slice(0, 10).map((f, i) => (
+            {(todasFac ? m.porFaculdade : m.porFaculdade.slice(0, 10)).map((f, i) => (
               <tr key={i}>
                 <td className="muted">{i + 1}</td>
                 <td>{f.faculdade}</td>
@@ -1215,6 +1280,13 @@ function Overview({ vendas, financeiro, trabalhos, dark }) {
             ))}
           </tbody>
         </table>
+        {m.porFaculdade.length > 10 && (
+          <div className="mais">
+            <button className="btn-ghost" onClick={() => setTodasFac((v) => !v)}>
+              {todasFac ? "Mostrar só as 10 primeiras" : `Ver todas as ${num(m.porFaculdade.length)} faculdades`}
+            </button>
+          </div>
+        )}
       </div>
     </>
   );
@@ -1233,7 +1305,7 @@ function Destaque({ rotulo, principal, detalhe }) {
 /* ============================================================
    VENDAS
    ============================================================ */
-function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao }) {
+function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, onAbrirCliente }) {
   const { tipos } = useContext(ListasCtx);
   const [busca, setBusca] = useState("");
   const [fTipo, setFTipo] = useState("");
@@ -1375,7 +1447,7 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao }) {
               <tr key={v.id}>
                 <td className="nowrap muted">{fmtData(v.data)}</td>
                 <td>
-                  <div className="cel-nome">{v.nome || "—"}</div>
+                  <button className="cel-nome link-cliente" onClick={() => onAbrirCliente(v)} title="Ver a ficha deste cliente">{v.nome || "—"}</button>
                   {v.tema && (
                     <div className="cel-tema">
                       <a className="link-tema" href={`#pub=${encodeURIComponent(v.tema)}::${encodeURIComponent(v.tipo || "")}`}
@@ -1505,13 +1577,21 @@ function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts }) {
 /* ============================================================
    CLIENTES
    ============================================================ */
-function Clientes({ m, vendas, salvarCliente, onAbrirPublicacao }) {
+function Clientes({ m, vendas, salvarCliente, onAbrirPublicacao, contatoDe = () => ({}), alvo = null, onAlvoUsado }) {
   const [busca, setBusca] = useState("");
   const [ordem, setOrdem] = useState("total");
   const [limite, setLimite] = useState(50);
   const [sel, setSel] = useState(null);
   const [editando, setEditando] = useState(false);
   const abrir = (c) => { setSel(c); setEditando(false); };
+  const contato = contatoDe(sel);
+  // veio de um clique no nome do cliente em Vendas: abre esse cliente
+  useEffect(() => {
+    if (!alvo) return;
+    const c = m.clientes.find((x) => x.chave === alvo);
+    if (c) { setSel(c); setEditando(false); setBusca(""); }
+    if (onAlvoUsado) onAlvoUsado();
+  }, [alvo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lista = useMemo(() => {
     const b = busca.trim().toLowerCase();
@@ -1583,13 +1663,17 @@ function Clientes({ m, vendas, salvarCliente, onAbrirPublicacao }) {
       {sel && (
         <Modal titulo={editando ? `Editar cliente · ${sel.nome}` : sel.nome} onClose={() => setSel(null)} wide>
           {editando ? (
-            <FormCliente cliente={sel} onSalvar={(d) => { salvarCliente(sel, d); setSel(null); }} onCancelar={() => setEditando(false)} />
+            <FormCliente cliente={sel} contato={contato} onSalvar={(d) => { salvarCliente(sel, d); setSel(null); }} onCancelar={() => setEditando(false)} />
           ) : (
             <>
               <div className="cli-info">
                 <div><span className="ci-lab">Email</span>{sel.email || "—"}</div>
                 <div><span className="ci-lab">Faculdade</span>{sel.faculdade || "—"}</div>
                 <div><span className="ci-lab">Estado</span>{UF_NOME[sel.uf] || sel.uf}</div>
+                {/* vêm do cadastro de participante, não da venda */}
+                <div><span className="ci-lab">CPF</span>{contato.cpf ? fmtCPF(contato.cpf) : "—"}</div>
+                <div><span className="ci-lab">Telefone</span>{contato.telefone || "—"}</div>
+                {contato.orcid && <div><span className="ci-lab">ORCID</span>{soOrcid(contato.orcid)}</div>}
                 <div><span className="ci-lab">Total gasto</span><b>{brl(sel.total)}</b></div>
                 <div><span className="ci-lab">Trabalhos</span><b>{sel.qtd}</b></div>
               </div>
@@ -1628,8 +1712,12 @@ function Clientes({ m, vendas, salvarCliente, onAbrirPublicacao }) {
   );
 }
 
-function FormCliente({ cliente, onSalvar, onCancelar }) {
-  const [f, setF] = useState({ nome: cliente.nome || "", email: cliente.email || "", faculdade: cliente.faculdade || "", uf: cliente.uf || "N/I" });
+function FormCliente({ cliente, contato = {}, onSalvar, onCancelar }) {
+  const [f, setF] = useState({
+    nome: cliente.nome || "", email: cliente.email || "", faculdade: cliente.faculdade || "", uf: cliente.uf || "N/I",
+    // guardados no participante; entram aqui para não ter que abrir a publicação só p/ ver o CPF
+    cpf: fmtCPF(contato.cpf || ""), telefone: contato.telefone || "",
+  });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const escolherFac = (nome) => {
     const uf = ufDaFaculdade(nome);
@@ -1649,8 +1737,13 @@ function FormCliente({ cliente, onSalvar, onCancelar }) {
             {["N/I", ...Object.keys(UF_NOME).filter((u) => u !== "N/I")].map((u) => <option key={u} value={u}>{u === "N/I" ? "Não identificado" : `${u} · ${UF_NOME[u]}`}</option>)}
           </select>
         </Campo>
+        <Campo label="CPF"><input className="inp" inputMode="numeric" placeholder="000.000.000-00" value={f.cpf} onChange={(e) => set("cpf", fmtCPF(e.target.value))} /></Campo>
+        <Campo label="Telefone / WhatsApp"><input className="inp" placeholder="(31) 99999-9999" value={f.telefone} onChange={(e) => set("telefone", e.target.value)} /></Campo>
       </div>
-      <p className="nota">Aplica nome, email, faculdade e estado em <b>todas as {cliente.qtd} compra(s)</b> deste cliente.</p>
+      <p className="nota">
+        Aplica nome, email, faculdade e estado em <b>todas as {cliente.qtd} compra(s)</b> deste cliente.
+        CPF e telefone valem para as <b>participações</b> dele nas publicações.
+      </p>
       <div className="form-acoes">
         <button className="btn-ghost" onClick={onCancelar}>Cancelar</button>
         <button className="btn" onClick={() => { if (!f.nome.trim() && !f.email.trim()) { alert("Informe nome ou email."); return; } onSalvar(f); }}>Salvar alterações</button>
@@ -4123,6 +4216,11 @@ select.inp{ cursor:pointer; }
   background:var(--soft); border-radius:var(--r-md); border:1px solid var(--border); }
 .cli-info > div{ display:flex; flex-direction:column; gap:3px; font-size:13px; }
 .ci-lab{ font-size:11px; color:var(--muted2); text-transform:uppercase; font-weight:600; letter-spacing:.05em; }
+/* nome do cliente na lista de vendas: abre a ficha, sem virar um azulão na tabela */
+.link-cliente{ background:transparent; border:none; padding:0; font:inherit; font-weight:600; color:var(--ink);
+  text-align:left; cursor:pointer; }
+.link-cliente:hover{ color:var(--brand); text-decoration:underline; text-underline-offset:3px; }
+.link-cliente:focus-visible{ box-shadow:var(--ring); outline:none; border-radius:3px; }
 .sub-h{ font-size:13px; font-weight:600; color:var(--muted); margin-bottom:8px; }
 
 /* PUBLICAÇÕES — badge de vagas é o código primário de ocupação (única codificação) */
