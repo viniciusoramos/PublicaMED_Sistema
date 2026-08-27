@@ -1595,37 +1595,45 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
   const [fTipo, setFTipo] = useState("");
   const [fUF, setFUF] = useState("");
   const [fMes, setFMes] = useState("");
-  const [fDia, setFDia] = useState("");     // dia exato (ISO); vazio = sem filtro de dia
-  const [fPeriodo, setFPeriodo] = useState(""); // "" | "hoje" | "ontem" | "7d"
+  // um só mecanismo de período: um intervalo. Os atalhos (hoje, ontem, 7 dias,
+  // este mês) só preenchem as duas pontas — assim tudo se comporta igual.
+  const [fDe, setFDe] = useState("");
+  const [fAte, setFAte] = useState("");
   const [limite, setLimite] = useState(60);
   const [modal, setModal] = useState(false);
   const [editando, setEditando] = useState(null);
   const [fichaCli, setFichaCli] = useState(null); // ficha do cliente aberta por cima da lista
+  const [popData, setPopData] = useState(null);   // caixinha do período (posição do chip)
 
-  // dia e mês são recortes concorrentes: escolher um limpa o outro, senão o
+  // intervalo de cada atalho, calculado no fuso de Brasília
+  const hojeV = hojeIso();
+  const ATALHOS = [
+    ["hoje", "Hoje", hojeV, hojeV],
+    ["ontem", "Ontem", isoSomaDias(hojeV, -1), isoSomaDias(hojeV, -1)],
+    ["7d", "Últimos 7 dias", isoSomaDias(hojeV, -6), hojeV],
+    ["mes", "Este mês", hojeV.slice(0, 8) + "01", hojeV],
+  ];
+  const atalhoAtivo = (ATALHOS.find(([, , de, ate]) => de === fDe && ate === fAte) || [])[0] || "";
+  // intervalo e mês são recortes concorrentes: escolher um limpa o outro, senão o
   // resultado vira vazio sem o usuário entender por quê
-  const escolherPeriodo = (p) => { setFPeriodo(p); setFDia(""); setFMes(""); setLimite(60); };
-  const escolherDia = (d) => { setFDia(d); setFPeriodo(""); setFMes(""); setLimite(60); };
-  const escolherMes = (m) => { setFMes(m); setFPeriodo(""); setFDia(""); setLimite(60); };
+  const porIntervalo = (de, ate) => { setFDe(de); setFAte(ate); setFMes(""); setLimite(60); };
+  const escolherMes = (m) => { setFMes(m); setFDe(""); setFAte(""); setLimite(60); };
+  const limparPeriodo = () => { setFDe(""); setFAte(""); setFMes(""); };
 
   const filtradas = useMemo(() => {
     const b = busca.trim().toLowerCase();
-    const hoje = hojeIso();
-    const diasAtras = (n) => isoSomaDias(hoje, -n);
-    const de = fPeriodo === "hoje" ? hoje : fPeriodo === "ontem" ? diasAtras(1) : fPeriodo === "7d" ? diasAtras(6) : "";
-    const ate = fPeriodo === "ontem" ? diasAtras(1) : fPeriodo ? hoje : "";
     return vendas
       .filter((v) => {
         if (b && !(`${v.nome} ${v.email} ${v.faculdade} ${v.tema}`.toLowerCase().includes(b))) return false;
         if (fTipo && v.tipo !== fTipo) return false;
         if (fUF && v.uf !== fUF) return false;
-        if (fDia && v.data !== fDia) return false;
-        if (de && !(v.data >= de && v.data <= ate)) return false;
+        if (fDe && (!v.data || v.data < fDe)) return false;
+        if (fAte && (!v.data || v.data > fAte)) return false;
         if (fMes !== "" && mesDeIso(v.data) !== parseInt(fMes, 10)) return false;
         return true;
       })
       .sort((a, b) => (b.data || "").localeCompare(a.data || ""));
-  }, [vendas, busca, fTipo, fUF, fMes, fDia, fPeriodo]);
+  }, [vendas, busca, fTipo, fUF, fMes, fDe, fAte]);
 
   // opções de faculdade para o seletor: base canônica + qualquer faculdade já usada
   const facOpts = useMemo(() => {
@@ -1644,17 +1652,15 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
   const somaFiltro = filtradas.reduce((s, v) => s + v.valor, 0);
   const ufsDisponiveis = [...new Set(vendas.map((v) => v.uf))].sort();
   // contagem no próprio chip, pra saber se vale clicar antes de filtrar
-  const contaPeriodo = (p) => {
-    const hoje = hojeIso();
-    if (p === "hoje") return vendas.filter((v) => v.data === hoje).length;
-    if (p === "ontem") { const o = isoSomaDias(hoje, -1); return vendas.filter((v) => v.data === o).length; }
-    const de = isoSomaDias(hoje, -6);
-    return vendas.filter((v) => v.data >= de && v.data <= hoje).length;
-  };
-  const rotuloPeriodo = fDia ? fmtData(fDia)
-    : fPeriodo === "hoje" ? `hoje, ${fmtData(hojeIso())}`
-    : fPeriodo === "ontem" ? "ontem"
-    : fPeriodo === "7d" ? "últimos 7 dias"
+  const contaIntervalo = (de, ate) => vendas.filter((v) => v.data && v.data >= de && v.data <= ate).length;
+  const rotuloPeriodo =
+      atalhoAtivo === "hoje" ? `hoje, ${fmtData(hojeV)}`
+    : atalhoAtivo === "ontem" ? `ontem, ${fmtData(isoSomaDias(hojeV, -1))}`
+    : atalhoAtivo === "7d" ? "últimos 7 dias"
+    : atalhoAtivo === "mes" ? `${MESES[mesDeIso(hojeV)].toLowerCase()} até hoje`
+    : fDe && fAte ? (fDe === fAte ? fmtData(fDe) : `${fmtData(fDe)} a ${fmtData(fAte)}`)
+    : fDe ? `de ${fmtData(fDe)} em diante`
+    : fAte ? `até ${fmtData(fAte)}`
     : fMes !== "" ? MESES[Number(fMes)] : "";
 
   const remover = (id) => {
@@ -1700,20 +1706,24 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
       </div>
 
       <div className="status-filtros" role="group" aria-label="Filtrar por período">
-        {[["hoje", "Hoje"], ["ontem", "Ontem"], ["7d", "Últimos 7 dias"]].map(([id, lab]) => (
-          <button key={id} className={"chip-filtro" + (fPeriodo === id ? " ativo" : "")} aria-pressed={fPeriodo === id}
-            title={fPeriodo === id ? "Clique para limpar o filtro" : `Ver as vendas de ${lab.toLowerCase()}`}
-            onClick={() => escolherPeriodo(fPeriodo === id ? "" : id)}>
-            {lab}<b>{contaPeriodo(id)}</b>
+        {ATALHOS.map(([id, lab, de, ate]) => (
+          <button key={id} className={"chip-filtro" + (atalhoAtivo === id ? " ativo" : "")} aria-pressed={atalhoAtivo === id}
+            title={atalhoAtivo === id ? "Clique para limpar o filtro" : `Ver as vendas de ${lab.toLowerCase()}`}
+            onClick={() => (atalhoAtivo === id ? limparPeriodo() : porIntervalo(de, ate))}>
+            {lab}<b>{contaIntervalo(de, ate)}</b>
           </button>
         ))}
-        <label className="chip-dia">
-          <span>dia</span>
-          <input type="date" className="inp sm" aria-label="Ver as vendas de um dia específico"
-            value={fDia} onChange={(e) => escolherDia(e.target.value)} />
-        </label>
-        {(fPeriodo || fDia || fMes !== "") && (
-          <button className="mini" onClick={() => { setFPeriodo(""); setFDia(""); setFMes(""); }}>limpar período</button>
+        {/* dois campos de data ocupavam meia barra: viram um chip que abre a caixinha */}
+        <button className={"chip-filtro" + ((fDe || fAte) && !atalhoAtivo ? " ativo" : "")}
+          aria-pressed={!!(fDe || fAte) && !atalhoAtivo}
+          onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setPopData({ x: r.left, y: r.bottom + 6 }); }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 11h18" />
+          </svg>
+          {(fDe || fAte) && !atalhoAtivo ? rotuloPeriodo : "escolher período"}
+        </button>
+        {(fDe || fAte || fMes !== "") && (
+          <button className="mini" onClick={limparPeriodo}>limpar período</button>
         )}
       </div>
 
@@ -1772,6 +1782,30 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
 
       {modal && (
         <FormVenda venda={editando} onSalvar={salvarVenda} onClose={() => { setModal(false); setEditando(null); }} temasExist={temasExist} facOpts={facOpts} />
+      )}
+
+      {popData && (
+        <>
+          <div className="pop-fundo" onClick={() => setPopData(null)} />
+          <div className="pop-add pop-periodo" style={{ top: popData.y, left: popData.x }} role="dialog" aria-label="Escolher período"
+            onKeyDown={(e) => { if (e.key === "Escape") setPopData(null); }}>
+            <div className="pop-tit">Período</div>
+            <label className="pop-campo">
+              <span>de</span>
+              <input type="date" className="inp sm" autoFocus max={fAte || undefined}
+                value={fDe} onChange={(e) => porIntervalo(e.target.value, fAte)} />
+            </label>
+            <label className="pop-campo">
+              <span>até</span>
+              <input type="date" className="inp sm" min={fDe || undefined}
+                value={fAte} onChange={(e) => porIntervalo(fDe, e.target.value)} />
+            </label>
+            <div className="pop-acoes">
+              <button className="mini" onClick={() => { limparPeriodo(); setPopData(null); }}>limpar</button>
+              <button className="btn sm" onClick={() => setPopData(null)}>pronto</button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* a ficha abre aqui mesmo: fechando, a lista de vendas continua como estava */}
@@ -4509,13 +4543,12 @@ select.inp{ cursor:pointer; }
 .link-tema{ color:inherit; text-decoration:none; }
 .link-tema:hover{ color:var(--brand); text-decoration:underline; text-underline-offset:2px; }
 .link-tema:focus-visible{ box-shadow:var(--ring); outline:none; border-radius:3px; }
-.chip-dia{ display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 12px 0 13px;
-  border:1px solid var(--border); background:var(--surface); border-radius:var(--r-full);
-  font-size:12px; color:var(--muted); }
-.chip-dia input[type=date]{ border:none; background:transparent; padding:0; font-size:12px; color:var(--ink);
-  font-family:inherit; outline:none; }
-.chip-dia input[type=date]:focus-visible{ box-shadow:var(--ring); border-radius:var(--r-sm); }
-.root.dark .chip-dia input[type=date]::-webkit-calendar-picker-indicator{ filter:invert(.7); }
+/* caixinha do período: o chip só mostra o intervalo; as datas ficam aqui dentro */
+.pop-periodo{ transform:none; width:216px; }
+.pop-campo{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
+.pop-campo span{ width:26px; flex-shrink:0; }
+.pop-campo input[type=date]{ flex:1; min-width:0; }
+.root.dark input[type=date]::-webkit-calendar-picker-indicator{ filter:invert(.7); }
 .status-filtros .mini{ align-self:center; }
 .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:13px; }
 .form-grid .campo{ margin-bottom:0; }
