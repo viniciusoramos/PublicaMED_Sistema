@@ -995,15 +995,22 @@ export default function App() {
     return [...map.values()].sort((a, b) => b.ids.length - a.ids.length);
   }, [vendas]);
   const aplicarUFs = async (escolhidas) => {
-    const alvo = new Map();   // id da venda -> uf
-    escolhidas.forEach((p) => p.ids.forEach((id) => alvo.set(id, p.uf)));
+    // agrupa por estado: um update em lote por UF, em vez de um por venda
+    const porUF = new Map();
+    escolhidas.forEach((p) => porUF.set(p.uf, [...(porUF.get(p.uf) || []), ...p.ids]));
+    const alvo = new Map();
+    porUF.forEach((ids, uf) => ids.forEach((id) => alvo.set(id, uf)));
     if (!alvo.size) return;
     const antes = vendas;
     setVendas((vs) => vs.map((v) => (alvo.has(v.id) ? { ...v, uf: alvo.get(v.id) } : v)));
     try {
-      for (const v of antes) if (alvo.has(v.id)) await db.atualizarVenda(v.id, { ...v, uf: alvo.get(v.id) });
+      for (const [uf, ids] of porUF) await db.definirUFVendas(ids, uf);
       aviso(`Estado preenchido em ${alvo.size} venda(s) · ${escolhidas.length} faculdade(s)`);
-    } catch (e) { aviso("Erro: " + e.message); setVendas(antes); }
+    } catch (e) {
+      // o erro some rápido no toast: o alert garante que ninguém fique achando que aplicou
+      alert("Não consegui gravar o estado das vendas.\n\n" + (e.message || e) + "\n\nNada foi alterado.");
+      setVendas(antes);
+    }
   };
   /* Clicar no nome do cliente em Vendas abre a ficha dele na aba Clientes.
    * A chave e a mesma do agrupamento: e-mail em minusculas ou, sem e-mail, o nome. */

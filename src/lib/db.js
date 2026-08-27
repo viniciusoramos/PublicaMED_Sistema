@@ -165,6 +165,14 @@ export async function removerVenda(id) {
   const { error } = await supabase.from('vendas').delete().eq('id', id);
   if (error) throw error;
 }
+/* Grava só a UF, em lote. Antes isso era feito venda a venda com atualizarVenda(),
+ * que reescreve a linha toda (e resolve faculdade de novo): dezenas de requisições
+ * em que uma falha no meio deixava metade preenchida. */
+export async function definirUFVendas(ids, uf) {
+  if (!ids || !ids.length) return;
+  const { error } = await supabase.from('vendas').update({ uf }).in('id', ids);
+  if (error) throw error;
+}
 // renomeia o tema (nome da publicação) em todas as vendas ligadas — 1 update em lote
 export async function renomearTemaVendas(antigo, novo) {
   if (!antigo || antigo === novo) return;
