@@ -209,13 +209,39 @@ function expandSeed() {
 }
 
 /* ---------- Faculdades canônicas (para o seletor) + mapa nome->UF ---------- */
+/* Estados corrigidos na base importada. Um erro aqui se espalha por tudo — o
+ * relatório por estado, o mapa de regiões e o reconhecimento das variações —,
+ * então vale manter a correção à vista em vez de escondida no seed. */
+const FAC_UF_CORRIGIDA = {
+  "Faculdade Serra Dourada (FSD)": "SP",   // estava GO
+};
+/* Instituições que faltavam na lista importada. Sem elas o sistema não tem como
+ * saber o estado, e o nome fica como o usuário digitou em cada venda. */
+const FAC_EXTRAS = [
+  ["UNIFESO - Centro Universitário Serra dos Órgãos", "RJ"],
+  ["UEA - Universidade do Estado do Amazonas", "AM"],
+  ["Universidade Salvador (UNIFACS)", "BA"],
+  ["Universidade de Uberaba (Uniube)", "MG"],
+  ["Universidade Municipal de São Caetano do Sul (USCS)", "SP"],
+  ["Centro Universitário de Patos de Minas (UNIPAM)", "MG"],
+  ["Faculdade Israelita de Ciências da Saúde Albert Einstein", "SP"],
+  ["UFVJM - Univ. Federal dos Vales do Jequitinhonha e Mucuri", "MG"],
+  ["Universidade de Franca (Unifran)", "SP"],
+  ["FSG Centro Universitário", "RS"],
+  ["Unicerrado - Centro Universitário de Goiatuba", "GO"],
+];
 const FAC_BASE = (() => {
   const ufMap = {};
   const nomes = [];
   (SEED.facs || []).forEach((nome, i) => {
     if (!nome) return;
     nomes.push(nome);
-    ufMap[nome] = (SEED.facUF && SEED.facUF[i]) || "N/I";
+    ufMap[nome] = FAC_UF_CORRIGIDA[nome] || (SEED.facUF && SEED.facUF[i]) || "N/I";
+  });
+  FAC_EXTRAS.forEach(([nome, uf]) => {
+    if (ufMap[nome]) return;
+    nomes.push(nome);
+    ufMap[nome] = uf;
   });
   return { nomes, ufMap };
 })();
@@ -1463,8 +1489,16 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
  * entram desmarcadas: é onde mora o erro caro — rede com campus em outro estado. */
 function RevisarUFs({ propostas, onAplicar, onFechar }) {
   const [sel, setSel] = useState(() => new Set(propostas.filter((p) => p.confianca === "alta").map((p) => p.escrito)));
+  // o estado sugerido pode estar errado (rede com campus em outro lugar): dá para trocar na hora
+  const [ufs, setUfs] = useState(() => new Map(propostas.map((p) => [p.escrito, p.uf])));
   const alterna = (k) => setSel((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
-  const escolhidas = propostas.filter((p) => sel.has(p.escrito));
+  const trocarUF = (k, uf) => {
+    setUfs((m) => new Map(m).set(k, uf));
+    setSel((s) => { const n = new Set(s); uf ? n.add(k) : n.delete(k); return n; }); // escolheu = quer aplicar
+  };
+  const escolhidas = propostas
+    .filter((p) => sel.has(p.escrito) && ufs.get(p.escrito))
+    .map((p) => ({ ...p, uf: ufs.get(p.escrito) }));
   const vendasSel = escolhidas.reduce((s, p) => s + p.ids.length, 0);
   const duvidosas = propostas.filter((p) => p.confianca !== "alta").length;
   return (
@@ -1484,7 +1518,16 @@ function RevisarUFs({ propostas, onAplicar, onFechar }) {
               <em>{p.ids.length} venda{p.ids.length > 1 ? "s" : ""}</em>
             </span>
             <span className="rev-para">
-              <b>{p.uf}</b> {p.oficial}
+              <select className="inp sm rev-uf-sel" value={ufs.get(p.escrito) || ""} aria-label={`Estado de ${p.escrito}`}
+                onClick={(e) => e.preventDefault()} onChange={(e) => trocarUF(p.escrito, e.target.value)}>
+                <option value="">—</option>
+                {Object.keys(UF_NOME).filter((u) => u !== "N/I").map((u) => (
+                  <option key={u} value={u}>{u} · {UF_NOME[u]}</option>
+                ))}
+              </select>
+              <em className="rev-oficial">
+                {ufs.get(p.escrito) === p.uf ? `reconhecida como ${p.oficial}` : `sugerida: ${p.oficial}`}
+              </em>
               {p.confianca !== "alta" && <em className="rev-alerta">confira: só a sigla bateu</em>}
             </span>
           </label>
@@ -4442,7 +4485,8 @@ select.inp{ cursor:pointer; }
 .rev-de{ font-size:12px; color:var(--ink); line-height:1.35; }
 .rev-de em{ display:block; font-style:normal; font-size:11px; color:var(--muted2); margin-top:1px; }
 .rev-para{ font-size:12px; color:var(--muted); line-height:1.35; }
-.rev-para b{ display:inline-block; min-width:26px; color:var(--brand); font-weight:700; }
+.rev-uf-sel{ padding:4px 8px; font-size:12px; max-width:170px; }
+.rev-oficial{ display:block; font-style:normal; font-size:11px; color:var(--muted2); margin-top:2px; }
 .rev-linha.duvida{ background:var(--warn-soft); }
 .rev-alerta{ display:block; font-style:normal; font-size:11px; color:var(--warn); font-weight:600; margin-top:1px; }
 .link-cliente{ background:transparent; border:none; padding:0; font:inherit; font-weight:600; color:var(--ink);
