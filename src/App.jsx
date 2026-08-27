@@ -235,6 +235,7 @@ function expandSeed() {
  * então vale manter a correção à vista em vez de escondida no seed. */
 const FAC_UF_CORRIGIDA = {
   "Faculdade Serra Dourada (FSD)": "SP",   // estava GO
+  "Unifamec": "BA",                        // veio da importação sem estado
 };
 /* Instituições que faltavam na lista importada. Sem elas o sistema não tem como
  * saber o estado, e o nome fica como o usuário digitou em cada venda. */
@@ -250,6 +251,11 @@ const FAC_EXTRAS = [
   ["Universidade de Franca (Unifran)", "SP"],
   ["FSG Centro Universitário", "RS"],
   ["Unicerrado - Centro Universitário de Goiatuba", "GO"],
+  ["Estácio IDOMED - Jaraguá do Sul", "SC"],
+  ["UNESC - Universidade do Extremo Sul Catarinense", "SC"],
+  ["UNIFAA - Centro Universitário de Valença", "RJ"],
+  ["UFNT - Universidade Federal do Norte do Tocantins", "TO"],
+  ["FUNCESI - Fundação Comunitária de Ensino Superior de Itabira", "MG"],
 ];
 const FAC_BASE = (() => {
   const ufMap = {};
@@ -279,8 +285,10 @@ const FAC_GENERICAS = new Set([
   "medicina", "medicas", "medica", "medico", "ciencias", "ciencia", "saude", "curso", "cursos",
   "de", "da", "do", "dos", "das", "em", "no", "na",
 ]);
+// 2 letras entram: "BH" é o que separa FAMINAS BH de FAMINAS Muriaé. As de ligação
+// ("de", "da", "no"...) já estão entre as genéricas.
 const tokensFac = (s) => new Set(semAcentoFac(s).replace(/[^a-z0-9]+/g, " ").split(" ")
-  .filter((w) => w.length >= 3 && !FAC_GENERICAS.has(w)));
+  .filter((w) => w.length >= 2 && !FAC_GENERICAS.has(w)));
 // quanto do nome mais curto aparece no mais longo (1 = está inteiro dentro do outro)
 const contencaoFac = (a, b) => {
   if (!a.size || !b.size) return 0;
