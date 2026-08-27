@@ -1347,6 +1347,7 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
   const [mes, setMes] = useState("");
   const [todasFac, setTodasFac] = useState(false); // lista de faculdades: top 10 ou completa
   const [facAberta, setFacAberta] = useState(null); // faculdade com as variações do nome abertas
+  const [todosUF, setTodosUF] = useState(false);    // estados: top 8 ou lista completa
   const [revisarUF, setRevisarUF] = useState(false);
   const anoSel = ano || (anos[0] != null ? String(anos[0]) : "todos");
 
@@ -1387,8 +1388,13 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
 
   const donut = m.porTipo.map((t) => ({ name: t.tipo, value: t.total, cor: corTipo(t.tipo) }));
   const maxUF = Math.max(...m.porUF.filter((u) => u.uf !== "N/I").map((u) => u.qtd), 1);
-  const ufData = m.porUF.filter((u) => u.uf !== "N/I").slice(0, 8)
+  // top 8 por padrão; um estado emergente com poucas vendas ficaria invisível,
+  // então dá para abrir a lista inteira
+  const ufsComVenda = m.porUF.filter((u) => u.uf !== "N/I");
+  const ufData = (todosUF ? ufsComVenda : ufsComVenda.slice(0, 8))
     .map((u) => ({ label: `${u.uf} · ${UF_NOME[u.uf]}`, value: u.qtd, cor: "var(--brand)" }));
+  const ufsForaDoTop = ufsComVenda.slice(8);
+  const vendasForaDoTop = ufsForaDoTop.reduce((s, u) => s + u.qtd, 0);
 
   const certEmitido = trabalhos.filter((t) => t.status === "Certificado emitido").length;
   const pendentes = trabalhos.filter((t) => t.status !== "Certificado emitido").length;
@@ -1444,8 +1450,19 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
 
       <div className="grid-2">
         <div className="card">
-          <div className="card-head"><h3>Estados que mais compram</h3><span className="hint">por nº de compras</span></div>
+          <div className="card-head">
+            <h3>Estados que mais compram</h3>
+            <span className="hint">{todosUF ? `todos · ${num(ufsComVenda.length)}` : `top 8 de ${num(ufsComVenda.length)}`}</span>
+          </div>
           <BarrasH data={ufData} max={maxUF} fmt={(v) => `${v}`} />
+          {ufsForaDoTop.length > 0 && (
+            <div className="mais mais-uf">
+              <button className="btn-ghost" onClick={() => setTodosUF((v) => !v)}>
+                {todosUF ? "Mostrar só os 8 primeiros"
+                  : `Ver todos os ${num(ufsComVenda.length)} estados (+${num(vendasForaDoTop)} compras)`}
+              </button>
+            </div>
+          )}
           <p className="nota" title="As não identificadas são instituições do exterior ou sem faculdade informada.">Estado identificado pela faculdade do cliente · {num(m.nVendas - (m.porUF.find((u) => u.uf === "N/I")?.qtd || 0))} de {num(m.nVendas)} vendas com estado definido.</p>
         </div>
 
@@ -4601,6 +4618,7 @@ select.inp{ cursor:pointer; }
 .fac-var-lista{ list-style:none; margin:5px 0 2px; padding-left:11px; display:flex; flex-direction:column; gap:3px; }
 .fac-var-lista li{ font-size:11px; color:var(--muted); line-height:1.35; position:relative; }
 .fac-var-lista li::before{ content:"·"; position:absolute; left:-11px; color:var(--muted2); }
+.mais-uf{ border-top:none; padding:10px 0 0; }
 /* revisão do preenchimento de estado */
 .rev-uf{ display:flex; flex-direction:column; max-height:52vh; overflow-y:auto; margin-bottom:4px; }
 .rev-linha{ display:grid; grid-template-columns:auto minmax(0,1fr) minmax(0,1fr); gap:12px; align-items:center;
