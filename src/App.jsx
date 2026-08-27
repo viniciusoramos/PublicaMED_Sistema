@@ -504,7 +504,6 @@ export default function App() {
   const [tab, setTab] = useState("overview");
   const [menuAberto, setMenuAberto] = useState(false);
   const [pubAlvo, setPubAlvo] = useState(null);
-  const [clienteAlvo, setClienteAlvo] = useState(null); // cliente aberto a partir de Vendas
   const [dark, setDark] = useState(() => { try { return localStorage.getItem("tema") === "dark"; } catch { return false; } });
   const toggleTema = () => setDark((d) => { const n = !d; try { localStorage.setItem("tema", n ? "dark" : "claro"); } catch (e) {} return n; });
   const [vendas, setVendas] = useState([]);
@@ -987,12 +986,6 @@ export default function App() {
   };
   /* Clicar no nome do cliente em Vendas abre a ficha dele na aba Clientes.
    * A chave e a mesma do agrupamento: e-mail em minusculas ou, sem e-mail, o nome. */
-  const abrirCliente = (venda) => {
-    const chave = (venda.email || "").trim().toLowerCase() || (venda.nome || "").trim().toLowerCase();
-    if (!chave) { aviso("Essa venda nao tem cliente identificado."); return; }
-    setClienteAlvo(chave);
-    irPara("clientes");
-  };
   const salvarCliente = async (cliente, dados) => {
     const uf = dados.uf && dados.uf !== "N/I" ? dados.uf : ufDaFaculdade(dados.faculdade);
     const ids = new Set((cliente.compras || []).map((v) => v.id));
@@ -1038,6 +1031,11 @@ export default function App() {
 
   /* ---------- métricas ---------- */
   const m = useMemo(() => calcMetricas(vendas), [vendas]);
+  // cliente agregado de uma venda — a chave é a mesma do agrupamento de Clientes
+  const clienteDaVenda = (venda) => {
+    const chave = (venda.email || "").trim().toLowerCase() || (venda.nome || "").trim().toLowerCase();
+    return chave ? m.clientes.find((c) => c.chave === chave) : null;
+  };
   /* CPF, telefone e ORCID são dados do participante, não da venda — e o cliente é
    * montado a partir das vendas. Este índice traz esses campos para a aba Clientes,
    * casando por e-mail e, na falta dele, pelo nome. */
@@ -1178,9 +1176,10 @@ export default function App() {
             propostasUF={propostasUF} onAplicarUFs={aplicarUFs} />
         )}
         {tab === "vendas" && (
-          <Vendas vendas={vendas} salvar={salvarVendas} aviso={aviso} temasExist={temas} onAbrirPublicacao={abrirPublicacao} onAbrirCliente={abrirCliente} />
+          <Vendas vendas={vendas} salvar={salvarVendas} aviso={aviso} temasExist={temas} onAbrirPublicacao={abrirPublicacao}
+            clienteDaVenda={clienteDaVenda} contatoDe={contatoDe} salvarCliente={salvarCliente} />
         )}
-        {tab === "clientes" && <Clientes m={m} vendas={vendas} salvarCliente={salvarCliente} onAbrirPublicacao={abrirPublicacao} contatoDe={contatoDe} alvo={clienteAlvo} onAlvoUsado={() => setClienteAlvo(null)} />}
+        {tab === "clientes" && <Clientes m={m} vendas={vendas} salvarCliente={salvarCliente} onAbrirPublicacao={abrirPublicacao} contatoDe={contatoDe} />}
         {tab === "trabalhos" && (
           <Trabalhos trabalhos={trabalhos} temas={temas} salvar={salvarTrabalhos} aviso={aviso} onAbrirPublicacao={abrirPublicacao} />
         )}
@@ -1441,13 +1440,25 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
           <h3>Faculdades que mais compram</h3>
           <span className="hint">{todasFac ? `todas · ${num(m.porFaculdade.length)}` : `top 10 de ${num(m.porFaculdade.length)}`}</span>
         </div>
-        {propostasUF.length > 0 && (
-          <p className="aviso-uf">
-            {num(propostasUF.reduce((s, p) => s + p.ids.length, 0))} venda(s) sem estado
-            têm faculdade reconhecível.
-            <button className="mini" onClick={() => setRevisarUF(true)}>revisar e preencher</button>
-          </p>
-        )}
+        {propostasUF.length > 0 && (() => {
+          // separa o que o sistema resolve sozinho do que depende de conferência:
+          // juntos, davam a impressão de que preencher não tinha adiantado nada
+          const prontas = propostasUF.filter((p) => p.confianca === "alta");
+          const conferir = propostasUF.filter((p) => p.confianca !== "alta");
+          const nv = (l) => l.reduce((s, p) => s + p.ids.length, 0);
+          return (
+            <p className={"aviso-uf" + (prontas.length ? "" : " so-conferir")}>
+              {prontas.length > 0 && <>{num(nv(prontas))} venda(s) podem receber o estado agora. </>}
+              {conferir.length > 0 && (
+                <>{num(nv(conferir))} de {conferir.length} faculdade(s) precisam da sua conferência —
+                o nome bateu só por uma sigla.</>
+              )}
+              <button className="mini" onClick={() => setRevisarUF(true)}>
+                {prontas.length ? "revisar e preencher" : "conferir"}
+              </button>
+            </p>
+          );
+        })()}
         <table className="tab">
           <thead><tr><th scope="col">#</th><th scope="col">Faculdade</th><th scope="col" className="r">Compras</th><th scope="col" className="r">Faturamento</th></tr></thead>
           <tbody>
@@ -1557,7 +1568,7 @@ function Destaque({ rotulo, principal, detalhe }) {
 /* ============================================================
    VENDAS
    ============================================================ */
-function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, onAbrirCliente }) {
+function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteDaVenda, contatoDe = () => ({}), salvarCliente }) {
   const { tipos } = useContext(ListasCtx);
   const [busca, setBusca] = useState("");
   const [fTipo, setFTipo] = useState("");
@@ -1568,6 +1579,7 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, onAbrirC
   const [limite, setLimite] = useState(60);
   const [modal, setModal] = useState(false);
   const [editando, setEditando] = useState(null);
+  const [fichaCli, setFichaCli] = useState(null); // ficha do cliente aberta por cima da lista
 
   // dia e mês são recortes concorrentes: escolher um limpa o outro, senão o
   // resultado vira vazio sem o usuário entender por quê
@@ -1699,7 +1711,10 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, onAbrirC
               <tr key={v.id}>
                 <td className="nowrap muted">{fmtData(v.data)}</td>
                 <td>
-                  <button className="cel-nome link-cliente" onClick={() => onAbrirCliente(v)} title="Ver a ficha deste cliente">{v.nome || "—"}</button>
+                  <button className="cel-nome link-cliente" title="Ver a ficha deste cliente"
+                    onClick={() => { const c = clienteDaVenda(v); c ? setFichaCli(c) : aviso("Essa venda não tem cliente identificado."); }}>
+                    {v.nome || "—"}
+                  </button>
                   {v.tema && (
                     <div className="cel-tema">
                       <a className="link-tema" href={`#pub=${encodeURIComponent(v.tema)}::${encodeURIComponent(v.tipo || "")}`}
@@ -1736,6 +1751,12 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, onAbrirC
 
       {modal && (
         <FormVenda venda={editando} onSalvar={salvarVenda} onClose={() => { setModal(false); setEditando(null); }} temasExist={temasExist} facOpts={facOpts} />
+      )}
+
+      {/* a ficha abre aqui mesmo: fechando, a lista de vendas continua como estava */}
+      {fichaCli && (
+        <FichaCliente cliente={fichaCli} contato={contatoDe(fichaCli)} onSalvar={salvarCliente}
+          onAbrirPublicacao={onAbrirPublicacao} onFechar={() => setFichaCli(null)} />
       )}
     </>
   );
@@ -1829,21 +1850,13 @@ function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts }) {
 /* ============================================================
    CLIENTES
    ============================================================ */
-function Clientes({ m, vendas, salvarCliente, onAbrirPublicacao, contatoDe = () => ({}), alvo = null, onAlvoUsado }) {
+function Clientes({ m, vendas, salvarCliente, onAbrirPublicacao, contatoDe = () => ({}) }) {
   const [busca, setBusca] = useState("");
   const [ordem, setOrdem] = useState("total");
   const [limite, setLimite] = useState(50);
   const [sel, setSel] = useState(null);
-  const [editando, setEditando] = useState(false);
-  const abrir = (c) => { setSel(c); setEditando(false); };
+  const abrir = (c) => setSel(c);
   const contato = contatoDe(sel);
-  // veio de um clique no nome do cliente em Vendas: abre esse cliente
-  useEffect(() => {
-    if (!alvo) return;
-    const c = m.clientes.find((x) => x.chave === alvo);
-    if (c) { setSel(c); setEditando(false); setBusca(""); }
-    if (onAlvoUsado) onAlvoUsado();
-  }, [alvo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lista = useMemo(() => {
     const b = busca.trim().toLowerCase();
@@ -1913,54 +1926,66 @@ function Clientes({ m, vendas, salvarCliente, onAbrirPublicacao, contatoDe = () 
       </div>
 
       {sel && (
-        <Modal titulo={editando ? `Editar cliente · ${sel.nome}` : sel.nome} onClose={() => setSel(null)} wide>
-          {editando ? (
-            <FormCliente cliente={sel} contato={contato} onSalvar={(d) => { salvarCliente(sel, d); setSel(null); }} onCancelar={() => setEditando(false)} />
-          ) : (
-            <>
-              <div className="cli-info">
-                <div><span className="ci-lab">Email</span>{sel.email || "—"}</div>
-                <div><span className="ci-lab">Faculdade</span>{sel.faculdade || "—"}</div>
-                <div><span className="ci-lab">Estado</span>{UF_NOME[sel.uf] || sel.uf}</div>
-                {/* vêm do cadastro de participante, não da venda */}
-                <div><span className="ci-lab">CPF</span>{contato.cpf ? fmtCPF(contato.cpf) : "—"}</div>
-                <div><span className="ci-lab">Telefone</span>{contato.telefone || "—"}</div>
-                {contato.orcid && <div><span className="ci-lab">ORCID</span>{soOrcid(contato.orcid)}</div>}
-                <div><span className="ci-lab">Total gasto</span><b>{brl(sel.total)}</b></div>
-                <div><span className="ci-lab">Trabalhos</span><b>{sel.qtd}</b></div>
-              </div>
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-                <button className="btn-ghost" onClick={() => setEditando(true)}>Editar dados do cliente</button>
-              </div>
-              <h4 className="sub-h">Histórico de compras</h4>
-              <table className="tab">
-                <thead><tr><th scope="col">Data</th><th scope="col">Tipo</th><th scope="col">Tema</th><th scope="col" className="r">Valor</th></tr></thead>
-                <tbody>
-                  {sel.compras.sort((a, b) => (b.data || "").localeCompare(a.data || "")).map((v) => (
-                    <tr key={v.id}>
-                      <td className="nowrap muted">{fmtData(v.data)}</td>
-                      <td><span className="tipo-pill" style={{ "--tc": corTipo(v.tipo) }}>{v.tipo}</span></td>
-                      <td className="cel-fac">
-                        {v.tema ? (
-                          // leva direto ao trabalho, em vez de copiar o título e procurar na outra aba.
-                          // o tipo vai junto porque o mesmo título pode existir como capítulo e apresentação
-                          <a className="link-titulo" href={`#pub=${encodeURIComponent(v.tema)}::${encodeURIComponent(v.tipo || "")}`}
-                            title="Abrir este trabalho em Publicações e vagas"
-                            onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return; e.preventDefault(); setSel(null); onAbrirPublicacao(v.tema, v.tipo); }}>
-                            {v.tema}
-                          </a>
-                        ) : "—"}
-                      </td>
-                      <td className="r"><b>{brl(v.valor)}</b></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          )}
-        </Modal>
+        <FichaCliente cliente={sel} contato={contato} onSalvar={salvarCliente}
+          onAbrirPublicacao={onAbrirPublicacao} onFechar={() => setSel(null)} />
       )}
     </>
+  );
+}
+
+/* Ficha do cliente. Fica fora da aba Clientes de propósito: assim ela abre por
+ * cima de onde o usuário está (a lista de Vendas, por exemplo) e, ao fechar,
+ * ele continua ali — em vez de ser levado para outra aba. */
+function FichaCliente({ cliente, contato = {}, onSalvar, onAbrirPublicacao, onFechar }) {
+  const [editando, setEditando] = useState(false);
+  return (
+    <Modal titulo={editando ? `Editar cliente · ${cliente.nome}` : cliente.nome} onClose={onFechar} wide>
+      {editando ? (
+        <FormCliente cliente={cliente} contato={contato}
+          onSalvar={(d) => { onSalvar(cliente, d); onFechar(); }} onCancelar={() => setEditando(false)} />
+      ) : (
+        <>
+          <div className="cli-info">
+            <div><span className="ci-lab">Email</span>{cliente.email || "—"}</div>
+            <div><span className="ci-lab">Faculdade</span>{cliente.faculdade || "—"}</div>
+            <div><span className="ci-lab">Estado</span>{UF_NOME[cliente.uf] || cliente.uf}</div>
+            {/* vêm do cadastro de participante, não da venda */}
+            <div><span className="ci-lab">CPF</span>{contato.cpf ? fmtCPF(contato.cpf) : "—"}</div>
+            <div><span className="ci-lab">Telefone</span>{contato.telefone || "—"}</div>
+            {contato.orcid && <div><span className="ci-lab">ORCID</span>{soOrcid(contato.orcid)}</div>}
+            <div><span className="ci-lab">Total gasto</span><b>{brl(cliente.total)}</b></div>
+            <div><span className="ci-lab">Trabalhos</span><b>{cliente.qtd}</b></div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+            <button className="btn-ghost" onClick={() => setEditando(true)}>Editar dados do cliente</button>
+          </div>
+          <h4 className="sub-h">Histórico de compras</h4>
+          <table className="tab">
+            <thead><tr><th scope="col">Data</th><th scope="col">Tipo</th><th scope="col">Tema</th><th scope="col" className="r">Valor</th></tr></thead>
+            <tbody>
+              {[...cliente.compras].sort((a, b) => (b.data || "").localeCompare(a.data || "")).map((v) => (
+                <tr key={v.id}>
+                  <td className="nowrap muted">{fmtData(v.data)}</td>
+                  <td><span className="tipo-pill" style={{ "--tc": corTipo(v.tipo) }}>{v.tipo}</span></td>
+                  <td className="cel-fac">
+                    {v.tema ? (
+                      // leva direto ao trabalho, em vez de copiar o título e procurar na outra aba.
+                      // o tipo vai junto porque o mesmo título pode existir como capítulo e apresentação
+                      <a className="link-titulo" href={`#pub=${encodeURIComponent(v.tema)}::${encodeURIComponent(v.tipo || "")}`}
+                        title="Abrir este trabalho em Publicações e vagas"
+                        onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return; e.preventDefault(); onFechar(); onAbrirPublicacao(v.tema, v.tipo); }}>
+                        {v.tema}
+                      </a>
+                    ) : "—"}
+                  </td>
+                  <td className="r"><b>{brl(v.valor)}</b></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </Modal>
   );
 }
 
@@ -4474,6 +4499,8 @@ select.inp{ cursor:pointer; }
   background:var(--warn-soft); border:1px solid var(--warn-border); border-radius:var(--r-md);
   padding:8px 12px; margin:-2px 0 12px; }
 .aviso-uf .mini{ margin-left:auto; }
+/* sem nada pronto para aplicar, o aviso é só um lembrete — não precisa gritar */
+.aviso-uf.so-conferir{ color:var(--muted); background:var(--soft); border-color:var(--border); }
 .fac-var{ display:block; font-size:11px; color:var(--muted2); margin-top:2px; cursor:help; }
 /* revisão do preenchimento de estado */
 .rev-uf{ display:flex; flex-direction:column; max-height:52vh; overflow-y:auto; margin-bottom:4px; }
