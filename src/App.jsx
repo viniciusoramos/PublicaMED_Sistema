@@ -220,23 +220,128 @@ const FAC_BASE = (() => {
   return { nomes, ufMap };
 })();
 
-// resolve a UF a partir do nome da faculdade: tenta o nome exato, depois por
-// sigla (início) e por trecho — assim "PUCRS" acha "PUCRS - Pontifícia...".
-function ufDaFaculdade(nome) {
-  const n = (nome || "").trim();
-  if (!n) return "N/I";
-  if (FAC_BASE.ufMap[n] && FAC_BASE.ufMap[n] !== "N/I") return FAC_BASE.ufMap[n];
-  const nb = n.toLowerCase();
-  for (const c of FAC_BASE.nomes) {
-    if (c.toLowerCase().startsWith(nb) && FAC_BASE.ufMap[c] !== "N/I") return FAC_BASE.ufMap[c];
+/* Reconhecer a faculdade escrita à mão é o que decide a UF e o agrupamento dos
+ * relatórios. O nome chega diferente a cada cadastro — "Anhembi Morumbi Mooca",
+ * "Universidade Anhembi Morumbi - Campus Mooca", "UAM" —, então a comparação
+ * ignora acento, pontuação e as palavras que não distinguem instituição alguma. */
+const semAcentoFac = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const FAC_GENERICAS = new Set([
+  "universidade", "universitario", "universitaria", "centro", "faculdade", "faculdades",
+  "instituto", "superior", "ensino", "escola", "campus", "unidade", "unidades",
+  "federal", "estadual", "municipal", "pontificia", "catolica", "regional", "integrada", "integradas",
+  "medicina", "medicas", "medica", "medico", "ciencias", "ciencia", "saude", "curso", "cursos",
+  "de", "da", "do", "dos", "das", "em", "no", "na",
+]);
+const tokensFac = (s) => new Set(semAcentoFac(s).replace(/[^a-z0-9]+/g, " ").split(" ")
+  .filter((w) => w.length >= 3 && !FAC_GENERICAS.has(w)));
+// quanto do nome mais curto aparece no mais longo (1 = está inteiro dentro do outro)
+const contencaoFac = (a, b) => {
+  if (!a.size || !b.size) return 0;
+  const [men, mai] = a.size <= b.size ? [a, b] : [b, a];
+  let inter = 0;
+  men.forEach((w) => { if (mai.has(w)) inter += 1; });
+  return inter / men.size;
+};
+const FAC_IX = FAC_BASE.nomes.map((nome) => ({
+  nome, uf: FAC_BASE.ufMap[nome] || "N/I",
+  chave: semAcentoFac(nome).replace(/[^a-z0-9]+/g, ""),
+  toks: tokensFac(nome),
+}));
+/* Em quantas instituições cada palavra aparece. Palavra exclusiva de uma
+ * ("anhembi", "unaerp", "feevale") identifica sozinha; palavra repetida em
+ * várias ("minas", "puc", "paulista") não decide nada por conta própria —
+ * senão "Faculdade Ciências Médicas de Minas" viraria UFMG. */
+const FAC_POR_TOKEN = (() => {
+  const map = new Map();
+  FAC_IX.forEach((f, i) => f.toks.forEach((t) => {
+    if (!map.has(t)) map.set(t, []);
+    map.get(t).push(i);
+  }));
+  return map;
+})();
+/* Estado citado no próprio nome ("Jaraguá do Sul - SC", "extremo sul catarinense").
+ * Quando existe, ele manda: uma sigla que bate com outra instituição não pode
+ * sobrepor o estado que o usuário escreveu. */
+const GENTILICO_UF = {
+  catarinense: "SC", gaucho: "RS", gaucha: "RS", mineiro: "MG", mineira: "MG",
+  paranaense: "PR", fluminense: "RJ", carioca: "RJ", baiano: "BA", baiana: "BA",
+  cearense: "CE", pernambucano: "PE", pernambucana: "PE", goiano: "GO", goiana: "GO",
+  amazonense: "AM", capixaba: "ES", potiguar: "RN", paraibano: "PB", maranhense: "MA",
+  piauiense: "PI", sergipano: "SE", alagoano: "AL", matogrossense: "MT", rondoniense: "RO",
+};
+function ufNoTexto(nome) {
+  const t = semAcentoFac(nome);
+  for (const [g, uf] of Object.entries(GENTILICO_UF)) if (t.includes(g)) return uf;
+  const m = t.match(/[\s\-\/(]([a-z]{2})[\s\-\/)]*$/);          // "... - sc", "(sc)"
+  if (m) {
+    const sig = m[1].toUpperCase();
+    if (UF_NOME[sig]) return sig;
   }
-  if (nb.length >= 5) {
-    for (const c of FAC_BASE.nomes) {
-      const cb = c.toLowerCase();
-      if ((cb.includes(nb) || nb.includes(cb)) && FAC_BASE.ufMap[c] !== "N/I") return FAC_BASE.ufMap[c];
+  return null;
+}
+/* Acha a instituição da base correspondente ao nome digitado. Devolve null quando
+ * não há certeza: um "N/I" honesto é melhor do que atribuir o estado errado. */
+function acharFaculdade(nome) {
+  const n = String(nome ?? "").trim();
+  if (!n) return null;
+  const exato = FAC_IX.find((f) => f.nome === n);
+  if (exato) return exato;
+  const chave = semAcentoFac(n).replace(/[^a-z0-9]+/g, "");
+  const porChave = FAC_IX.find((f) => f.chave === chave);   // só pontuação/espaço diferentes
+  if (porChave) return porChave;
+  const toks = tokensFac(n);
+  if (!toks.size) return null;
+
+  const comuns = new Map();   // candidata -> palavras em comum
+  toks.forEach((t) => (FAC_POR_TOKEN.get(t) || []).forEach((i) => comuns.set(i, (comuns.get(i) || 0) + 1)));
+  if (!comuns.size) return null;
+
+  const ufTexto = ufNoTexto(n);
+  const combina = (f) => !ufTexto || f.uf === "N/I" || f.uf === ufTexto;
+
+  // 1) palavra exclusiva de uma instituição resolve na hora (sigla ou nome próprio)
+  const exclusivas = new Map();
+  toks.forEach((t) => {
+    const lista = FAC_POR_TOKEN.get(t);
+    if (lista && lista.length === 1) exclusivas.set(lista[0], (exclusivas.get(lista[0]) || 0) + 1);
+  });
+  if (exclusivas.size) {
+    const ordenadas = [...exclusivas.entries()].sort((a, b) =>
+      (b[1] - a[1]) || ((comuns.get(b[0]) || 0) - (comuns.get(a[0]) || 0)));
+    const escolhida = ordenadas.map(([i]) => FAC_IX[i]).find(combina);
+    if (escolhida) {
+      // quanto do nome digitado sobrou de fora: pouco = certeza; muito = só a sigla bateu
+      const s = contencaoFac(toks, escolhida.toks);
+      return { ...escolhida, confianca: s >= 0.6 ? "alta" : "baixa" };
     }
+    return null;                                            // sigla bateu, mas o estado no nome nega
   }
-  return "N/I";
+
+  // 2) sem palavra exclusiva: exige duas em comum e boa sobreposição
+  let melhores = [], score = 0;
+  for (const [i, inter] of comuns) {
+    if (inter < 2) continue;
+    const s = contencaoFac(toks, FAC_IX[i].toks);
+    if (s > score) { score = s; melhores = [FAC_IX[i]]; }
+    else if (s === score && s > 0) melhores.push(FAC_IX[i]);
+  }
+  melhores = melhores.filter(combina);
+  if (score < 0.6 || !melhores.length) return null;
+  const ufs = new Set(melhores.map((f) => f.uf));
+  if (ufs.size > 1) return null;                            // empate entre estados: não chuta
+  return { ...melhores[0], confianca: score >= 0.75 ? "alta" : "baixa" };
+}
+/* UF a partir do nome da faculdade. Só assume o estado quando o reconhecimento é
+ * seguro — o resto fica em N/I e aparece na revisão manual, para não gravar
+ * estado errado em venda nova. */
+function ufDaFaculdade(nome) {
+  const f = acharFaculdade(nome);
+  return f && f.uf !== "N/I" && f.confianca !== "baixa" ? f.uf : "N/I";
+}
+// nome oficial da instituição, para os relatórios não separarem variações do mesmo lugar
+function nomeCanonicoFac(nome) {
+  const f = acharFaculdade(nome);
+  return f ? f.nome : String(nome ?? "").trim();
 }
 
 /* ============================================================
@@ -822,6 +927,38 @@ export default function App() {
     catch (e) { aviso("Erro: " + e.message); }
   };
   // edita os dados de um cliente -> aplica em TODAS as compras (vendas) dele
+  /* A UF fica gravada na venda no momento do cadastro. Quando o reconhecimento da
+   * faculdade melhora, as vendas antigas continuam com o "N/I" de antes — este
+   * reprocessamento aplica o critério novo só nelas, sem tocar nas que já têm estado. */
+  /* Uma proposta por nome de faculdade escrito, com o total de vendas que ela
+   * corrigiria. O usuário confere e escolhe — reconhecimento automático erra
+   * (sigla de rede com campus em outro estado) e estado errado é pior que N/I. */
+  const propostasUF = useMemo(() => {
+    const map = new Map();
+    for (const v of vendas) {
+      if ((v.uf || "N/I") !== "N/I") continue;
+      const escrito = (v.faculdade || "").trim();
+      if (!escrito) continue;
+      const f = acharFaculdade(escrito);
+      if (!f || f.uf === "N/I") continue;
+      if (!map.has(escrito)) {
+        map.set(escrito, { escrito, oficial: f.nome, uf: f.uf, confianca: f.confianca || "alta", ids: [] });
+      }
+      map.get(escrito).ids.push(v.id);
+    }
+    return [...map.values()].sort((a, b) => b.ids.length - a.ids.length);
+  }, [vendas]);
+  const aplicarUFs = async (escolhidas) => {
+    const alvo = new Map();   // id da venda -> uf
+    escolhidas.forEach((p) => p.ids.forEach((id) => alvo.set(id, p.uf)));
+    if (!alvo.size) return;
+    const antes = vendas;
+    setVendas((vs) => vs.map((v) => (alvo.has(v.id) ? { ...v, uf: alvo.get(v.id) } : v)));
+    try {
+      for (const v of antes) if (alvo.has(v.id)) await db.atualizarVenda(v.id, { ...v, uf: alvo.get(v.id) });
+      aviso(`Estado preenchido em ${alvo.size} venda(s) · ${escolhidas.length} faculdade(s)`);
+    } catch (e) { aviso("Erro: " + e.message); setVendas(antes); }
+  };
   /* Clicar no nome do cliente em Vendas abre a ficha dele na aba Clientes.
    * A chave e a mesma do agrupamento: e-mail em minusculas ou, sem e-mail, o nome. */
   const abrirCliente = (venda) => {
@@ -1010,7 +1147,10 @@ export default function App() {
 
       {/* CONTEÚDO */}
       <main className="main">
-        {tab === "overview" && <Overview vendas={vendas} financeiro={financeiro} trabalhos={trabalhos} dark={dark} />}
+        {tab === "overview" && (
+          <Overview vendas={vendas} financeiro={financeiro} trabalhos={trabalhos} dark={dark}
+            propostasUF={propostasUF} onAplicarUFs={aplicarUFs} />
+        )}
         {tab === "vendas" && (
           <Vendas vendas={vendas} salvar={salvarVendas} aviso={aviso} temasExist={temas} onAbrirPublicacao={abrirPublicacao} onAbrirCliente={abrirCliente} />
         )}
@@ -1085,13 +1225,20 @@ function calcMetricas(vendas) {
   });
   const porRegiao = Object.values(regMap).sort((a, b) => b.qtd - a.qtd);
 
+  // agrupa pelo nome oficial: "Anhembi Morumbi Mooca" e "Universidade Anhembi Morumbi
+  // - Campus Mooca" são a mesma faculdade e não podem ocupar duas linhas do relatório
   const facMap = {};
   vendas.forEach((v) => {
-    const f = (v.faculdade || "").trim() || "—";
-    if (!facMap[f]) facMap[f] = { faculdade: f, qtd: 0, total: 0 };
+    const escrito = (v.faculdade || "").trim();
+    if (!escrito) return;
+    const f = nomeCanonicoFac(escrito);
+    if (!facMap[f]) facMap[f] = { faculdade: f, qtd: 0, total: 0, variacoes: new Set() };
     facMap[f].qtd += 1; facMap[f].total += v.valor;
+    if (escrito !== f) facMap[f].variacoes.add(escrito);
   });
-  const porFaculdade = Object.values(facMap).filter((x) => x.faculdade !== "—").sort((a, b) => b.qtd - a.qtd);
+  const porFaculdade = Object.values(facMap)
+    .map((x) => ({ ...x, variacoes: [...x.variacoes] }))
+    .sort((a, b) => b.qtd - a.qtd);
 
   const mesArr = MESES.map((nome, i) => ({ mes: nome, mesAbrev: nome.slice(0, 3), idx: i, total: 0, qtd: 0 }));
   vendas.forEach((v) => {
@@ -1133,7 +1280,7 @@ function construirTemas(vendas) {
 /* ============================================================
    VISÃO GERAL
    ============================================================ */
-function Overview({ vendas, financeiro, trabalhos, dark }) {
+function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onAplicarUFs }) {
   // série única dos gráficos: azul da marca calibrado por superfície (Recharts não lê var() no fill)
   const corSerie = dark ? "#5AA7CC" : "#2C7DA0";
   const anos = useMemo(() => {
@@ -1146,6 +1293,7 @@ function Overview({ vendas, financeiro, trabalhos, dark }) {
   const [ano, setAno] = useState("");
   const [mes, setMes] = useState("");
   const [todasFac, setTodasFac] = useState(false); // lista de faculdades: top 10 ou completa
+  const [revisarUF, setRevisarUF] = useState(false);
   const anoSel = ano || (anos[0] != null ? String(anos[0]) : "todos");
 
   const vendasFiltradas = useMemo(() => vendas.filter((v) => {
@@ -1267,13 +1415,27 @@ function Overview({ vendas, financeiro, trabalhos, dark }) {
           <h3>Faculdades que mais compram</h3>
           <span className="hint">{todasFac ? `todas · ${num(m.porFaculdade.length)}` : `top 10 de ${num(m.porFaculdade.length)}`}</span>
         </div>
+        {propostasUF.length > 0 && (
+          <p className="aviso-uf">
+            {num(propostasUF.reduce((s, p) => s + p.ids.length, 0))} venda(s) sem estado
+            têm faculdade reconhecível.
+            <button className="mini" onClick={() => setRevisarUF(true)}>revisar e preencher</button>
+          </p>
+        )}
         <table className="tab">
           <thead><tr><th scope="col">#</th><th scope="col">Faculdade</th><th scope="col" className="r">Compras</th><th scope="col" className="r">Faturamento</th></tr></thead>
           <tbody>
             {(todasFac ? m.porFaculdade : m.porFaculdade.slice(0, 10)).map((f, i) => (
               <tr key={i}>
                 <td className="muted">{i + 1}</td>
-                <td>{f.faculdade}</td>
+                <td>
+                  {f.faculdade}
+                  {f.variacoes && f.variacoes.length > 0 && (
+                    <span className="fac-var" title={"Escrita também como: " + f.variacoes.join(" · ")}>
+                      +{f.variacoes.length} {f.variacoes.length === 1 ? "variação" : "variações"} do nome
+                    </span>
+                  )}
+                </td>
                 <td className="r"><b>{f.qtd}</b></td>
                 <td className="r">{brl(f.total)}</td>
               </tr>
@@ -1288,7 +1450,54 @@ function Overview({ vendas, financeiro, trabalhos, dark }) {
           </div>
         )}
       </div>
+
+      {revisarUF && (
+        <RevisarUFs propostas={propostasUF} onAplicar={onAplicarUFs} onFechar={() => setRevisarUF(false)} />
+      )}
     </>
+  );
+}
+
+/* Revisão do preenchimento de estado. Cada linha é um nome escrito nas vendas e a
+ * instituição que o sistema reconheceu. As de confiança baixa (só a sigla bateu)
+ * entram desmarcadas: é onde mora o erro caro — rede com campus em outro estado. */
+function RevisarUFs({ propostas, onAplicar, onFechar }) {
+  const [sel, setSel] = useState(() => new Set(propostas.filter((p) => p.confianca === "alta").map((p) => p.escrito)));
+  const alterna = (k) => setSel((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const escolhidas = propostas.filter((p) => sel.has(p.escrito));
+  const vendasSel = escolhidas.reduce((s, p) => s + p.ids.length, 0);
+  const duvidosas = propostas.filter((p) => p.confianca !== "alta").length;
+  return (
+    <Modal titulo="Preencher o estado das vendas" onClose={onFechar} wide>
+      <p className="form-nota">
+        O estado sai do nome da faculdade escrito na venda. Confira cada linha: <b>marcada</b> significa
+        que o sistema tem certeza; as <b>desmarcadas</b> bateram só por uma sigla e podem ser de outra
+        instituição da mesma rede.
+        {duvidosas > 0 && <> Há <b>{duvidosas}</b> assim.</>}
+      </p>
+      <div className="rev-uf">
+        {propostas.map((p) => (
+          <label key={p.escrito} className={"rev-linha" + (p.confianca !== "alta" ? " duvida" : "")}>
+            <input type="checkbox" checked={sel.has(p.escrito)} onChange={() => alterna(p.escrito)} />
+            <span className="rev-de">
+              {p.escrito}
+              <em>{p.ids.length} venda{p.ids.length > 1 ? "s" : ""}</em>
+            </span>
+            <span className="rev-para">
+              <b>{p.uf}</b> {p.oficial}
+              {p.confianca !== "alta" && <em className="rev-alerta">confira: só a sigla bateu</em>}
+            </span>
+          </label>
+        ))}
+      </div>
+      <div className="form-acoes">
+        <button className="btn-ghost" onClick={onFechar}>Cancelar</button>
+        <button className="btn" disabled={!escolhidas.length}
+          onClick={() => { onAplicar(escolhidas); onFechar(); }}>
+          Preencher {num(vendasSel)} venda{vendasSel === 1 ? "" : "s"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -4217,6 +4426,25 @@ select.inp{ cursor:pointer; }
 .cli-info > div{ display:flex; flex-direction:column; gap:3px; font-size:13px; }
 .ci-lab{ font-size:11px; color:var(--muted2); text-transform:uppercase; font-weight:600; letter-spacing:.05em; }
 /* nome do cliente na lista de vendas: abre a ficha, sem virar um azulão na tabela */
+/* faculdades: aviso de estado faltando e as variações de escrita agrupadas */
+.aviso-uf{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; color:var(--warn);
+  background:var(--warn-soft); border:1px solid var(--warn-border); border-radius:var(--r-md);
+  padding:8px 12px; margin:-2px 0 12px; }
+.aviso-uf .mini{ margin-left:auto; }
+.fac-var{ display:block; font-size:11px; color:var(--muted2); margin-top:2px; cursor:help; }
+/* revisão do preenchimento de estado */
+.rev-uf{ display:flex; flex-direction:column; max-height:52vh; overflow-y:auto; margin-bottom:4px; }
+.rev-linha{ display:grid; grid-template-columns:auto minmax(0,1fr) minmax(0,1fr); gap:12px; align-items:center;
+  padding:9px 4px; border-bottom:1px solid var(--divider); cursor:pointer; }
+.rev-linha:last-child{ border-bottom:none; }
+.rev-linha:hover{ background:var(--hover); }
+.rev-linha input{ accent-color:var(--brand); }
+.rev-de{ font-size:12px; color:var(--ink); line-height:1.35; }
+.rev-de em{ display:block; font-style:normal; font-size:11px; color:var(--muted2); margin-top:1px; }
+.rev-para{ font-size:12px; color:var(--muted); line-height:1.35; }
+.rev-para b{ display:inline-block; min-width:26px; color:var(--brand); font-weight:700; }
+.rev-linha.duvida{ background:var(--warn-soft); }
+.rev-alerta{ display:block; font-style:normal; font-size:11px; color:var(--warn); font-weight:600; margin-top:1px; }
 .link-cliente{ background:transparent; border:none; padding:0; font:inherit; font-weight:600; color:var(--ink);
   text-align:left; cursor:pointer; }
 .link-cliente:hover{ color:var(--brand); text-decoration:underline; text-underline-offset:3px; }
