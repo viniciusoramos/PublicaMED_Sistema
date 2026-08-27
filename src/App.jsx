@@ -1346,6 +1346,7 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
   const [ano, setAno] = useState("");
   const [mes, setMes] = useState("");
   const [todasFac, setTodasFac] = useState(false); // lista de faculdades: top 10 ou completa
+  const [facAberta, setFacAberta] = useState(null); // faculdade com as variações do nome abertas
   const [revisarUF, setRevisarUF] = useState(false);
   const anoSel = ano || (anos[0] != null ? String(anos[0]) : "todos");
 
@@ -1496,9 +1497,20 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
                 <td>
                   {f.faculdade}
                   {f.variacoes && f.variacoes.length > 0 && (
-                    <span className="fac-var" title={"Escrita também como: " + f.variacoes.join(" · ")}>
-                      +{f.variacoes.length} {f.variacoes.length === 1 ? "variação" : "variações"} do nome
-                    </span>
+                    <>
+                      <button className={"fac-var" + (facAberta === f.faculdade ? " aberta" : "")}
+                        aria-expanded={facAberta === f.faculdade}
+                        onClick={() => setFacAberta(facAberta === f.faculdade ? null : f.faculdade)}>
+                        +{f.variacoes.length} {f.variacoes.length === 1 ? "variação" : "variações"} do nome
+                      </button>
+                      {facAberta === f.faculdade && (
+                        <ul className="fac-var-lista">
+                          {/* o nome oficial entra junto: é uma das formas que aparecem nas vendas */}
+                          <li>{f.faculdade}</li>
+                          {f.variacoes.map((v) => <li key={v}>{v}</li>)}
+                        </ul>
+                      )}
+                    </>
                   )}
                 </td>
                 <td className="r"><b>{f.qtd}</b></td>
@@ -4581,7 +4593,14 @@ select.inp{ cursor:pointer; }
 .aviso-uf .mini{ margin-left:auto; }
 /* sem nada pronto para aplicar, o aviso é só um lembrete — não precisa gritar */
 .aviso-uf.so-conferir{ color:var(--muted); background:var(--soft); border-color:var(--border); }
-.fac-var{ display:block; font-size:11px; color:var(--muted2); margin-top:2px; cursor:help; }
+.fac-var{ display:block; font-size:11px; color:var(--muted2); margin-top:2px; cursor:pointer;
+  background:transparent; border:none; padding:0; font-family:inherit; text-align:left; }
+.fac-var:hover, .fac-var.aberta{ color:var(--brand); text-decoration:underline; text-underline-offset:2px; }
+.fac-var:focus-visible{ box-shadow:var(--ring); outline:none; border-radius:3px; }
+/* as formas como o nome aparece nas vendas — mostra que o agrupamento está certo */
+.fac-var-lista{ list-style:none; margin:5px 0 2px; padding-left:11px; display:flex; flex-direction:column; gap:3px; }
+.fac-var-lista li{ font-size:11px; color:var(--muted); line-height:1.35; position:relative; }
+.fac-var-lista li::before{ content:"·"; position:absolute; left:-11px; color:var(--muted2); }
 /* revisão do preenchimento de estado */
 .rev-uf{ display:flex; flex-direction:column; max-height:52vh; overflow-y:auto; margin-bottom:4px; }
 .rev-linha{ display:grid; grid-template-columns:auto minmax(0,1fr) minmax(0,1fr); gap:12px; align-items:center;
