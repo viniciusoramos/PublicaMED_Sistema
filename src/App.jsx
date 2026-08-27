@@ -124,6 +124,27 @@ const fmtCPF = (v) => {
   if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
 };
+/* Confere o CPF pelos dígitos verificadores (mesma conta da Receita). Um dígito
+ * trocado no meio passa despercebido — o número "parece" certo e só aparece na
+ * hora do certificado ou da nota. */
+const cpfValido = (v) => {
+  const s = String(v ?? "").replace(/\D/g, "");
+  if (s.length !== 11 || /^(\d)\1{10}$/.test(s)) return false;
+  let d1 = 0;
+  for (let i = 0; i < 9; i++) d1 += Number(s[i]) * (10 - i);
+  d1 = (d1 * 10) % 11; if (d1 === 10) d1 = 0;
+  let d2 = 0;
+  for (let i = 0; i < 10; i++) d2 += Number(s[i]) * (11 - i);
+  d2 = (d2 * 10) % 11; if (d2 === 10) d2 = 0;
+  return d1 === Number(s[9]) && d2 === Number(s[10]);
+};
+// aviso para mostrar abaixo do campo — null quando está vazio ou correto
+const avisoCPF = (v) => {
+  const s = String(v ?? "").replace(/\D/g, "");
+  if (!s) return null;
+  if (s.length < 11) return `faltam ${11 - s.length} dígito${11 - s.length > 1 ? "s" : ""}`;
+  return cpfValido(s) ? null : "CPF inválido — confira os dígitos";
+};
 // ORCID: alguns cadastros trazem a URL inteira — ao copiar, sai só o identificador
 const soOrcid = (v) => String(v ?? "").trim().replace(/^https?:\/\/(www\.)?orcid\.org\//i, "");
 // Campo de dinheiro que também aceita conta, pra não ter que somar de cabeça:
@@ -2014,7 +2035,11 @@ function FormCliente({ cliente, contato = {}, onSalvar, onCancelar }) {
             {["N/I", ...Object.keys(UF_NOME).filter((u) => u !== "N/I")].map((u) => <option key={u} value={u}>{u === "N/I" ? "Não identificado" : `${u} · ${UF_NOME[u]}`}</option>)}
           </select>
         </Campo>
-        <Campo label="CPF"><input className="inp" inputMode="numeric" placeholder="000.000.000-00" value={f.cpf} onChange={(e) => set("cpf", fmtCPF(e.target.value))} /></Campo>
+        <Campo label="CPF">
+          <input className={"inp" + (avisoCPF(f.cpf) ? " erro" : "")} inputMode="numeric" placeholder="000.000.000-00"
+            value={f.cpf} onChange={(e) => set("cpf", fmtCPF(e.target.value))} />
+          {avisoCPF(f.cpf) && <span className="campo-erro">{avisoCPF(f.cpf)}</span>}
+        </Campo>
         <Campo label="Telefone / WhatsApp"><input className="inp" placeholder="(31) 99999-9999" value={f.telefone} onChange={(e) => set("telefone", e.target.value)} /></Campo>
       </div>
       <p className="nota">
@@ -3274,7 +3299,11 @@ function FormPart({ tema, pessoas = [], onAdd }) {
         <input className="inp" placeholder="Faculdade" list="fac-datalist" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
         <input className="inp" placeholder="Email" value={p.email} onChange={(e) => set("email", e.target.value)} />
         <input className="inp" placeholder="Telefone / WhatsApp" value={p.telefone} onChange={(e) => set("telefone", e.target.value)} />
-        <input className="inp" inputMode="numeric" placeholder="CPF" value={fmtCPF(p.cpf)} onChange={(e) => set("cpf", e.target.value)} />
+        <span className="fp-campo">
+          <input className={"inp" + (avisoCPF(p.cpf) ? " erro" : "")} inputMode="numeric" placeholder="CPF"
+            value={fmtCPF(p.cpf)} onChange={(e) => set("cpf", e.target.value)} />
+          {avisoCPF(p.cpf) && <span className="campo-erro">{avisoCPF(p.cpf)}</span>}
+        </span>
         <input className="inp" placeholder="ORCID (opcional)" value={p.orcid} onChange={(e) => set("orcid", e.target.value)} />
         <input className="inp" inputMode="decimal" placeholder="Valor pago (R$)" value={p.valor} onChange={(e) => set("valor", e.target.value)} />
         <input className="inp" type="date" aria-label="Data da venda" value={p.data} onChange={(e) => set("data", e.target.value)} />
@@ -3322,7 +3351,11 @@ function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
         <Campo label="Telefone / WhatsApp"><input className="inp" placeholder="(31) 99999-9999" value={f.telefone} onChange={(e) => set("telefone", e.target.value)} /></Campo>
       </div>
       <div className="form-grid">
-        <Campo label="CPF"><input className="inp" inputMode="numeric" placeholder="000.000.000-00" value={fmtCPF(f.cpf)} onChange={(e) => set("cpf", e.target.value)} /></Campo>
+        <Campo label="CPF">
+          <input className={"inp" + (avisoCPF(f.cpf) ? " erro" : "")} inputMode="numeric" placeholder="000.000.000-00"
+            value={fmtCPF(f.cpf)} onChange={(e) => set("cpf", e.target.value)} />
+          {avisoCPF(f.cpf) && <span className="campo-erro">{avisoCPF(f.cpf)}</span>}
+        </Campo>
       </div>
       <div className="fp-opts">
         <label className="check sm"><input type="checkbox" checked={f.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> autor principal</label>
@@ -4432,6 +4465,12 @@ select.inp{ cursor:pointer; }
 .campo span{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.05em; }
 /* resultado da conta digitada no campo (ex.: "+54" -> = R$ 226,10) */
 .campo .campo-calc{ font-size:11px; font-weight:500; color:var(--brand); text-transform:none; letter-spacing:0; margin-top:2px; }
+/* aviso de dado que não fecha (CPF com dígito trocado) — alerta, não impede de salvar */
+.campo-erro{ display:block; font-size:11px; font-weight:500; color:var(--danger); text-transform:none;
+  letter-spacing:0; margin-top:3px; }
+.inp.erro{ border-color:var(--danger-border); }
+.inp.erro:focus{ border-color:var(--danger); box-shadow:0 0 0 3px var(--danger-soft); }
+.fp-campo{ display:flex; flex-direction:column; }
 .campo .campo-calc b{ font-weight:700; }
 .dica-conta{ margin:-2px 0 14px; line-height:1.5; }
 /* "+" para acrescentar custo direto na tabela do fechamento */
