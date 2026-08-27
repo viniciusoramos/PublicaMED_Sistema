@@ -1627,8 +1627,10 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
         if (b && !(`${v.nome} ${v.email} ${v.faculdade} ${v.tema}`.toLowerCase().includes(b))) return false;
         if (fTipo && v.tipo !== fTipo) return false;
         if (fUF && v.uf !== fUF) return false;
-        if (fDe && (!v.data || v.data < fDe)) return false;
-        if (fAte && (!v.data || v.data > fAte)) return false;
+        // uma ponta só = aquele dia; "em diante" seria um recorte que ninguém pediu
+        const de = fDe || fAte, ate = fAte || fDe;
+        if (de && (!v.data || v.data < de)) return false;
+        if (ate && (!v.data || v.data > ate)) return false;
         if (fMes !== "" && mesDeIso(v.data) !== parseInt(fMes, 10)) return false;
         return true;
       })
@@ -1658,9 +1660,8 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
     : atalhoAtivo === "ontem" ? `ontem, ${fmtData(isoSomaDias(hojeV, -1))}`
     : atalhoAtivo === "7d" ? "últimos 7 dias"
     : atalhoAtivo === "mes" ? `${MESES[mesDeIso(hojeV)].toLowerCase()} até hoje`
-    : fDe && fAte ? (fDe === fAte ? fmtData(fDe) : `${fmtData(fDe)} a ${fmtData(fAte)}`)
-    : fDe ? `de ${fmtData(fDe)} em diante`
-    : fAte ? `até ${fmtData(fAte)}`
+    : (fDe || fAte)
+      ? ((fDe || fAte) === (fAte || fDe) ? fmtData(fDe || fAte) : `${fmtData(fDe)} a ${fmtData(fAte)}`)
     : fMes !== "" ? MESES[Number(fMes)] : "";
 
   const remover = (id) => {
