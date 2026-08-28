@@ -324,9 +324,18 @@ const GENTILICO_UF = {
   amazonense: "AM", capixaba: "ES", potiguar: "RN", paraibano: "PB", maranhense: "MA",
   piauiense: "PI", sergipano: "SE", alagoano: "AL", matogrossense: "MT", rondoniense: "RO",
 };
+/* Nome do estado escrito por extenso ("Santa Casa de São Paulo"). Os mais longos
+ * vêm primeiro: "Paraná" contém "Pará", e "Rio Grande do Norte" contém "Rio". */
+const UF_POR_EXTENSO = Object.entries(UF_NOME)
+  .filter(([sig]) => sig !== "N/I")
+  .map(([sig, nome]) => [sig, semAcentoFac(nome)])
+  .sort((a, b) => b[1].length - a[1].length);
 function ufNoTexto(nome) {
   const t = semAcentoFac(nome);
   for (const [g, uf] of Object.entries(GENTILICO_UF)) if (t.includes(g)) return uf;
+  for (const [sig, ext] of UF_POR_EXTENSO) {
+    if (new RegExp(`(^|[^a-z])${ext}([^a-z]|$)`).test(t)) return sig;
+  }
   const m = t.match(/[\s\-\/(]([a-z]{2})[\s\-\/)]*$/);          // "... - sc", "(sc)"
   if (m) {
     const sig = m[1].toUpperCase();
@@ -391,7 +400,9 @@ function acharFaculdade(nome) {
  * estado errado em venda nova. */
 function ufDaFaculdade(nome) {
   const f = acharFaculdade(nome);
-  return f && f.uf !== "N/I" && f.confianca !== "baixa" ? f.uf : "N/I";
+  if (f && f.uf !== "N/I" && f.confianca !== "baixa") return f.uf;
+  // fora da base, mas o próprio nome diz onde fica ("Santa Casa de São Paulo")
+  return ufNoTexto(nome) || "N/I";
 }
 // nome oficial da instituição, para os relatórios não separarem variações do mesmo lugar
 function nomeCanonicoFac(nome) {
