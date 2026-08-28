@@ -398,6 +398,24 @@ function nomeCanonicoFac(nome) {
   const f = acharFaculdade(nome);
   return f ? f.nome : String(nome ?? "").trim();
 }
+/* Aluno de fora do Brasil não tem UF e sumia de todo relatório geográfico. O país
+ * costuma vir escrito no próprio nome ("... (Paraguai)"); quando não vem, entra
+ * na lista abaixo. */
+const PAISES_NO_NOME = {
+  paraguai: "Paraguai", mexico: "México", argentina: "Argentina", equador: "Equador",
+  colombia: "Colômbia", uruguai: "Uruguai", bolivia: "Bolívia", chile: "Chile",
+  peru: "Peru", cuba: "Cuba", portugal: "Portugal", espanha: "Espanha", italia: "Itália",
+};
+const FAC_PAIS = {
+  "Universidad Internacional Tres Fronteras - UNINTER": "Paraguai", // Ciudad del Este
+};
+function paisDaFaculdade(nome) {
+  const n = String(nome ?? "").trim();
+  if (!n) return null;
+  const t = semAcentoFac(n);
+  for (const [chave, pais] of Object.entries(PAISES_NO_NOME)) if (t.includes(chave)) return pais;
+  return FAC_PAIS[nomeCanonicoFac(n)] || FAC_PAIS[n] || null;
+}
 
 /* ============================================================
    COMPONENTES BASE
@@ -1301,6 +1319,19 @@ function calcMetricas(vendas) {
     .map((x) => ({ ...x, variacoes: [...x.variacoes] }))
     .sort((a, b) => b.qtd - a.qtd);
 
+  // vendas de fora do Brasil, por país — elas não têm UF e ficavam invisíveis
+  const paisMap = {};
+  vendas.forEach((v) => {
+    const p = paisDaFaculdade(v.faculdade);
+    if (!p) return;
+    if (!paisMap[p]) paisMap[p] = { pais: p, qtd: 0, total: 0, faculdades: new Set() };
+    paisMap[p].qtd += 1; paisMap[p].total += v.valor;
+    paisMap[p].faculdades.add(nomeCanonicoFac(v.faculdade));
+  });
+  const porPais = Object.values(paisMap)
+    .map((x) => ({ ...x, faculdades: [...x.faculdades] }))
+    .sort((a, b) => b.qtd - a.qtd);
+
   const mesArr = MESES.map((nome, i) => ({ mes: nome, mesAbrev: nome.slice(0, 3), idx: i, total: 0, qtd: 0 }));
   vendas.forEach((v) => {
     const mi = mesDeIso(v.data);
@@ -1310,7 +1341,7 @@ function calcMetricas(vendas) {
 
   const ticket = nVendas ? totalFat / nVendas : 0;
 
-  return { totalFat, nVendas, clientes, porTipo, porUF, porRegiao, porFaculdade, porMes, ticket };
+  return { totalFat, nVendas, clientes, porTipo, porUF, porRegiao, porFaculdade, porPais, porMes, ticket };
 }
 
 /* construir publicações a partir das vendas (reconstrói o controle de vagas) */
@@ -1356,6 +1387,7 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
   const [todasFac, setTodasFac] = useState(false); // lista de faculdades: top 10 ou completa
   const [facAberta, setFacAberta] = useState(null); // faculdade com as variações do nome abertas
   const [todosUF, setTodosUF] = useState(false);    // estados: top 8 ou lista completa
+  const [verPaises, setVerPaises] = useState(false); // troca o gráfico para as vendas do exterior
   const [revisarUF, setRevisarUF] = useState(false);
   const anoSel = ano || (anos[0] != null ? String(anos[0]) : "todos");
 
@@ -1403,6 +1435,10 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
     .map((u) => ({ label: `${u.uf} · ${UF_NOME[u.uf]}`, value: u.qtd, cor: "var(--brand)" }));
   const ufsForaDoTop = ufsComVenda.slice(8);
   const vendasForaDoTop = ufsForaDoTop.reduce((s, u) => s + u.qtd, 0);
+  // mesmo gráfico, outro recorte: quem comprou de fora do Brasil
+  const paisData = m.porPais.map((p) => ({ label: p.pais, value: p.qtd, cor: "#6D5DD3" }));
+  const maxPais = Math.max(...m.porPais.map((p) => p.qtd), 1);
+  const vendasExterior = m.porPais.reduce((s, p) => s + p.qtd, 0);
 
   const certEmitido = trabalhos.filter((t) => t.status === "Certificado emitido").length;
   const pendentes = trabalhos.filter((t) => t.status !== "Certificado emitido").length;
@@ -1459,19 +1495,37 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
       <div className="grid-2">
         <div className="card">
           <div className="card-head">
-            <h3>Estados que mais compram</h3>
-            <span className="hint">{todosUF ? `todos · ${num(ufsComVenda.length)}` : `top 8 de ${num(ufsComVenda.length)}`}</span>
+            <h3>{verPaises ? "Vendas fora do Brasil" : "Estados que mais compram"}</h3>
+            <span className="hint">
+              {verPaises ? `${num(m.porPais.length)} paíse(s) · ${num(vendasExterior)} compras`
+                : todosUF ? `todos · ${num(ufsComVenda.length)}` : `top 8 de ${num(ufsComVenda.length)}`}
+            </span>
           </div>
-          <BarrasH data={ufData} max={maxUF} fmt={(v) => `${v}`} />
-          {ufsForaDoTop.length > 0 && (
-            <div className="mais mais-uf">
+          {verPaises ? (
+            m.porPais.length
+              ? <BarrasH data={paisData} max={maxPais} fmt={(v) => `${v}`} />
+              : <p className="vazio">Nenhuma venda de fora do Brasil no período.</p>
+          ) : (
+            <BarrasH data={ufData} max={maxUF} fmt={(v) => `${v}`} />
+          )}
+          <div className="mais mais-uf">
+            {!verPaises && ufsForaDoTop.length > 0 && (
               <button className="btn-ghost" onClick={() => setTodosUF((v) => !v)}>
                 {todosUF ? "Mostrar só os 8 primeiros"
                   : `Ver todos os ${num(ufsComVenda.length)} estados (+${num(vendasForaDoTop)} compras)`}
               </button>
-            </div>
+            )}
+            {(verPaises || vendasExterior > 0) && (
+              <button className="btn-ghost" onClick={() => setVerPaises((v) => !v)}>
+                {verPaises ? "Voltar aos estados" : `Vendas fora do Brasil (${num(vendasExterior)})`}
+              </button>
+            )}
+          </div>
+          {verPaises ? (
+            <p className="nota">País identificado pela faculdade do cliente. Essas vendas não entram no mapa por estado, porque não têm UF.</p>
+          ) : (
+            <p className="nota" title="As não identificadas são instituições do exterior ou sem faculdade informada.">Estado identificado pela faculdade do cliente · {num(m.nVendas - (m.porUF.find((u) => u.uf === "N/I")?.qtd || 0))} de {num(m.nVendas)} vendas com estado definido.</p>
           )}
-          <p className="nota" title="As não identificadas são instituições do exterior ou sem faculdade informada.">Estado identificado pela faculdade do cliente · {num(m.nVendas - (m.porUF.find((u) => u.uf === "N/I")?.qtd || 0))} de {num(m.nVendas)} vendas com estado definido.</p>
         </div>
 
         <div className="card">
@@ -4626,7 +4680,7 @@ select.inp{ cursor:pointer; }
 .fac-var-lista{ list-style:none; margin:5px 0 2px; padding-left:11px; display:flex; flex-direction:column; gap:3px; }
 .fac-var-lista li{ font-size:11px; color:var(--muted); line-height:1.35; position:relative; }
 .fac-var-lista li::before{ content:"·"; position:absolute; left:-11px; color:var(--muted2); }
-.mais-uf{ border-top:none; padding:10px 0 0; }
+.mais-uf{ border-top:none; padding:10px 0 0; display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
 /* revisão do preenchimento de estado */
 .rev-uf{ display:flex; flex-direction:column; max-height:52vh; overflow-y:auto; margin-bottom:4px; }
 .rev-linha{ display:grid; grid-template-columns:auto minmax(0,1fr) minmax(0,1fr); gap:12px; align-items:center;
