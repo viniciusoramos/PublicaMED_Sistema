@@ -256,6 +256,7 @@ const FAC_EXTRAS = [
   ["UNIFAA - Centro Universitário de Valença", "RJ"],
   ["UFNT - Universidade Federal do Norte do Tocantins", "TO"],
   ["FUNCESI - Fundação Comunitária de Ensino Superior de Itabira", "MG"],
+  ["FAMERP - Faculdade de Medicina de São José do Rio Preto", "SP"],
 ];
 const FAC_BASE = (() => {
   const ufMap = {};
@@ -319,9 +320,11 @@ const FAC_POR_TOKEN = (() => {
  * sobrepor o estado que o usuário escreveu. */
 const GENTILICO_UF = {
   catarinense: "SC", gaucho: "RS", gaucha: "RS", mineiro: "MG", mineira: "MG",
+  minas: "MG", bahiana: "BA", bahiano: "BA",
   paranaense: "PR", fluminense: "RJ", carioca: "RJ", baiano: "BA", baiana: "BA",
   cearense: "CE", pernambucano: "PE", pernambucana: "PE", goiano: "GO", goiana: "GO",
   amazonense: "AM", capixaba: "ES", potiguar: "RN", paraibano: "PB", maranhense: "MA",
+  paulista: "SP", paulistano: "SP", paraense: "PA", brasiliense: "DF", tocantinense: "TO",
   piauiense: "PI", sergipano: "SE", alagoano: "AL", matogrossense: "MT", rondoniense: "RO",
 };
 /* Nome do estado escrito por extenso ("Santa Casa de São Paulo"). Os mais longos
@@ -336,13 +339,30 @@ function ufNoTexto(nome) {
   for (const [sig, ext] of UF_POR_EXTENSO) {
     if (new RegExp(`(^|[^a-z])${ext}([^a-z]|$)`).test(t)) return sig;
   }
-  const m = t.match(/[\s\-\/(]([a-z]{2})[\s\-\/)]*$/);          // "... - sc", "(sc)"
-  if (m) {
-    const sig = m[1].toUpperCase();
-    if (UF_NOME[sig]) return sig;
+  // sigla solta em qualquer posição: "Santa Casa Sp - FCMSCSP", "... - SC"
+  for (const p of t.split(/[^a-z]+/)) {
+    const sig = p.toUpperCase();
+    if (p.length === 2 && UF_NOME[sig]) return sig;
   }
   return null;
 }
+/* Palavras que aparecem no nome de uma instituição sem identificar nenhuma:
+ * santo, patrono e — principalmente — geografia. Podem ser exclusivas da base
+ * por acaso, e aí decidiam sozinhas: "Pará" casava a UFPA com a UEPA, "Bahia"
+ * casava a Faculdade de Medicina da Bahia com a UFBA e "José" casava a
+ * Faculdade de Medicina de São José do Rio Preto com a UNIFENAS. O estado
+ * dessas palavras continua sendo lido por ufNoTexto(); o que elas não podem é
+ * escolher a instituição. */
+const FAC_PALAVRAS_FRACAS = new Set([
+  ...Object.values(UF_NOME).flatMap((n) => semAcentoFac(n).split(/[^a-z]+/)),
+  ...Object.keys(GENTILICO_UF),
+  "sao", "santa", "santo", "jose", "joao", "maria", "antonio", "francisco", "paulo",
+  "pedro", "luiz", "luis", "carlos", "nossa", "senhora", "dom", "padre", "doutor",
+  "professor", "presidente", "vale", "vales", "leste", "oeste", "central",
+  "nova", "novo", "grande", "alto", "baixo", "campos", "serra", "monte",
+  "porto", "vila", "cidade", "estado", "brasil", "brasileira", "brasileiro",
+].filter((w) => w.length >= 2));
+
 /* Acha a instituição da base correspondente ao nome digitado. Devolve null quando
  * não há certeza: um "N/I" honesto é melhor do que atribuir o estado errado. */
 function acharFaculdade(nome) {
@@ -364,19 +384,30 @@ function acharFaculdade(nome) {
   const combina = (f) => !ufTexto || f.uf === "N/I" || f.uf === ufTexto;
 
   // 1) palavra exclusiva de uma instituição resolve na hora (sigla ou nome próprio)
+  const ehExclusiva = (t) => {
+    if (FAC_PALAVRAS_FRACAS.has(t)) return false;           // "josé", "bahia" não são prova de nada
+    const lista = FAC_POR_TOKEN.get(t);
+    return !!lista && lista.length === 1;
+  };
   const exclusivas = new Map();
   toks.forEach((t) => {
-    const lista = FAC_POR_TOKEN.get(t);
-    if (lista && lista.length === 1) exclusivas.set(lista[0], (exclusivas.get(lista[0]) || 0) + 1);
+    if (!ehExclusiva(t)) return;
+    const i = FAC_POR_TOKEN.get(t)[0];
+    exclusivas.set(i, (exclusivas.get(i) || 0) + 1);
   });
   if (exclusivas.size) {
     const ordenadas = [...exclusivas.entries()].sort((a, b) =>
       (b[1] - a[1]) || ((comuns.get(b[0]) || 0) - (comuns.get(a[0]) || 0)));
-    const escolhida = ordenadas.map(([i]) => FAC_IX[i]).find(combina);
-    if (escolhida) {
-      // quanto do nome digitado sobrou de fora: pouco = certeza; muito = só a sigla bateu
+    const ix = ordenadas.map(([i]) => i).find((i) => combina(FAC_IX[i]));
+    if (ix !== undefined) {
+      const escolhida = FAC_IX[ix];
+      /* Uma sigla ou nome próprio que só existe nessa instituição já é prova
+       * suficiente: "Unifenas Alfenas" e "...Edson Antônio Velano (UNIFENAS)"
+       * são a UNIFENAS, mesmo com metade do texto sobrando de fora. Só palavra
+       * de duas letras precisa do reforço da sobreposição — aí pode ser acaso. */
+      const porSigla = [...toks].some((t) => t.length >= 3 && ehExclusiva(t) && FAC_POR_TOKEN.get(t)[0] === ix);
       const s = contencaoFac(toks, escolhida.toks);
-      return { ...escolhida, confianca: s >= 0.6 ? "alta" : "baixa" };
+      return { ...escolhida, confianca: porSigla || s >= 0.6 ? "alta" : "baixa" };
     }
     return null;                                            // sigla bateu, mas o estado no nome nega
   }
@@ -1022,11 +1053,19 @@ export default function App() {
       if ((v.uf || "N/I") !== "N/I") continue;
       const escrito = (v.faculdade || "").trim();
       if (!escrito) continue;
+      /* Duas fontes: a instituição da base (inclusive as de confiança baixa, que
+       * entram desmarcadas para conferência) e, na falta dela, o estado escrito
+       * no próprio nome ("Santa Casa de São Paulo"). */
       const f = acharFaculdade(escrito);
-      if (!f || f.uf === "N/I") continue;
-      if (!map.has(escrito)) {
-        map.set(escrito, { escrito, oficial: f.nome, uf: f.uf, confianca: f.confianca || "alta", ids: [] });
+      const ufEscrita = ufNoTexto(escrito);
+      let proposta = null;
+      if (f && f.uf !== "N/I") {
+        proposta = { oficial: f.nome, uf: f.uf, confianca: f.confianca || "alta" };
+      } else if (ufEscrita) {
+        proposta = { oficial: "estado escrito no próprio nome", uf: ufEscrita, confianca: "alta" };
       }
+      if (!proposta) continue;
+      if (!map.has(escrito)) map.set(escrito, { escrito, ...proposta, ids: [] });
       map.get(escrito).ids.push(v.id);
     }
     return [...map.values()].sort((a, b) => b.ids.length - a.ids.length);
