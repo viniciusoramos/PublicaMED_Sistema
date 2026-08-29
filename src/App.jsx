@@ -257,6 +257,7 @@ const FAC_EXTRAS = [
   ["UFNT - Universidade Federal do Norte do Tocantins", "TO"],
   ["FUNCESI - Fundação Comunitária de Ensino Superior de Itabira", "MG"],
   ["FAMERP - Faculdade de Medicina de São José do Rio Preto", "SP"],
+  ["Universidade São Francisco (USF) - Bragança Paulista", "SP"],
 ];
 const FAC_BASE = (() => {
   const ufMap = {};
