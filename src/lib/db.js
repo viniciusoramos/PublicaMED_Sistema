@@ -85,13 +85,32 @@ const pubDe = (p) => ({
   participantes: (p.participantes || []).map(partDe),
 });
 
+/* O PostgREST corta a resposta em 1000 linhas e não avisa: vem uma página e
+ * pronto. As vendas passaram desse número e as mais novas sumiram da tela — o
+ * valor pago não aparecia no participante, o faturamento da publicação ficava
+ * zerado e a venda não entrava em relatório nenhum. Aqui buscamos página por
+ * página até vir uma incompleta. A ordem por id é só para paginar sem repetir
+ * nem pular linha; quem exibe reordena como precisa. */
+const PAGINA = 1000;
+async function todasAsLinhas(tabela, select) {
+  const linhas = [];
+  for (let de = 0; de < 200 * PAGINA; de += PAGINA) {      // teto de segurança
+    const { data, error } = await supabase.from(tabela).select(select)
+      .order('id', { ascending: true }).range(de, de + PAGINA - 1);
+    if (error) throw error;
+    linhas.push(...data);
+    if (data.length < PAGINA) break;
+  }
+  return linhas;
+}
+
 /* ---------- carga inicial (tudo de uma vez) ---------- */
 export async function carregarTudo() {
   const [v, t, f, p, fac, it] = await Promise.all([
-    supabase.from('vendas').select('*, faculdades(nome)'),
-    supabase.from('trabalhos').select('*').order('criado_em', { ascending: false }),
+    todasAsLinhas('vendas', '*, faculdades(nome)').then((data) => ({ data, error: null })),
+    todasAsLinhas('trabalhos', '*').then((data) => ({ data, error: null })),
     supabase.from('financeiro').select('*'),
-    supabase.from('publicacoes').select('*, participantes(*)').order('criado_em', { ascending: false }),
+    todasAsLinhas('publicacoes', '*, participantes(*)').then((data) => ({ data, error: null })),
     supabase.from('faculdades').select('id, nome, uf').order('nome', { ascending: true }),
     supabase.from('financeiro_itens').select('*').order('criado_em', { ascending: true }),
   ]);
@@ -99,7 +118,9 @@ export async function carregarTudo() {
   if (erro) throw erro;
   return {
     vendas: v.data.map(vendaDe),
-    trabalhos: t.data.map((x) => ({ id: x.id, titulo: x.titulo, tipo: x.tipo, status: x.status, criadoEm: x.criado_em, localPublicacao: x.local_publicacao || '' })),
+    // a ordenação sai daqui porque a busca paginada vem por id, não por data
+    trabalhos: t.data.map((x) => ({ id: x.id, titulo: x.titulo, tipo: x.tipo, status: x.status, criadoEm: x.criado_em, localPublicacao: x.local_publicacao || '' }))
+      .sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || '')),
     // itens são opcionais: se a migração 19 ainda não rodou, a tela funciona sem detalhamento
     financeiroItens: it.error ? [] : (it.data || []).map(itemDe),
     financeiro: f.data.map(finDe).sort((a, b) => (a.ano - b.ano) || (a.ordem - b.ordem)),
