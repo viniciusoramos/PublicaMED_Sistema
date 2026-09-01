@@ -3899,8 +3899,14 @@ function GeradorMensagem({ lanc, grupos, dadosTema, onClose }) {
 
 function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false,
                         onAbrirPublicacao, onCriarPublicacao, onCriarNoDia, onTirarTema, onRestaurarTema }) {
-  const [planId, setPlanId] = useState(planejamentos[0]?.id || "");
-  const plano = planejamentos.find((p) => p.id === planId) || planejamentos[0] || null;
+  /* Abre no mes corrente quando ele esta planejado. O cronograma so chega do
+   * banco depois da primeira renderizacao, entao a escolha e derivada a cada
+   * render em vez de fixada no estado inicial - que rodaria com a lista vazia. */
+  const idDoMesAtual = hojeIso().slice(0, 7);                // 2026-09
+  const [planId, setPlanId] = useState("");
+  const plano = planejamentos.find((p) => p.id === planId)
+    || planejamentos.find((p) => p.id === idDoMesAtual)
+    || planejamentos[0] || null;
   const [diaSel, setDiaSel] = useState(plano?.lancamentos[0]?.dia ?? null);
   const [criando, setCriando] = useState(null); // { dados, taxa, dia, novo } — abre o form já preenchido
   const [msgVendas, setMsgVendas] = useState(false); // caixa "Gerar mensagem de vendas" do dia selecionado
@@ -4073,7 +4079,7 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
       {planejamentos.length > 1 && (
         <div className="periodo-bar">
           <span className="periodo-lab">Mês</span>
-          <select className="inp" aria-label="Mês do planejamento" value={planId}
+          <select className="inp" aria-label="Mês do planejamento" value={plano.id}
             onChange={(e) => { setPlanId(e.target.value); const p = planejamentos.find((x) => x.id === e.target.value); setDiaSel(p?.lancamentos[0]?.dia ?? null); }}>
             {planejamentos.map((p) => <option key={p.id} value={p.id}>{MESES[p.mes]} de {p.ano}</option>)}
           </select>
