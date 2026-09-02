@@ -303,6 +303,15 @@ export async function atualizarPublicacao(id, campos) {
   const { error } = await supabase.from('publicacoes').update(row).eq('id', id);
   if (error) throw error;
 }
+/* Fecha várias publicações de uma vez. É um update só, de propósito: fechar uma
+ * a uma deixaria metade do trabalho feito se falhasse no meio, e o usuário sem
+ * saber onde parou. */
+export async function fecharPublicacoes(ids, quando) {
+  if (!ids || !ids.length) return;
+  const { error } = await supabase.from('publicacoes')
+    .update({ fechada_em: quando }).in('id', ids);
+  if (error) throw error;
+}
 // sobe o PDF do certificado da publicação pro Storage e devolve a URL pública (com cache-bust)
 export async function uploadCertificado(pubId, file) {
   const path = `${pubId}.pdf`;

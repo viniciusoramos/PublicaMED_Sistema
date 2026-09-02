@@ -900,6 +900,21 @@ export default function App() {
     }
     catch (e) { aviso("Erro: " + e.message); setTemas(antes); }
   };
+  /* Fecha um lote de publicações (a tela usa para limpar as "Anteriores" de uma vez).
+   * Um update só: se falhar, nada foi gravado e a tela volta ao que era. */
+  const fecharPublicacoes = async (ids) => {
+    if (!ids.length) return;
+    const antes = temas;
+    const quando = new Date().toISOString();
+    setTemas((ts) => ts.map((t) => (ids.includes(t.id) ? { ...t, fechadaEm: quando } : t)));
+    try {
+      await db.fecharPublicacoes(ids, quando);
+      aviso(`${ids.length} publicação(ões) fechada(s)`);
+    } catch (e) {
+      setTemas(antes);
+      alert("Não consegui fechar as publicações.\n\n" + (e.message || e) + "\n\nNada foi alterado.");
+    }
+  };
   // renomeia a publicação e sincroniza o trabalho vinculado (mesmo título) e as vendas (mesmo tema)
   const editNomePublicacao = async (tema, novoNome) => {
     const nome = (novoNome || "").trim();
@@ -1307,6 +1322,7 @@ export default function App() {
           <Temas temas={temas} vendas={vendas} trabalhos={trabalhos} abertura={aberturaPub} onSetLocalTrabalho={setLocalTrabalho} onSetStatusTrabalho={setStatusTrabalho} alvoId={pubAlvo} onAlvoUsado={() => setPubAlvo(null)}
             onAdd={addPublicacao} onCriarNoDia={criarPublicacaoNoDia} onPorNoCalendario={porPublicacaoNoCalendario} onRem={remPublicacao} onEdit={editPublicacao} onEditNome={editNomePublicacao}
             onAddPart={addParticipante} onEditPart={editParticipante} onRemPart={remParticipante}
+            onFecharLote={fecharPublicacoes}
             onLancarTaxa={lancarTaxaPub} onCorrigirTaxa={corrigirTaxaPub} aviso={aviso} />
         )}
         {tab === "planejamento" && (
@@ -2919,7 +2935,7 @@ function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
 /* ============================================================
    TEMAS E VAGAS
    ============================================================ */
-function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, onPorNoCalendario, onSetLocalTrabalho, onSetStatusTrabalho, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onCorrigirTaxa, aviso }) {
+function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, onPorNoCalendario, onSetLocalTrabalho, onSetStatusTrabalho, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onFecharLote, onLancarTaxa, onCorrigirTaxa, aviso }) {
   const [busca, setBusca] = useState("");
   const [soComVaga, setSoComVaga] = useState(false);
   const [situacao, setSituacao] = useState("venda"); // a tela abre no trabalho do dia
@@ -2947,6 +2963,10 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
     temas.forEach((t) => { c[situacaoDe(t)] += 1; });
     return c;
   }, [temas, abertura, hoje]);
+  // fechou a última "Anterior" com a aba aberta: ela some da barra, então volta para o dia a dia
+  useEffect(() => {
+    if (situacao === "anterior" && contagens.anterior === 0) setSituacao("venda");
+  }, [situacao, contagens.anterior]);
 
   const buscando = busca.trim().length > 0;
   const lista = useMemo(() => {
@@ -3029,7 +3049,10 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
       </div>
 
       <div className="sit-bar" role="tablist" aria-label="Situação da publicação">
-        {SITUACOES.map(([id, lab]) => (
+        {/* "Anteriores" só aparece quando tem algo: no dia a dia fica zerada e vira ruído.
+            Mas não sai de vez — publicação cujo vínculo com o cronograma arrebenta cai lá,
+            e sem a aba ela ficaria escondida, sem constar em venda nem em fechadas. */}
+        {SITUACOES.filter(([id]) => id !== "anterior" || contagens.anterior > 0).map(([id, lab]) => (
           <button key={id} role="tab" aria-selected={!buscando && situacao === id}
             className={"sit-chip" + (!buscando && situacao === id ? " ativo" : "")}
             onClick={() => { setSituacao(id); setBusca(""); }}
@@ -3039,6 +3062,26 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
         ))}
         {buscando && <span className="sit-aviso">buscando nas {num(temas.length)} publicações</span>}
       </div>
+
+      {/* Publicação fora do cronograma não vende mais, mas fica em "Anteriores" com cara de
+          aberta. Fechar em lote resolve de uma vez — e é reversível, uma a uma, por "reabrir". */}
+      {!buscando && situacao === "anterior" && contagens.anterior > 0 && onFecharLote && (
+        <div className="lote-bar">
+          <span>Estas {num(contagens.anterior)} não estão no cronograma e continuam contando como abertas.</span>
+          <button className="btn-ghost" onClick={() => {
+            const alvo = temas.filter((t) => situacaoDe(t) === "anterior");
+            const comVaga = alvo.filter((t) => t.participantes.length < t.maxVagas).length;
+            if (!window.confirm(
+              `Fechar ${alvo.length} publicação(ões) de "Anteriores"?\n\n` +
+              `Elas passam para "Fechadas" e deixam de aparecer como abertas.\n` +
+              `${comVaga} têm vaga livre e essas vagas serão encerradas.\n\n` +
+              `Nada é apagado: participantes, vendas e certificados ficam como estão, ` +
+              `e dá para reabrir uma a uma depois.`
+            )) return;
+            onFecharLote(alvo.map((t) => t.id));
+          }}>Fechar todas as {num(contagens.anterior)}</button>
+        </div>
+      )}
 
       <div className="pub-split">
         <div className="pub-lista card no-pad">
@@ -4928,6 +4971,11 @@ select.inp{ cursor:pointer; }
 .sit-chip.ativo{ background:var(--brand); border-color:var(--brand); color:#fff; font-weight:600; }
 .sit-chip:focus-visible{ box-shadow:var(--ring); outline:none; }
 .sit-num{ font-size:11px; font-variant-numeric:tabular-nums; opacity:.7; }
+/* barra de ação em lote (aparece só em "Anteriores") */
+.lote-bar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  padding:10px 14px; margin:0 0 14px; font-size:13px; color:var(--muted);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); }
+.lote-bar .btn-ghost{ flex:none; white-space:nowrap; }
 .sit-chip.ativo .sit-num{ opacity:.85; }
 .sit-aviso{ font-size:11px; color:var(--muted2); font-style:italic; }
 /* data de abertura no item da lista */
