@@ -42,6 +42,17 @@ const UF_NOME = {
 };
 const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
+/* Imposto (Simples Nacional, ME): 6% do faturamento, a partir de setembro de 2026.
+ * O marco existe para o histórico não mentir — antes disso não houve imposto a
+ * pagar, e aplicar a alíquota para trás faria o lucro dos meses passados parar
+ * de bater com o que entrou no caixa. */
+const IMPOSTO_ALIQUOTA = 0.06;
+const IMPOSTO_DESDE = { ano: 2026, ordem: 8 };            // ordem 8 = setembro
+const temImposto = (ano, ordem) =>
+  ano > IMPOSTO_DESDE.ano || (ano === IMPOSTO_DESDE.ano && (ordem ?? 0) >= IMPOSTO_DESDE.ordem);
+const impostoDoMes = (ano, ordem, faturamento) =>
+  temImposto(ano, ordem) ? Math.max(0, faturamento || 0) * IMPOSTO_ALIQUOTA : 0;
+
 const TIPOS = ["Artigo","Capítulo","Apresentação","Combo","Artigo PSU","Outro"];
 // Paleta categórica validada (CVD ΔE 16.2 claro / 14.7 escuro, croma e contraste ≥3:1 nas duas superfícies)
 // mantendo as matizes que os usuários já associam a cada tipo
@@ -1460,7 +1471,21 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
   // mesma regra do Financeiro: faturamento = vendas pagas no período + ajuste manual do mês
   const ajusteTotal = finFiltrado.reduce((s, f) => s + (f.faturamentoAjuste || 0), 0);
   const fatTotal = m.totalFat + ajusteTotal;
-  const custoTotal = finFiltrado.reduce((s, f) => s + (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0), 0);
+  /* O imposto sai mês a mês, não do total do período: a alíquota só vale de
+   * setembro de 2026 em diante, e um recorte "ano todo" mistura meses de antes. */
+  const fatPorMes = useMemo(() => {
+    const mapa = new Map();
+    vendasFiltradas.forEach((v) => {
+      const a = anoDeIso(v.data), o = mesDeIso(v.data);
+      if (a == null || o == null) return;
+      mapa.set(`${a}-${o}`, (mapa.get(`${a}-${o}`) || 0) + (v.valor || 0));
+    });
+    return mapa;
+  }, [vendasFiltradas]);
+  const impostoTotal = finFiltrado.reduce((s, f) => s + impostoDoMes(
+    f.ano, f.ordem, (fatPorMes.get(`${f.ano}-${f.ordem}`) || 0) + (f.faturamentoAjuste || 0)), 0);
+  const custoTotal = finFiltrado.reduce((s, f) => s + (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0), 0)
+    + impostoTotal;
   const lucroTotal = fatTotal - custoTotal;
 
   const porMesChart = useMemo(() => {
@@ -1514,7 +1539,8 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
 
       <div className="kpis">
         <KPI label="Faturamento" valor={brl(fatTotal)} sub={`${num(m.nVendas)} vendas no período` + (ajusteTotal ? ` · inclui ajustes ${brl(ajusteTotal)}` : "")} cor="var(--brand)" />
-        <KPI label="Lucro líquido" valor={brl(lucroTotal)} sub={`Custos: ${brl(custoTotal)}` + (fatTotal ? ` · Margem ${Math.round((lucroTotal / fatTotal) * 100)}%` : "")} cor="var(--ok)" />
+        <KPI label="Lucro líquido" valor={brl(lucroTotal)}
+          sub={`Custos: ${brl(custoTotal)}` + (impostoTotal ? ` (imposto ${brl(impostoTotal)})` : "") + (fatTotal ? ` · Margem ${Math.round((lucroTotal / fatTotal) * 100)}%` : "")} cor="var(--ok)" />
         <KPI label="Clientes únicos" valor={num(m.clientes.length)} sub={`Ticket médio ${brl(m.ticket)}`} cor="#6D5DD3" />
         <KPI label="Certificados emitidos" valor={num(certEmitido)} sub={`${num(pendentes)} pendentes`} cor="var(--accent)" />
       </div>
@@ -2498,8 +2524,9 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
     .map((f) => {
       // faturamento = soma das vendas pagas no mês (automático) + ajuste manual (diferença registrada à mão)
       const faturamento = (fatVendasMes[f.ordem] || 0) + (f.faturamentoAjuste || 0);
-      const custoTotal = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0);
-      return { ...f, faturamento, custoTotal, lucro: faturamento - custoTotal };
+      const imposto = impostoDoMes(f.ano, f.ordem, faturamento);
+      const custoTotal = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0) + imposto;
+      return { ...f, faturamento, imposto, custoTotal, lucro: faturamento - custoTotal };
     });
   const linhas = mes === "" ? linhasAno : linhasAno.filter((l) => l.ordem === Number(mes));
   const noMes = mes !== "";
@@ -2510,9 +2537,10 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
     custoAds: a.custoAds + (l.custoAds || 0),
     custoFixo: a.custoFixo + (l.custoFixo || 0),
     custoExtra: a.custoExtra + (l.custoExtra || 0),
+    imposto: a.imposto + (l.imposto || 0),
     custoTotal: a.custoTotal + l.custoTotal,
     lucro: a.lucro + l.lucro,
-  }), { faturamento: 0, taxaPublicacao: 0, custoAds: 0, custoFixo: 0, custoExtra: 0, custoTotal: 0, lucro: 0 });
+  }), { faturamento: 0, taxaPublicacao: 0, custoAds: 0, custoFixo: 0, custoExtra: 0, imposto: 0, custoTotal: 0, lucro: 0 });
 
   const salvarLinha = (id, dados) => {
     const nf = financeiro.map((f) => (f.id === id ? { ...f, ...dados } : f));
@@ -2592,16 +2620,18 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
         valor: v.valor || 0,
       }));
     const said = [];
-    financeiro.filter((f) => noPeriodo(f.ano, f.ordem)).forEach((f) => {
+    // usa as linhas já calculadas (mesmo recorte de período) para o imposto sair pronto
+    linhas.forEach((f) => {
       const dataMes = `${f.ano}-${String((f.ordem ?? 0) + 1).padStart(2, "0")}-15`;
       const quando = `${f.mes}/${f.ano}`;
       if ((f.taxaPublicacao || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Taxa de publicação", valor: f.taxaPublicacao });
       if ((f.custoAds || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Anúncios (Ads)", valor: f.custoAds });
       if ((f.custoFixo || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Custo fixo", valor: f.custoFixo });
       if ((f.custoExtra || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Custo extra" + (f.custoExtraDesc ? ` · ${f.custoExtraDesc}` : ""), valor: f.custoExtra });
+      if ((f.imposto || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: `Imposto (${Math.round(IMPOSTO_ALIQUOTA * 100)}% do faturamento)`, valor: f.imposto });
     });
     return [...ent, ...said].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
-  }, [vendas, financeiro, anoSel, mes]);
+  }, [vendas, linhas, anoSel, mes]);
   const LIM_MOV = 60;
 
   // ---- comparar meses (usa o fechamento mensal) ----
@@ -2615,7 +2645,8 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
     if (!f) return null;
     const vendasMes = vendas.reduce((s, v) => (anoDeIso(v.data) === a && mesDeIso(v.data) === o ? s + (v.valor || 0) : s), 0);
     const entrou = vendasMes + (f.faturamentoAjuste || 0);
-    const saiu = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0);
+    const saiu = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0)
+      + impostoDoMes(f.ano, f.ordem, entrou);
     return { rot: `${f.mes}/${f.ano}`, entrou, saiu, saldo: entrou - saiu };
   };
   const rA = resumoDe(cmpA), rB = resumoDe(cmpB);
@@ -2651,7 +2682,8 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
         <>
           <div className="kpis kpis-3">
             <KPI label={`Faturamento ${sufixoPeriodo}`} valor={brl(tot.faturamento)} cor="var(--brand)" />
-            <KPI label={`Custo total ${sufixoPeriodo}`} valor={brl(tot.custoTotal)} sub={`Publicação ${brl(tot.taxaPublicacao)} · Ads ${brl(tot.custoAds)}`} cor="var(--danger)" />
+            <KPI label={`Custo total ${sufixoPeriodo}`} valor={brl(tot.custoTotal)}
+              sub={`Publicação ${brl(tot.taxaPublicacao)} · Ads ${brl(tot.custoAds)}` + (tot.imposto ? ` · Imposto ${brl(tot.imposto)}` : "")} cor="var(--danger)" />
             <KPI label={`Lucro líquido ${sufixoPeriodo}`} valor={brl(tot.lucro)} sub={tot.faturamento ? `Margem ${Math.round((tot.lucro / tot.faturamento) * 100)}%` : ""} cor="var(--ok)" />
           </div>
 
@@ -2681,6 +2713,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
                   <tr>
                     <th scope="col">Mês</th><th scope="col" className="r">Faturamento</th><th scope="col" className="r">Taxa public.</th>
                     <th scope="col" className="r">Ads</th><th scope="col" className="r">Custo fixo</th><th scope="col" className="r">Extra</th>
+                    <th scope="col" className="r" title={`${Math.round(IMPOSTO_ALIQUOTA * 100)}% do faturamento, desde ${MESES[IMPOSTO_DESDE.ordem]} de ${IMPOSTO_DESDE.ano}`}>Imposto</th>
                     <th scope="col" className="r">Custo total</th><th scope="col" className="r">Lucro</th><th scope="col"><span className="sr-only">Ações</span></th>
                   </tr>
                 </thead>
@@ -2695,12 +2728,18 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
                       {celCusto(l, "custoAds", "Custo com anúncios (Ads)")}
                       {celCusto(l, "custoFixo", "Custo fixo")}
                       {celCusto(l, "custoExtra", "Custo extra / variável", l.custoExtraDesc)}
+                      {/* calculado, não editável: sai direto do faturamento do mês */}
+                      <td className="r" title={temImposto(l.ano, l.ordem)
+                        ? `${Math.round(IMPOSTO_ALIQUOTA * 100)}% de ${brl(l.faturamento)}`
+                        : `Sem imposto antes de ${MESES[IMPOSTO_DESDE.ordem]} de ${IMPOSTO_DESDE.ano}`}>
+                        {temImposto(l.ano, l.ordem) ? brl(l.imposto) : <span className="muted">—</span>}
+                      </td>
                       <td className="r neg"><b>{brl(l.custoTotal)}</b></td>
                       <td className="r"><b className={l.lucro >= 0 ? "pos" : "negv"}>{brl(l.lucro)}</b></td>
                       <td className="acoes"><button className="mini" onClick={() => setEditId(l.id)} aria-label={`Editar fechamento de ${l.mes}`}>editar</button></td>
                     </tr>
                   ))}
-                  {linhas.length === 0 && <tr><td colSpan={9} className="vazio">Sem fechamento para este mês.</td></tr>}
+                  {linhas.length === 0 && <tr><td colSpan={10} className="vazio">Sem fechamento para este mês.</td></tr>}
                   {linhas.length > 1 && (
                   <tr className="row-total">
                     <td>TOTAL</td>
@@ -2709,6 +2748,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
                     <td className="r">{brl(tot.custoAds)}</td>
                     <td className="r">{brl(tot.custoFixo)}</td>
                     <td className="r">{brl(tot.custoExtra)}</td>
+                    <td className="r">{brl(tot.imposto)}</td>
                     <td className="r">{brl(tot.custoTotal)}</td>
                     <td className="r"><b className={tot.lucro >= 0 ? "pos" : "negv"}>{brl(tot.lucro)}</b></td>
                     <td></td>
@@ -4053,7 +4093,12 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
         a.custoReal += pub.taxa || 0;
       }
     }
-    a.lucroReal = a.receitaReal - a.custoReal;
+    // o imposto do mês entra nos dois lucros, para bater com o Financeiro
+    a.impostoReal = impostoDoMes(plano?.ano, plano?.mes, a.receitaReal);
+    a.imposto = impostoDoMes(plano?.ano, plano?.mes, a.receita);
+    a.lucroReal = a.receitaReal - a.custoReal - a.impostoReal;
+    a.lucro -= a.imposto;
+    a.custo += a.imposto;
     return a;
   }, [plano, pubPorTitulo, idxVendas]);
 
@@ -4095,9 +4140,11 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
 
       <div className="kpis kpis-4">
         <KPI label="Já vendido no mês" valor={brl(tot.receitaReal)} sub={`${num(tot.ocupadas)} de ${num(tot.vagas)} vagas planejadas preenchidas`} cor="var(--ok)" />
-        <KPI label="Lucro real" valor={brl(tot.lucroReal)} sub={`Vendido menos ${brl(tot.custoReal)} de taxas lançadas`} cor="var(--ok)" />
+        <KPI label="Lucro real" valor={brl(tot.lucroReal)}
+          sub={`Vendido menos ${brl(tot.custoReal)} de taxas lançadas` + (tot.impostoReal ? ` e ${brl(tot.impostoReal)} de imposto` : "")} cor="var(--ok)" />
         <KPI label={`Faturamento projetado (${Math.round(plano.conversao * 100)}%)`} valor={brl(tot.receita)} sub={`${num(tot.criadas)} de ${num(tot.temas)} temas abertos · teto ${brl(tot.teto)}`} cor="#6D5DD3" />
-        <KPI label="Lucro projetado" valor={brl(tot.lucro)} sub={`Custo ${brl(tot.custo)} · margem ${tot.receita ? (tot.lucro / tot.receita * 100).toFixed(1) : 0}%`} cor="var(--accent)" />
+        <KPI label="Lucro projetado" valor={brl(tot.lucro)}
+          sub={`Custo ${brl(tot.custo)}` + (tot.imposto ? ` (imposto ${brl(tot.imposto)})` : "") + ` · margem ${tot.receita ? (tot.lucro / tot.receita * 100).toFixed(1) : 0}%`} cor="var(--accent)" />
       </div>
 
       <div className="card meta-bar">
