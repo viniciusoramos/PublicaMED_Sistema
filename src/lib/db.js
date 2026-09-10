@@ -56,6 +56,10 @@ const finDe = (r) => ({
   custoExtra: Number(r.custo_extra) || 0,
   custoExtraDesc: r.custo_extra_desc || '',
   faturamentoAjuste: Number(r.faturamento_ajuste) || 0,
+  /* Nulo tem significado: a tela calcula pela alíquota. Um número (zero
+   * inclusive) foi digitado à mão e manda no cálculo. Fica nulo também
+   * enquanto a migração 21 não roda — aí todo mês segue calculado. */
+  imposto: r.imposto == null ? null : Number(r.imposto),
 });
 const partDe = (x) => ({
   id: x.id,
@@ -270,6 +274,9 @@ export async function atualizarFinanceiro(id, d) {
     custo_extra: d.custoExtra || 0,
     custo_extra_desc: d.custoExtraDesc || '',
     faturamento_ajuste: d.faturamentoAjuste || 0,
+    // sem `|| 0`: aqui o nulo quer dizer "calcula pela alíquota", e zero quer
+    // dizer "não pagou imposto neste mês" — são coisas diferentes
+    imposto: d.imposto == null ? null : d.imposto,
   }).eq('id', id).select().single();
   if (error) throw error;
   return finDe(data);

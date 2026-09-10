@@ -42,16 +42,28 @@ const UF_NOME = {
 };
 const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
-/* Imposto (Simples Nacional, ME): 6% do faturamento, a partir de setembro de 2026.
+/* Imposto (Simples Nacional, ME): 8,77% do faturamento, a partir de setembro de 2026.
  * O marco existe para o histórico não mentir — antes disso não houve imposto a
  * pagar, e aplicar a alíquota para trás faria o lucro dos meses passados parar
- * de bater com o que entrou no caixa. */
-const IMPOSTO_ALIQUOTA = 0.06;
+ * de bater com o que entrou no caixa.
+ *
+ * A alíquota é uma estimativa, não uma regra: no Simples a efetiva sobe com o
+ * faturamento acumulado dos 12 meses, e há mês que não segue conta nenhuma
+ * (agosto/2026, em que o regime começou no meio do mês). Por isso o valor pode
+ * ser digitado à mão no fechamento e, quando é, manda no cálculo — inclusive
+ * em mês anterior ao marco. */
+const IMPOSTO_ALIQUOTA = 0.0877;
 const IMPOSTO_DESDE = { ano: 2026, ordem: 8 };            // ordem 8 = setembro
+// "8,77%" e não "9%": arredondar a alíquota para inteiro esconderia justamente a parte que varia
+const fmtPct = (x) => (x * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + "%";
 const temImposto = (ano, ordem) =>
   ano > IMPOSTO_DESDE.ano || (ano === IMPOSTO_DESDE.ano && (ordem ?? 0) >= IMPOSTO_DESDE.ordem);
-const impostoDoMes = (ano, ordem, faturamento) =>
+const impostoCalculado = (ano, ordem, faturamento) =>
   temImposto(ano, ordem) ? Math.max(0, faturamento || 0) * IMPOSTO_ALIQUOTA : 0;
+/* O que vale no fim: o valor digitado à mão, se houver, senão a alíquota.
+ * `manual` chega nulo quando ninguém digitou nada naquele mês. */
+const impostoDoMes = (ano, ordem, faturamento, manual) =>
+  manual == null ? impostoCalculado(ano, ordem, faturamento) : Math.max(0, manual);
 
 const TIPOS = ["Artigo","Capítulo","Apresentação","Combo","Artigo PSU","Outro"];
 // Paleta categórica validada (CVD ΔE 16.2 claro / 14.7 escuro, croma e contraste ≥3:1 nas duas superfícies)
@@ -587,7 +599,9 @@ const finMudou = (a, b) =>
   (a.faturamento || 0) !== (b.faturamento || 0) || (a.taxaPublicacao || 0) !== (b.taxaPublicacao || 0) ||
   (a.custoAds || 0) !== (b.custoAds || 0) || (a.custoFixo || 0) !== (b.custoFixo || 0) ||
   (a.custoExtra || 0) !== (b.custoExtra || 0) || (a.custoExtraDesc || "") !== (b.custoExtraDesc || "") ||
-  (a.faturamentoAjuste || 0) !== (b.faturamentoAjuste || 0);
+  (a.faturamentoAjuste || 0) !== (b.faturamentoAjuste || 0) ||
+  // compara com ?? e não com ||: aqui nulo ("calcula") e zero ("não pagou") são diferentes
+  (a.imposto ?? null) !== (b.imposto ?? null);
 // (CRUD de publicações é incremental via db.*; ver os handlers granulares no App)
 
 /* Qual banco o painel está usando. Existe porque o `npm run dev` aponta para o Supabase de
@@ -1326,7 +1340,7 @@ export default function App() {
             onLancarTaxa={lancarTaxaPub} onCorrigirTaxa={corrigirTaxaPub} aviso={aviso} />
         )}
         {tab === "planejamento" && (
-          <Planejamento temas={temas} vendas={vendas} planejamentos={planejamentos} editavel={planoNoBanco}
+          <Planejamento temas={temas} vendas={vendas} planejamentos={planejamentos} financeiro={financeiro} editavel={planoNoBanco}
             onAbrirPublicacao={abrirPublicacao} onCriarPublicacao={criarPublicacaoDoPlano}
             onCriarNoDia={criarPublicacaoNoDia} onTirarTema={tirarTemaPlano} onRestaurarTema={restaurarTemaPlano} />
         )}
@@ -1499,7 +1513,7 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
     return mapa;
   }, [vendasFiltradas]);
   const impostoTotal = finFiltrado.reduce((s, f) => s + impostoDoMes(
-    f.ano, f.ordem, (fatPorMes.get(`${f.ano}-${f.ordem}`) || 0) + (f.faturamentoAjuste || 0)), 0);
+    f.ano, f.ordem, (fatPorMes.get(`${f.ano}-${f.ordem}`) || 0) + (f.faturamentoAjuste || 0), f.imposto), 0);
   const custoTotal = finFiltrado.reduce((s, f) => s + (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0), 0)
     + impostoTotal;
   const lucroTotal = fatTotal - custoTotal;
@@ -2540,9 +2554,11 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
     .map((f) => {
       // faturamento = soma das vendas pagas no mês (automático) + ajuste manual (diferença registrada à mão)
       const faturamento = (fatVendasMes[f.ordem] || 0) + (f.faturamentoAjuste || 0);
-      const imposto = impostoDoMes(f.ano, f.ordem, faturamento);
+      // impostoManual guarda o que veio do banco (nulo = ninguém digitou); imposto é o que vale
+      const impostoManual = f.imposto ?? null;
+      const imposto = impostoDoMes(f.ano, f.ordem, faturamento, impostoManual);
       const custoTotal = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0) + imposto;
-      return { ...f, faturamento, imposto, custoTotal, lucro: faturamento - custoTotal };
+      return { ...f, faturamento, impostoManual, imposto, custoTotal, lucro: faturamento - custoTotal };
     });
   const linhas = mes === "" ? linhasAno : linhasAno.filter((l) => l.ordem === Number(mes));
   const noMes = mes !== "";
@@ -2644,7 +2660,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
       if ((f.custoAds || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Anúncios (Ads)", valor: f.custoAds });
       if ((f.custoFixo || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Custo fixo", valor: f.custoFixo });
       if ((f.custoExtra || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: "Custo extra" + (f.custoExtraDesc ? ` · ${f.custoExtraDesc}` : ""), valor: f.custoExtra });
-      if ((f.imposto || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: `Imposto (${Math.round(IMPOSTO_ALIQUOTA * 100)}% do faturamento)`, valor: f.imposto });
+      if ((f.imposto || 0) > 0) said.push({ data: dataMes, quando, tipo: "saida", label: `Imposto (${fmtPct(IMPOSTO_ALIQUOTA)} do faturamento)`, valor: f.imposto });
     });
     return [...ent, ...said].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
   }, [vendas, linhas, anoSel, mes]);
@@ -2662,7 +2678,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
     const vendasMes = vendas.reduce((s, v) => (anoDeIso(v.data) === a && mesDeIso(v.data) === o ? s + (v.valor || 0) : s), 0);
     const entrou = vendasMes + (f.faturamentoAjuste || 0);
     const saiu = (f.taxaPublicacao || 0) + (f.custoAds || 0) + (f.custoFixo || 0) + (f.custoExtra || 0)
-      + impostoDoMes(f.ano, f.ordem, entrou);
+      + impostoDoMes(f.ano, f.ordem, entrou, f.imposto);
     return { rot: `${f.mes}/${f.ano}`, entrou, saiu, saldo: entrou - saiu };
   };
   const rA = resumoDe(cmpA), rB = resumoDe(cmpB);
@@ -2729,7 +2745,7 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
                   <tr>
                     <th scope="col">Mês</th><th scope="col" className="r">Faturamento</th><th scope="col" className="r">Taxa public.</th>
                     <th scope="col" className="r">Ads</th><th scope="col" className="r">Custo fixo</th><th scope="col" className="r">Extra</th>
-                    <th scope="col" className="r" title={`${Math.round(IMPOSTO_ALIQUOTA * 100)}% do faturamento, desde ${MESES[IMPOSTO_DESDE.ordem]} de ${IMPOSTO_DESDE.ano}`}>Imposto</th>
+                    <th scope="col" className="r" title={`${fmtPct(IMPOSTO_ALIQUOTA)} do faturamento, desde ${MESES[IMPOSTO_DESDE.ordem]} de ${IMPOSTO_DESDE.ano}`}>Imposto</th>
                     <th scope="col" className="r">Custo total</th><th scope="col" className="r">Lucro</th><th scope="col"><span className="sr-only">Ações</span></th>
                   </tr>
                 </thead>
@@ -2744,11 +2760,15 @@ function Financeiro({ financeiro, salvar, vendas, aviso, onCriarAno, dark, itens
                       {celCusto(l, "custoAds", "Custo com anúncios (Ads)")}
                       {celCusto(l, "custoFixo", "Custo fixo")}
                       {celCusto(l, "custoExtra", "Custo extra / variável", l.custoExtraDesc)}
-                      {/* calculado, não editável: sai direto do faturamento do mês */}
-                      <td className="r" title={temImposto(l.ano, l.ordem)
-                        ? `${Math.round(IMPOSTO_ALIQUOTA * 100)}% de ${brl(l.faturamento)}`
-                        : `Sem imposto antes de ${MESES[IMPOSTO_DESDE.ordem]} de ${IMPOSTO_DESDE.ano}`}>
-                        {temImposto(l.ano, l.ordem) ? brl(l.imposto) : <span className="muted">—</span>}
+                      {/* calculado pela alíquota, a menos que tenha sido digitado à mão em "editar" */}
+                      <td className="r" title={l.impostoManual != null
+                        ? "Valor digitado à mão neste mês"
+                        : temImposto(l.ano, l.ordem)
+                          ? `${fmtPct(IMPOSTO_ALIQUOTA)} de ${brl(l.faturamento)}`
+                          : `Sem imposto antes de ${MESES[IMPOSTO_DESDE.ordem]} de ${IMPOSTO_DESDE.ano}`}>
+                        {l.impostoManual != null || temImposto(l.ano, l.ordem)
+                          ? <>{brl(l.imposto)}{l.impostoManual != null && <div className="fat-real">à mão</div>}</>
+                          : <span className="muted">—</span>}
                       </td>
                       <td className="r neg"><b>{brl(l.custoTotal)}</b></td>
                       <td className="r"><b className={l.lucro >= 0 ? "pos" : "negv"}>{brl(l.lucro)}</b></td>
@@ -2877,14 +2897,20 @@ function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
     return o;
   });
   const [desc, setDesc] = useState(linha.custoExtraDesc || "");
+  /* Imposto tem campo próprio porque o vazio significa algo: "calcula pela
+   * alíquota". Zero é outra coisa — "não pagou imposto neste mês" —, então não
+   * dá para tratar como os outros custos, em que vazio e zero são iguais. */
+  const [imp, setImp] = useState(linha.impostoManual == null ? "" : numTxt(linha.impostoManual));
+  const impManual = imp.trim() === "" ? null : numExpr(imp, linha.impostoManual || 0);
   const val = (k) => numExpr(txt[k], base[k]);
   const f = {
     faturamentoAjuste: val("faturamentoAjuste"), taxaPublicacao: val("taxaPublicacao"),
     custoAds: val("custoAds"), custoFixo: val("custoFixo"), custoExtra: val("custoExtra"),
-    custoExtraDesc: desc,
+    custoExtraDesc: desc, imposto: impManual,
   };
-  const ct = f.taxaPublicacao + f.custoAds + f.custoFixo + f.custoExtra;
   const fatTotal = (fatVendas || 0) + f.faturamentoAjuste;
+  const impVale = impostoDoMes(linha.ano, linha.ordem, fatTotal, impManual);
+  const ct = f.taxaPublicacao + f.custoAds + f.custoFixo + f.custoExtra + impVale;
   // campo de dinheiro com o resultado da conta logo abaixo, enquanto se digita
   const campo = (k, label) => (
     <Campo label={label}>
@@ -2918,6 +2944,20 @@ function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
       </p>
       <Campo label="Descrição do custo extra (opcional)">
         <input className="inp" placeholder="Ex.: Compra de celular" value={desc} onChange={(e) => setDesc(e.target.value)} />
+      </Campo>
+      <Campo label="Imposto pago (deixe vazio para calcular)">
+        <input className="inp" inputMode="text" value={imp}
+          placeholder={temImposto(linha.ano, linha.ordem)
+            ? `automático: ${brl(impostoCalculado(linha.ano, linha.ordem, fatTotal))}`
+            : "sem imposto neste mês"}
+          onChange={(e) => setImp(e.target.value)} />
+        <span className="campo-calc">
+          {impManual == null
+            ? (temImposto(linha.ano, linha.ordem)
+                ? <>vazio = <b>{fmtPct(IMPOSTO_ALIQUOTA)}</b> do faturamento, hoje <b>{brl(impVale)}</b></>
+                : <>vazio = sem imposto, por ser antes de {MESES[IMPOSTO_DESDE.ordem]} de {IMPOSTO_DESDE.ano}</>)
+            : <>à mão: <b>{brl(impVale)}</b> · a alíquota daria {brl(impostoCalculado(linha.ano, linha.ordem, fatTotal))}</>}
+        </span>
       </Campo>
       <div className="resumo-mes">
         <div><span>Faturamento</span><b className="pos">{brl(fatTotal)}</b></div>
@@ -3980,7 +4020,7 @@ function GeradorMensagem({ lanc, grupos, dadosTema, onClose }) {
   );
 }
 
-function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false,
+function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [], editavel = false,
                         onAbrirPublicacao, onCriarPublicacao, onCriarNoDia, onTirarTema, onRestaurarTema }) {
   /* Abre no mes corrente quando ele esta planejado. O cronograma so chega do
    * banco depois da primeira renderizacao, entao a escolha e derivada a cada
@@ -4136,14 +4176,18 @@ function Planejamento({ temas, vendas = [], planejamentos = [], editavel = false
         a.custoReal += pub.taxa || 0;
       }
     }
-    // o imposto do mês entra nos dois lucros, para bater com o Financeiro
-    a.impostoReal = impostoDoMes(plano?.ano, plano?.mes, a.receitaReal);
-    a.imposto = impostoDoMes(plano?.ano, plano?.mes, a.receita);
+    /* O imposto do mês entra nos dois lucros, para bater com o Financeiro —
+     * inclusive quando lá o valor foi digitado à mão. No realizado o valor à
+     * mão vale como está; na projeção, não: ela estima um mês inteiro, e um
+     * imposto já pago (parcial) subestimaria o que ainda vai ser devido. */
+    const manual = financeiro.find((f) => f.ano === plano?.ano && f.ordem === plano?.mes)?.imposto ?? null;
+    a.impostoReal = impostoDoMes(plano?.ano, plano?.mes, a.receitaReal, manual);
+    a.imposto = impostoCalculado(plano?.ano, plano?.mes, a.receita);
     a.lucroReal = a.receitaReal - a.custoReal - a.impostoReal;
     a.lucro -= a.imposto;
     a.custo += a.imposto;
     return a;
-  }, [plano, pubPorTitulo, idxVendas]);
+  }, [plano, pubPorTitulo, idxVendas, financeiro]);
 
   if (!plano) return <><Header titulo="Planejamento" sub="Nenhum planejamento cadastrado" /></>;
 
