@@ -1150,26 +1150,28 @@ export default function App() {
   const sincronizarContato = async (cliente, dados) => {
     const cpf = String(dados.cpf || "").replace(/\D/g, "");
     const tel = (dados.telefone || "").trim();
-    if (!cpf && !tel) return 0;
+    /* Graduado só é gravado quando a marcação foi mexida. Salvar sem tocar nela
+     * não pode achatar o histórico: a pessoa pode ter participações de antes e
+     * de depois de se formar, e o formulário mostra "sim" se houver alguma. */
+    const grad = dados.graduadoMudou ? !!dados.graduado : null;
+    if (!cpf && !tel && grad == null) return 0;
     const email = (cliente.email || "").trim().toLowerCase();
     const nome = chaveTitulo(cliente.nome);
+    const novo = (p) => ({ ...p, cpf: cpf || p.cpf, telefone: tel || p.telefone, graduado: grad ?? p.graduado });
     const alvos = [];
     for (const t of temas) {
       for (const p of t.participantes || []) {
         const mesmo = email ? (p.email || "").trim().toLowerCase() === email : chaveTitulo(p.nome) === nome;
         if (!mesmo) continue;
-        if ((cpf && p.cpf !== cpf) || (tel && p.telefone !== tel)) alvos.push({ tema: t, p });
+        if ((cpf && p.cpf !== cpf) || (tel && p.telefone !== tel) || (grad != null && !!p.graduado !== grad)) alvos.push({ tema: t, p });
       }
     }
     if (!alvos.length) return 0;
-    for (const { p } of alvos) {
-      await db.atualizarParticipante(p.id, { ...p, cpf: cpf || p.cpf, telefone: tel || p.telefone });
-    }
+    for (const { p } of alvos) await db.atualizarParticipante(p.id, novo(p));
     const ids = new Set(alvos.map((x) => x.p.id));
     setTemas((ts) => ts.map((t) => ({
       ...t,
-      participantes: t.participantes.map((p) => (ids.has(p.id)
-        ? { ...p, cpf: cpf || p.cpf, telefone: tel || p.telefone } : p)),
+      participantes: t.participantes.map((p) => (ids.has(p.id) ? novo(p) : p)),
     })));
     return alvos.length;
   };
@@ -1181,6 +1183,16 @@ export default function App() {
     const chave = (venda.email || "").trim().toLowerCase() || (venda.nome || "").trim().toLowerCase();
     return chave ? m.clientes.find((c) => c.chave === chave) : null;
   };
+  /* Cliente de um participante da publicação. O e-mail é a chave, como nas vendas;
+   * o nome é o segundo caminho, para quando a compra foi lançada sem e-mail — e por
+   * chaveTitulo, que ignora acento: "Flavio" e "Flávio" são a mesma pessoa. */
+  const clienteDoParticipante = (p) => {
+    const email = (p?.email || "").trim().toLowerCase();
+    const achado = email && m.clientes.find((c) => (c.email || "").trim().toLowerCase() === email);
+    if (achado) return achado;
+    const nome = chaveTitulo(p?.nome);
+    return (nome && m.clientes.find((c) => chaveTitulo(c.nome) === nome)) || null;
+  };
   /* CPF, telefone e ORCID são dados do participante, não da venda — e o cliente é
    * montado a partir das vendas. Este índice traz esses campos para a aba Clientes,
    * casando por e-mail e, na falta dele, pelo nome. */
@@ -1189,12 +1201,14 @@ export default function App() {
     const juntar = (map, k, d) => {
       if (!k) return;
       const at = map.get(k) || {};
-      map.set(k, { cpf: at.cpf || d.cpf, telefone: at.telefone || d.telefone, orcid: at.orcid || d.orcid });
+      // graduado: basta uma participação marcada — ninguém "desgradua", e é a mesma
+      // regra que o formulário de participante usa para preencher quem já comprou
+      map.set(k, { cpf: at.cpf || d.cpf, telefone: at.telefone || d.telefone, orcid: at.orcid || d.orcid,
+        graduado: !!(at.graduado || d.graduado) });
     };
     for (const t of temas) {
       for (const p of t.participantes || []) {
-        const d = { cpf: p.cpf || "", telefone: p.telefone || "", orcid: p.orcid || "" };
-        if (!d.cpf && !d.telefone && !d.orcid) continue;
+        const d = { cpf: p.cpf || "", telefone: p.telefone || "", orcid: p.orcid || "", graduado: !!p.graduado };
         juntar(porEmail, (p.email || "").trim().toLowerCase(), d);
         juntar(porNome, chaveTitulo(p.nome), d);
       }
@@ -1337,6 +1351,7 @@ export default function App() {
             onAdd={addPublicacao} onCriarNoDia={criarPublicacaoNoDia} onPorNoCalendario={porPublicacaoNoCalendario} onRem={remPublicacao} onEdit={editPublicacao} onEditNome={editNomePublicacao}
             onAddPart={addParticipante} onEditPart={editParticipante} onRemPart={remParticipante}
             onFecharLote={fecharPublicacoes}
+            clienteDoParticipante={clienteDoParticipante} contatoDe={contatoDe} salvarCliente={salvarCliente} onAbrirPublicacao={abrirPublicacao}
             onLancarTaxa={lancarTaxaPub} onCorrigirTaxa={corrigirTaxaPub} aviso={aviso} />
         )}
         {tab === "planejamento" && (
@@ -2214,6 +2229,7 @@ function FichaCliente({ cliente, contato = {}, onSalvar, onAbrirPublicacao, onFe
             <div><span className="ci-lab">CPF</span>{contato.cpf ? fmtCPF(contato.cpf) : "—"}</div>
             <div><span className="ci-lab">Telefone</span>{contato.telefone || "—"}</div>
             {contato.orcid && <div><span className="ci-lab">ORCID</span>{soOrcid(contato.orcid)}</div>}
+            <div><span className="ci-lab">Graduado</span>{contato.graduado ? <span className="tag-grad">Graduado</span> : "Não"}</div>
             <div><span className="ci-lab">Total gasto</span><b>{brl(cliente.total)}</b></div>
             <div><span className="ci-lab">Trabalhos</span><b>{cliente.qtd}</b></div>
           </div>
@@ -2255,6 +2271,7 @@ function FormCliente({ cliente, contato = {}, onSalvar, onCancelar }) {
     nome: cliente.nome || "", email: cliente.email || "", faculdade: cliente.faculdade || "", uf: cliente.uf || "N/I",
     // guardados no participante; entram aqui para não ter que abrir a publicação só p/ ver o CPF
     cpf: fmtCPF(contato.cpf || ""), telefone: contato.telefone || "",
+    graduado: !!contato.graduado,
   });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const escolherFac = (nome) => {
@@ -2282,13 +2299,20 @@ function FormCliente({ cliente, contato = {}, onSalvar, onCancelar }) {
         </Campo>
         <Campo label="Telefone / WhatsApp"><input className="inp" placeholder="(31) 99999-9999" value={f.telefone} onChange={(e) => set("telefone", e.target.value)} /></Campo>
       </div>
+      <label className="check" style={{ marginTop: 4 }}>
+        <input type="checkbox" checked={f.graduado} onChange={(e) => set("graduado", e.target.checked)} /> Graduado
+      </label>
       <p className="nota">
         Aplica nome, email, faculdade e estado em <b>todas as {cliente.qtd} compra(s)</b> deste cliente.
-        CPF e telefone valem para as <b>participações</b> dele nas publicações.
+        CPF, telefone e graduado valem para as <b>participações</b> dele nas publicações.
+        {f.graduado !== !!contato.graduado && <> A marcação de graduado muda em <b>todas</b> as participações dele.</>}
       </p>
       <div className="form-acoes">
         <button className="btn-ghost" onClick={onCancelar}>Cancelar</button>
-        <button className="btn" onClick={() => { if (!f.nome.trim() && !f.email.trim()) { alert("Informe nome ou email."); return; } onSalvar(f); }}>Salvar alterações</button>
+        <button className="btn" onClick={() => {
+          if (!f.nome.trim() && !f.email.trim()) { alert("Informe nome ou email."); return; }
+          onSalvar({ ...f, graduadoMudou: f.graduado !== !!contato.graduado });
+        }}>Salvar alterações</button>
       </div>
     </>
   );
@@ -2975,7 +2999,7 @@ function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
 /* ============================================================
    TEMAS E VAGAS
    ============================================================ */
-function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, onPorNoCalendario, onSetLocalTrabalho, onSetStatusTrabalho, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onFecharLote, onLancarTaxa, onCorrigirTaxa, aviso }) {
+function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, onPorNoCalendario, onSetLocalTrabalho, onSetStatusTrabalho, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onFecharLote, clienteDoParticipante, contatoDe = () => ({}), salvarCliente, onAbrirPublicacao, onLancarTaxa, onCorrigirTaxa, aviso }) {
   const [busca, setBusca] = useState("");
   const [soComVaga, setSoComVaga] = useState(false);
   const [situacao, setSituacao] = useState("venda"); // a tela abre no trabalho do dia
@@ -3178,6 +3202,7 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
               statusTrab={trabLink ? (trabLink.status || "A fazer") : null} onSetStatus={(s) => trabLink && onSetStatusTrabalho(trabLink.id, s)}
               onEdit={onEdit} onEditNome={onEditNome} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa} onCorrigirTaxa={onCorrigirTaxa}
               onFechar={fechar} onReabrir={reabrir} dataAbertura={abertura.get(sel.id) || ""} onPorNoCalendario={onPorNoCalendario}
+              clienteDoParticipante={clienteDoParticipante} contatoDe={contatoDe} salvarCliente={salvarCliente} onAbrirPublicacao={onAbrirPublicacao} aviso={aviso}
               onExcluir={() => excluir(sel)} />
           )}
         </div>
@@ -3188,13 +3213,15 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
   );
 }
 
-function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, statusTrab = null, onSetStatus, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onCorrigirTaxa, onFechar, onReabrir, dataAbertura = "", onPorNoCalendario, onExcluir }) {
+function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, statusTrab = null, onSetStatus, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onCorrigirTaxa, onFechar, onReabrir, dataAbertura = "", onPorNoCalendario, onExcluir,
+                      clienteDoParticipante, contatoDe = () => ({}), salvarCliente, onAbrirPublicacao, aviso = () => {} }) {
   const { tipos, status: statusDisp } = useContext(ListasCtx);
   const restantes = t.maxVagas - t.participantes.length;
   const cheio = restantes <= 0;
   const [editandoNome, setEditandoNome] = useState(false);
   const [nomeTmp, setNomeTmp] = useState("");
   const [editP, setEditP] = useState(null);
+  const [fichaCli, setFichaCli] = useState(null);   // ficha do cliente aberta por cima da publicação
   // se a publicação já tem taxa cadastrada mas ainda não lançada (ex.: veio do cronograma antes
   // do lançamento automático), o valor aparece preenchido — não faz sentido redigitar
   const [taxaVal, setTaxaVal] = useState("");
@@ -3381,7 +3408,13 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
                     return (
                       <tr key={p.id}>
                         <td>
-                          <span className="p-nome">{p.nome}</span>
+                          {/* mesma ficha da aba Clientes, aberta por cima: fechando, a publicação
+                              continua aberta na tela em vez de jogar o usuário em outra aba */}
+                          <button type="button" className="p-nome link-titulo" title="Ver os dados e as compras deste cliente"
+                            onClick={() => {
+                              const c = clienteDoParticipante && clienteDoParticipante(p);
+                              c ? setFichaCli(c) : aviso("Esse participante ainda não tem compra registrada.");
+                            }}>{p.nome}</button>
                           {p.email && <div className="p-fac">{p.email}</div>}
                           {p.cpf ? <div className="p-cpf">CPF: {fmtCPF(p.cpf)}</div> : null}
                           {p.orcid ? <div className="p-orcid"><a href={`https://orcid.org/${p.orcid.trim()}`} target="_blank" rel="noreferrer">ORCID: {p.orcid}</a></div> : null}
@@ -3568,6 +3601,11 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
         <Modal titulo="Editar participante" onClose={() => setEditP(null)}>
           <FormParticipante part={editP} valorAtual={vendaDoPart(editP)?.valor ?? ""} onSalvar={(d) => { onEditPart(t, editP, d); setEditP(null); }} onCancelar={() => setEditP(null)} />
         </Modal>
+      )}
+
+      {fichaCli && (
+        <FichaCliente cliente={fichaCli} contato={contatoDe(fichaCli)} onSalvar={salvarCliente}
+          onAbrirPublicacao={onAbrirPublicacao} onFechar={() => setFichaCli(null)} />
       )}
     </div>
   );
@@ -4855,6 +4893,8 @@ select.inp{ cursor:pointer; }
   background:var(--soft); border-radius:var(--r-md); border:1px solid var(--border); }
 .cli-info > div{ display:flex; flex-direction:column; gap:3px; font-size:13px; }
 .ci-lab{ font-size:11px; color:var(--muted2); text-transform:uppercase; font-weight:600; letter-spacing:.05em; }
+/* o campo é uma coluna flex e esticaria o selo na largura toda: ele fica do tamanho do texto */
+.cli-info .tag-grad{ align-self:flex-start; }
 /* nome do cliente na lista de vendas: abre a ficha, sem virar um azulão na tabela */
 /* faculdades: aviso de estado faltando e as variações de escrita agrupadas */
 .aviso-uf{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; color:var(--warn);
@@ -4983,6 +5023,9 @@ select.inp{ cursor:pointer; }
 /* tabela de participantes/certificados: caixa fechada, com a nota como última linha */
 .dp-tabela-box{ overflow:hidden; }
 .dp-tabela .p-nome{ font-weight:600; color:var(--ink); font-size:13px; }
+/* o nome abre a ficha do cliente: precisa ganhar a cor de link no hover, que a regra
+   acima sobrescreveria por ser mais específica que .link-titulo:hover */
+.dp-tabela .p-nome.link-titulo:hover{ color:var(--brand); }
 .dp-tabela .p-fac{ font-size:11px; color:var(--brand); margin-top:3px; font-weight:400; }
 .dp-tabela .p-orcid{ font-size:11px; margin-top:2px; }
 /* azul é reservado a link/acento: o e-mail fica azul, a faculdade é texto comum */
