@@ -281,6 +281,9 @@ const FAC_EXTRAS = [
   ["FUNCESI - Fundação Comunitária de Ensino Superior de Itabira", "MG"],
   ["FAMERP - Faculdade de Medicina de São José do Rio Preto", "SP"],
   ["Universidade São Francisco (USF) - Bragança Paulista", "SP"],
+  ["Centro Universitário de Jaguariúna (UniFAJ)", "SP"],
+  ["Afya Itaperuna", "RJ"],
+  ["Afya Guanambi", "BA"],
 ];
 const FAC_BASE = (() => {
   const ufMap = {};
@@ -357,11 +360,53 @@ const UF_POR_EXTENSO = Object.entries(UF_NOME)
   .filter(([sig]) => sig !== "N/I")
   .map(([sig, nome]) => [sig, semAcentoFac(nome)])
   .sort((a, b) => b[1].length - a[1].length);
+/* Cidade no nome da instituição. É o que faltava para "Faculdade de Medicina de
+ * Presidente Prudente": a instituição não está na base e o nome não traz estado
+ * nenhum — "Presidente" é nome de patrono e "Prudente" não diz nada ao sistema.
+ *
+ * Só entram cidades cujo nome não se repete em outro estado. As que se repetem
+ * entram pelo nome completo ("Vitória da Conquista" antes de "Vitória"), e a
+ * busca testa os nomes mais longos primeiro justamente por isso. Cidade que
+ * exista em dois estados sem qualificador fica de fora: melhor N/I do que o
+ * estado errado. */
+const CIDADE_UF = {
+  "presidente prudente": "SP", "ribeirao preto": "SP", "sao jose do rio preto": "SP",
+  "sao jose dos campos": "SP", "sao bernardo do campo": "SP", "sao caetano do sul": "SP",
+  "campinas": "SP", "sorocaba": "SP", "santo andre": "SP", "osasco": "SP", "jundiai": "SP",
+  "marilia": "SP", "botucatu": "SP", "bauru": "SP", "taubate": "SP", "catanduva": "SP",
+  "aracatuba": "SP", "piracicaba": "SP", "mogi das cruzes": "SP", "braganca paulista": "SP",
+  "belo horizonte": "MG", "juiz de fora": "MG", "montes claros": "MG", "uberlandia": "MG",
+  "uberaba": "MG", "ouro preto": "MG", "itajuba": "MG", "barbacena": "MG", "divinopolis": "MG",
+  "governador valadares": "MG", "pouso alegre": "MG", "itabira": "MG", "vicosa": "MG",
+  "porto alegre": "RS", "caxias do sul": "RS", "pelotas": "RS", "passo fundo": "RS",
+  "santa cruz do sul": "RS", "novo hamburgo": "RS", "ijui": "RS", "canoas": "RS",
+  "florianopolis": "SC", "joinville": "SC", "blumenau": "SC", "criciuma": "SC",
+  "chapeco": "SC", "itajai": "SC", "jaragua do sul": "SC",
+  "curitiba": "PR", "londrina": "PR", "maringa": "PR", "cascavel": "PR", "ponta grossa": "PR",
+  "niteroi": "RJ", "petropolis": "RJ", "volta redonda": "RJ", "campos dos goytacazes": "RJ",
+  "nova iguacu": "RJ", "teresopolis": "RJ", "vassouras": "RJ", "valenca": "RJ",
+  "salvador": "BA", "feira de santana": "BA", "vitoria da conquista": "BA", "itabuna": "BA",
+  "recife": "PE", "olinda": "PE", "caruaru": "PE", "vitoria de santo antao": "PE",
+  "fortaleza": "CE", "sobral": "CE", "juazeiro do norte": "CE",
+  "natal": "RN", "mossoro": "RN", "joao pessoa": "PB", "campina grande": "PB",
+  "maceio": "AL", "aracaju": "SE", "teresina": "PI", "sao luis": "MA", "imperatriz": "MA",
+  "belem": "PA", "santarem": "PA", "manaus": "AM", "porto velho": "RO", "rio branco": "AC",
+  "boa vista": "RR", "macapa": "AP", "palmas": "TO", "araguaina": "TO",
+  "goiania": "GO", "anapolis": "GO", "rio verde": "GO", "brasilia": "DF",
+  "cuiaba": "MT", "varzea grande": "MT", "campo grande": "MS", "dourados": "MS",
+  "vila velha": "ES", "vitoria": "ES", "colatina": "ES", "cachoeiro de itapemirim": "ES",
+  "itaperuna": "RJ", "guanambi": "BA", "jaguariuna": "SP",
+};
+const CIDADES_ORD = Object.entries(CIDADE_UF).sort((a, b) => b[0].length - a[0].length);
 function ufNoTexto(nome) {
   const t = semAcentoFac(nome);
   for (const [g, uf] of Object.entries(GENTILICO_UF)) if (t.includes(g)) return uf;
   for (const [sig, ext] of UF_POR_EXTENSO) {
     if (new RegExp(`(^|[^a-z])${ext}([^a-z]|$)`).test(t)) return sig;
+  }
+  // cidade só depois do estado escrito: "Faculdade de Medicina de Petrópolis - RJ" já resolveu acima
+  for (const [cid, uf] of CIDADES_ORD) {
+    if (new RegExp(`(^|[^a-z])${cid}([^a-z]|$)`).test(t)) return uf;
   }
   // sigla solta em qualquer posição: "Santa Casa Sp - FCMSCSP", "... - SC"
   for (const p of t.split(/[^a-z]+/)) {
