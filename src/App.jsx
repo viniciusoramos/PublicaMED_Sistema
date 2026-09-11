@@ -282,23 +282,39 @@ const FAC_EXTRAS = [
   ["FAMERP - Faculdade de Medicina de São José do Rio Preto", "SP"],
   ["Universidade São Francisco (USF) - Bragança Paulista", "SP"],
   ["Centro Universitário de Jaguariúna (UniFAJ)", "SP"],
-  ["Afya Itaperuna", "RJ"],
   ["Afya Guanambi", "BA"],
 ];
+/* Instituição que trocou de nome. A chave é o nome que está na base importada; o
+ * valor é como ela se chama hoje, e é o que aparece nos relatórios. O nome antigo
+ * vira apelido sozinho, então as vendas lançadas antes da troca continuam caindo
+ * na MESMA linha — que é o ponto: duas marcas da mesma faculdade em linhas
+ * separadas é o erro que o agrupamento existe para evitar. */
+const FAC_RENOMEADA = {
+  "Centro Universitário Redentor (UniRedentor - Afya)": "Afya Centro Universitário Itaperuna",
+};
+/* Outros nomes pelos quais a mesma instituição aparece nas vendas. Não viram
+ * linha nova: entram no reconhecimento da instituição à esquerda. */
+const FAC_APELIDOS = {
+  "Afya Centro Universitário Itaperuna": ["Afya Itaperuna", "UniRedentor"],
+};
 const FAC_BASE = (() => {
   const ufMap = {};
+  const apelidos = {};
   const nomes = [];
+  const juntar = (nome, uf) => {
+    const atual = FAC_RENOMEADA[nome] || nome;
+    const extras = [...(FAC_APELIDOS[atual] || []), ...(atual !== nome ? [nome] : [])];
+    if (ufMap[atual]) { apelidos[atual] = [...(apelidos[atual] || []), ...extras]; return; }
+    nomes.push(atual);
+    ufMap[atual] = uf;
+    apelidos[atual] = extras;
+  };
   (SEED.facs || []).forEach((nome, i) => {
     if (!nome) return;
-    nomes.push(nome);
-    ufMap[nome] = FAC_UF_CORRIGIDA[nome] || (SEED.facUF && SEED.facUF[i]) || "N/I";
+    juntar(nome, FAC_UF_CORRIGIDA[nome] || (SEED.facUF && SEED.facUF[i]) || "N/I");
   });
-  FAC_EXTRAS.forEach(([nome, uf]) => {
-    if (ufMap[nome]) return;
-    nomes.push(nome);
-    ufMap[nome] = uf;
-  });
-  return { nomes, ufMap };
+  FAC_EXTRAS.forEach(([nome, uf]) => juntar(nome, uf));
+  return { nomes, ufMap, apelidos };
 })();
 
 /* Reconhecer a faculdade escrita à mão é o que decide a UF e o agrupamento dos
@@ -325,11 +341,18 @@ const contencaoFac = (a, b) => {
   men.forEach((w) => { if (mai.has(w)) inter += 1; });
   return inter / men.size;
 };
-const FAC_IX = FAC_BASE.nomes.map((nome) => ({
-  nome, uf: FAC_BASE.ufMap[nome] || "N/I",
-  chave: semAcentoFac(nome).replace(/[^a-z0-9]+/g, ""),
-  toks: tokensFac(nome),
-}));
+const FAC_IX = FAC_BASE.nomes.map((nome) => {
+  const apel = FAC_BASE.apelidos[nome] || [];
+  return {
+    nome, uf: FAC_BASE.ufMap[nome] || "N/I",
+    chave: semAcentoFac(nome).replace(/[^a-z0-9]+/g, ""),
+    // o nome antigo também resolve na batida exata, sem depender da comparação por palavra
+    chaves: [nome, ...apel].map((s) => semAcentoFac(s).replace(/[^a-z0-9]+/g, "")),
+    // as palavras dos apelidos contam como se fossem do nome: é o que faz
+    // "Afya Itaperuna" e "UniRedentor" caírem na mesma instituição
+    toks: tokensFac([nome, ...apel].join(" ")),
+  };
+});
 /* Em quantas instituições cada palavra aparece. Palavra exclusiva de uma
  * ("anhembi", "unaerp", "feevale") identifica sozinha; palavra repetida em
  * várias ("minas", "puc", "paulista") não decide nada por conta própria —
@@ -440,7 +463,8 @@ function acharFaculdade(nome) {
   const exato = FAC_IX.find((f) => f.nome === n);
   if (exato) return exato;
   const chave = semAcentoFac(n).replace(/[^a-z0-9]+/g, "");
-  const porChave = FAC_IX.find((f) => f.chave === chave);   // só pontuação/espaço diferentes
+  // só pontuação/espaço diferentes — ou é o nome antigo da instituição
+  const porChave = FAC_IX.find((f) => f.chaves.includes(chave));
   if (porChave) return porChave;
   const toks = tokensFac(n);
   if (!toks.size) return null;
