@@ -283,6 +283,16 @@ const FAC_EXTRAS = [
   ["Universidade São Francisco (USF) - Bragança Paulista", "SP"],
   ["Centro Universitário de Jaguariúna (UniFAJ)", "SP"],
   ["Afya Guanambi", "BA"],
+  // Santa Marcelina fica em Itaquera, capital paulista
+  ["Faculdade de Medicina Santa Marcelina", "SP"],
+  // Barao de Mauá é de Ribeirão Preto — estava virando o Mauá de Brasília, com estado DF errado
+  ["Centro Universitário Barão de Mauá", "SP"],
+  // UPF e Atitus são as duas de Passo Fundo, mas são instituições diferentes
+  ["Universidade de Passo Fundo (UPF)", "RS"],
+  // UNAMA e UNIFAMAZ são as duas de Belém, também diferentes
+  ["Universidade da Amazônia (UNAMA)", "PA"],
+  ["Estácio IDOMED - Iguatu", "CE"],
+  ["ITPAC - Instituto Tocantinense Presidente Antônio Carlos", "TO"],
 ];
 /* Instituição que trocou de nome. A chave é o nome que está na base importada; o
  * valor é como ela se chama hoje, e é o que aparece nos relatórios. O nome antigo
@@ -418,7 +428,7 @@ const CIDADE_UF = {
   "goiania": "GO", "anapolis": "GO", "rio verde": "GO", "brasilia": "DF",
   "cuiaba": "MT", "varzea grande": "MT", "campo grande": "MS", "dourados": "MS",
   "vila velha": "ES", "vitoria": "ES", "colatina": "ES", "cachoeiro de itapemirim": "ES",
-  "itaperuna": "RJ", "guanambi": "BA", "jaguariuna": "SP",
+  "itaperuna": "RJ", "guanambi": "BA", "jaguariuna": "SP", "iguatu": "CE",
 };
 const CIDADES_ORD = Object.entries(CIDADE_UF).sort((a, b) => b[0].length - a[0].length);
 function ufNoTexto(nome) {
@@ -517,6 +527,11 @@ function acharFaculdade(nome) {
   if (score < 0.6 || !melhores.length) return null;
   const ufs = new Set(melhores.map((f) => f.uf));
   if (ufs.size > 1) return null;                            // empate entre estados: não chuta
+  /* Empate de verdade (mesma sobreposição e mesmo estado): vence quem tem menos
+   * palavra sobrando, por ser a correspondência mais justa. "Universidade de
+   * Passo Fundo" empatava com a Atitus, que também é de Passo Fundo, e a ordem
+   * da lista decidia — agora ganha a UPF, cujo nome é só isso. */
+  melhores.sort((a, b) => a.toks.size - b.toks.size);
   return { ...melhores[0], confianca: score >= 0.75 ? "alta" : "baixa" };
 }
 /* UF a partir do nome da faculdade. Só assume o estado quando o reconhecimento é
