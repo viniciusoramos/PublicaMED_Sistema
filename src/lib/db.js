@@ -86,6 +86,7 @@ const pubDe = (p) => ({
   certificadoUrl: p.certificado_url || '',
   // trabalho publicado: não vende mais vaga, mesmo que tenha sobrado. Nulo = ainda em venda.
   fechadaEm: p.fechada_em || null,
+  observacoes: p.observacoes || '',   // anotacao livre; vazio enquanto a migracao 22 nao roda
   participantes: (p.participantes || []).map(partDe),
 });
 
@@ -306,6 +307,7 @@ export async function atualizarPublicacao(id, campos) {
   if ('taxaData' in campos) row.taxa_data = campos.taxaData;
   if ('certificadoUrl' in campos) row.certificado_url = campos.certificadoUrl;
   if ('fechadaEm' in campos) row.fechada_em = campos.fechadaEm; // null reabre a publicação
+  if ('observacoes' in campos) row.observacoes = campos.observacoes || '';
   if (Object.keys(row).length === 0) return;
   const { error } = await supabase.from('publicacoes').update(row).eq('id', id);
   if (error) throw error;

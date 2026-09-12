@@ -3320,8 +3320,10 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
   const [copiado, setCopiado] = useState(false);
   const [aba, setAba] = useState("participantes");
   const [addAberto, setAddAberto] = useState(false);
-  // trocar de publicação volta para a primeira aba e fecha o formulário aberto
-  useEffect(() => { setAba("participantes"); setAddAberto(false); }, [t.id]);
+  const [obs, setObs] = useState(t.observacoes || "");
+  const obsMudou = obs.trim() !== (t.observacoes || "");
+  // trocar de publicação volta para a primeira aba, fecha o formulário e recarrega a anotação
+  useEffect(() => { setAba("participantes"); setAddAberto(false); setObs(t.observacoes || ""); }, [t.id]);
   const lancar = () => {
     const v = numBR(taxaVal);
     if (v <= 0) { alert("Informe o valor da taxa."); return; }
@@ -3437,6 +3439,16 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
           <span className={"dp-kpi-val " + (lucro >= 0 ? "pos" : "negv")}>{brl(lucro)}</span>
         </div>
       </div>
+
+      {/* A observação fica acima das abas, e não dentro de "Dados da publicação",
+          porque ela existe para ser lembrada: escondida numa aba, não seria lida
+          justamente por quem está mexendo na publicação. Sem texto, não ocupa nada. */}
+      {(t.observacoes || "").trim() && (
+        <div className="dp-obs-nota" role="note">
+          <span className="dp-obs-lab">Observação</span>
+          <span className="dp-obs-txt">{t.observacoes}</span>
+        </div>
+      )}
 
       {/* abas */}
       <div className="dp-abas" role="tablist">
@@ -3588,6 +3600,32 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
           <div className="dp-campo">
             <span className="dp-prop-lab">Exigências</span>
             <label className="check sm"><input type="checkbox" checked={!!t.requiresGrad} onChange={(e) => onEdit(t.id, { requiresGrad: e.target.checked })} /> Exige ao menos um graduado</label>
+          </div>
+
+          <div className="dp-campo full">
+            <span className="dp-prop-lab" id={`lab-obs-${t.id}`}>Observações</span>
+            <textarea className="inp dp-obs" rows={3} aria-labelledby={`lab-obs-${t.id}`}
+              value={obs} onChange={(e) => setObs(e.target.value)}
+              placeholder="O que precisa ser lembrado sobre este trabalho" />
+            <span className="dp-obs-acoes">
+              {/* botão explícito: o campo é texto livre, e salvar sozinho ao sair
+                  deixa dúvida se gravou — ainda mais numa anotação que só existe
+                  para ser confiável quando for reler */}
+              <button className="btn sm" disabled={!obsMudou} onClick={() => onEdit(t.id, { observacoes: obs.trim() })}>
+                salvar observação
+              </button>
+              {obsMudou && <button className="mini" onClick={() => setObs(t.observacoes || "")}>desfazer</button>}
+              {/* apagar o texto e salvar também remove, mas ninguém adivinha isso
+                  olhando um botão escrito "salvar" */}
+              {(t.observacoes || "").trim() && (
+                <button className="mini del" onClick={() => { setObs(""); onEdit(t.id, { observacoes: "" }); }}>
+                  remover observação
+                </button>
+              )}
+              <span className="hint">
+                {obsMudou ? "alterações não salvas" : "aparece no topo da publicação, em qualquer aba"}
+              </span>
+            </span>
           </div>
 
           <div className="dp-campo full">
@@ -5185,6 +5223,13 @@ select.inp{ cursor:pointer; }
 .dp-fin-item span{ font-size:11px; font-weight:600; color:var(--muted2); text-transform:uppercase; letter-spacing:.06em; }
 .dp-fin-item b{ font-size:14px; font-weight:600; color:var(--muted); letter-spacing:-.01em; }
 /* propriedades: rótulo em coluna fixa à esquerda, controle à direita — 2 colunas p/ compactar */
+/* nota que o usuário escreveu para si: a cor de aviso a separa do resto sem gritar */
+.dp-obs-nota{ display:flex; gap:10px; align-items:baseline; margin:14px 0 2px; padding:10px 13px;
+  background:var(--warn-soft); border:1px solid var(--warn-border); border-radius:var(--r-md); }
+.dp-obs-lab{ flex:none; font-size:10px; font-weight:600; color:var(--warn); text-transform:uppercase; letter-spacing:.06em; }
+.dp-obs-txt{ font-size:13px; line-height:1.55; white-space:pre-wrap; }  /* respeita as quebras de linha digitadas */
+.dp-obs{ resize:vertical; min-height:62px; line-height:1.55; font-family:inherit; }
+.dp-obs-acoes{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:8px; }
 .dp-props{ display:grid; grid-template-columns:1fr 1fr; gap:0 28px; margin:6px 0 4px; }
 .dp-prop{ display:flex; align-items:center; gap:12px; min-height:34px; }
 .dp-prop.full{ grid-column:1 / -1; }
