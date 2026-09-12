@@ -3366,8 +3366,10 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
   const copiarAutores = () => {
     const txt = t.participantes.map((p) => {
       const nome = p.nome + (p.autorPrincipal ? " (autor principal)" : "") + (p.graduado ? " (graduado)" : "");
+      // sem CPF de propósito: este texto vai para revista, coautor e grupo de
+      // WhatsApp, e o CPF não faz falta em nenhum deles. Ele continua na ficha
+      // do participante, que é onde se consulta quando precisa.
       return `Nome: ${nome}\nFaculdade: ${p.faculdade || ""}\nEmail: ${p.email || ""}`
-        + (p.cpf ? `\nCPF: ${fmtCPF(p.cpf)}` : "")
         + (p.orcid ? `\nORCID: ${soOrcid(p.orcid)}` : "");
     }).join("\n\n");
     const ok = () => { setCopiado(true); setTimeout(() => setCopiado(false), 1600); };
