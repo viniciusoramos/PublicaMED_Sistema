@@ -124,6 +124,20 @@ const isoSomaDias = (iso, n) => {
  * navegador abrir a guia — se chamássemos preventDefault sempre, o Ctrl+clique não abriria nada. */
 const abrirForaDoApp = (e) => e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
 
+/* Busca das listas: por palavra, sem acento, em qualquer ordem.
+ * "flavio souza" acha "Flávio Rui Bezerra de Souza Júnior". Antes cada busca
+ * procurava o texto digitado inteiro, colado e com o acento certo — "flavio"
+ * só achava o Flávio pelo e-mail, e "flavio rui" não achava nada. Agora basta
+ * que cada palavra digitada apareça em algum lugar do registro.
+ * (semAcento mora junto das mensagens de venda, mais abaixo: só é chamada na
+ * hora de filtrar, então tanto faz vir declarada depois.) */
+const casaBusca = (texto, busca) => {
+  const palavras = semAcento(busca).split(/\s+/).filter(Boolean);
+  if (!palavras.length) return true;
+  const alvo = semAcento(texto);
+  return palavras.every((p) => alvo.includes(p));
+};
+
 const numBR = (v) => {
   if (typeof v === "number") return v;
   let s = String(v ?? "").trim().replace(/[^\d.,-]/g, "");
@@ -1928,7 +1942,7 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
     const b = busca.trim().toLowerCase();
     return vendas
       .filter((v) => {
-        if (b && !(`${v.nome} ${v.email} ${v.faculdade} ${v.tema}`.toLowerCase().includes(b))) return false;
+        if (b && !casaBusca(`${v.nome} ${v.email} ${v.faculdade} ${v.tema}`, b)) return false;
         if (fTipo && v.tipo !== fTipo) return false;
         if (fUF && v.uf !== fUF) return false;
         // uma ponta só = aquele dia; "em diante" seria um recorte que ninguém pediu
@@ -2220,7 +2234,7 @@ function Clientes({ m, vendas, salvarCliente, onAbrirPublicacao, contatoDe = () 
 
   const lista = useMemo(() => {
     const b = busca.trim().toLowerCase();
-    let arr = m.clientes.filter((c) => !b || `${c.nome} ${c.email} ${c.faculdade}`.toLowerCase().includes(b));
+    let arr = m.clientes.filter((c) => !b || casaBusca(`${c.nome} ${c.email} ${c.faculdade}`, b));
     if (ordem === "total") arr = [...arr].sort((a, b) => b.total - a.total);
     if (ordem === "qtd") arr = [...arr].sort((a, b) => b.qtd - a.qtd);
     if (ordem === "nome") arr = [...arr].sort((a, b) => a.nome.localeCompare(b.nome));
@@ -2417,7 +2431,7 @@ function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
   const filtrados = useMemo(() => {
     const b = busca.trim().toLowerCase();
     const arr = trabalhos.filter((t) =>
-      (!b || t.titulo.toLowerCase().includes(b)) &&
+      (!b || casaBusca(t.titulo, b)) &&
       (!fStatus || t.status === fStatus) &&
       (!fTipo || t.tipo === fTipo));
     const cmp = {
@@ -3120,7 +3134,7 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
   const lista = useMemo(() => {
     const b = busca.trim().toLowerCase();
     return temas
-      .filter((t) => !b || t.nome.toLowerCase().includes(b))
+      .filter((t) => !b || casaBusca(t.nome, b))
       // a busca procura em todas: quando há texto digitado, o filtro de situação sai da frente
       .filter((t) => buscando || situacao === "todas" || situacaoDe(t) === situacao)
       .filter((t) => !soComVaga || t.participantes.length < t.maxVagas)
