@@ -1115,6 +1115,22 @@ export default function App() {
       aviso(acoes.join(" · ") + (lotouSemGrad ? " · ⚠️ lotou sem nenhum graduado!" : ""));
     } catch (e) { aviso("Erro: " + e.message); }
   };
+  /* Nova ordem dos autores de uma publicação: recebe os ids já na sequência.
+   * A tela muda na hora e volta atrás se o banco recusar — reordenar mexe em
+   * quase todas as linhas, e deixar metade gravada embaralharia a autoria. */
+  const reordenarParticipantes = async (temaId, ids) => {
+    const antes = temas;
+    const tema = temas.find((t) => t.id === temaId);
+    if (!tema) return;
+    const porId = new Map(tema.participantes.map((p) => [p.id, p]));
+    const ordenados = ids.map((id, i) => ({ ...porId.get(id), ordem: i }));
+    setTemas((ts) => ts.map((t) => (t.id === temaId ? { ...t, participantes: ordenados } : t)));
+    try { await db.reordenarParticipantes(temaId, ordenados); }
+    catch (e) {
+      setTemas(antes);
+      alert("Não consegui salvar a ordem dos autores.\n\n" + (e.message || e) + "\n\nNada foi alterado.");
+    }
+  };
   const remParticipante = async (temaId, partId) => {
     const antesT = temas, antesV = vendas;
     setTemas((ts) => ts.map((t) => (t.id === temaId ? { ...t, participantes: t.participantes.filter((p) => p.id !== partId) } : t)));
@@ -1447,7 +1463,7 @@ export default function App() {
         {tab === "temas" && (
           <Temas temas={temas} vendas={vendas} trabalhos={trabalhos} abertura={aberturaPub} onSetLocalTrabalho={setLocalTrabalho} onSetStatusTrabalho={setStatusTrabalho} alvoId={pubAlvo} onAlvoUsado={() => setPubAlvo(null)}
             onAdd={addPublicacao} onCriarNoDia={criarPublicacaoNoDia} onPorNoCalendario={porPublicacaoNoCalendario} onRem={remPublicacao} onEdit={editPublicacao} onEditNome={editNomePublicacao}
-            onAddPart={addParticipante} onEditPart={editParticipante} onRemPart={remParticipante}
+            onAddPart={addParticipante} onEditPart={editParticipante} onRemPart={remParticipante} onReordenarPart={reordenarParticipantes}
             onFecharLote={fecharPublicacoes}
             clienteDoParticipante={clienteDoParticipante} contatoDe={contatoDe} salvarCliente={salvarCliente} onAbrirPublicacao={abrirPublicacao}
             onLancarTaxa={lancarTaxaPub} onCorrigirTaxa={corrigirTaxaPub} aviso={aviso} />
@@ -3097,7 +3113,7 @@ function FormMes({ linha, fatVendas = 0, onSalvar, onClose }) {
 /* ============================================================
    TEMAS E VAGAS
    ============================================================ */
-function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, onPorNoCalendario, onSetLocalTrabalho, onSetStatusTrabalho, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onFecharLote, clienteDoParticipante, contatoDe = () => ({}), salvarCliente, onAbrirPublicacao, onLancarTaxa, onCorrigirTaxa, aviso }) {
+function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, onPorNoCalendario, onSetLocalTrabalho, onSetStatusTrabalho, alvoId, onAlvoUsado, onAdd, onRem, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onReordenarPart, onFecharLote, clienteDoParticipante, contatoDe = () => ({}), salvarCliente, onAbrirPublicacao, onLancarTaxa, onCorrigirTaxa, aviso }) {
   const [busca, setBusca] = useState("");
   const [soComVaga, setSoComVaga] = useState(false);
   const [situacao, setSituacao] = useState("venda"); // a tela abre no trabalho do dia
@@ -3298,7 +3314,7 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
             <DetalhePub key={sel.id} t={sel} vendas={vendas} pessoas={pessoas}
               localPub={trabLink ? trabLink.localPublicacao : ""} onSetLocal={(local) => trabLink && onSetLocalTrabalho(trabLink.id, local)}
               statusTrab={trabLink ? (trabLink.status || "A fazer") : null} onSetStatus={(s) => trabLink && onSetStatusTrabalho(trabLink.id, s)}
-              onEdit={onEdit} onEditNome={onEditNome} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onLancarTaxa={onLancarTaxa} onCorrigirTaxa={onCorrigirTaxa}
+              onEdit={onEdit} onEditNome={onEditNome} onAddPart={onAddPart} onEditPart={onEditPart} onRemPart={onRemPart} onReordenarPart={onReordenarPart} onLancarTaxa={onLancarTaxa} onCorrigirTaxa={onCorrigirTaxa}
               onFechar={fechar} onReabrir={reabrir} dataAbertura={abertura.get(sel.id) || ""} onPorNoCalendario={onPorNoCalendario}
               clienteDoParticipante={clienteDoParticipante} contatoDe={contatoDe} salvarCliente={salvarCliente} onAbrirPublicacao={onAbrirPublicacao} aviso={aviso}
               onExcluir={() => excluir(sel)} />
@@ -3311,7 +3327,7 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
   );
 }
 
-function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, statusTrab = null, onSetStatus, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onLancarTaxa, onCorrigirTaxa, onFechar, onReabrir, dataAbertura = "", onPorNoCalendario, onExcluir,
+function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, statusTrab = null, onSetStatus, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onReordenarPart, onLancarTaxa, onCorrigirTaxa, onFechar, onReabrir, dataAbertura = "", onPorNoCalendario, onExcluir,
                       clienteDoParticipante, contatoDe = () => ({}), salvarCliente, onAbrirPublicacao, aviso = () => {} }) {
   const { tipos, status: statusDisp } = useContext(ListasCtx);
   const restantes = t.maxVagas - t.participantes.length;
@@ -3334,6 +3350,25 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
   const [copiado, setCopiado] = useState(false);
   const [aba, setAba] = useState("participantes");
   const [addAberto, setAddAberto] = useState(false);
+  /* Ordem dos autores: arrastar a linha, ou setas com a alça em foco. A ordem é
+   * a que está na lista — mover é recolocar o id numa posição e mandar a
+   * sequência inteira, em vez de trocar dois vizinhos de lugar. */
+  const [arrastando, setArrastando] = useState(null);
+  const [sobre, setSobre] = useState(null);
+  const podeReordenar = t.participantes.length > 1;
+  const mover = (de, para) => {
+    if (de === para || para < 0 || para >= t.participantes.length) return;
+    const ids = t.participantes.map((x) => x.id);
+    ids.splice(para, 0, ids.splice(de, 1)[0]);
+    onReordenarPart(t.id, ids);
+  };
+  const soltarEm = (destinoId) => {
+    setSobre(null);
+    if (!arrastando || arrastando === destinoId) return;
+    const ids = t.participantes.map((x) => x.id);
+    mover(ids.indexOf(arrastando), ids.indexOf(destinoId));
+    setArrastando(null);
+  };
   const [obs, setObs] = useState(t.observacoes || "");
   const obsMudou = obs.trim() !== (t.observacoes || "");
   // trocar de publicação volta para a primeira aba, fecha o formulário e recarrega a anotação
@@ -3507,6 +3542,7 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
               <table className="tab dp-tabela">
                 <thead>
                   <tr>
+                    <th scope="col" className="dp-ord-th" title="Ordem dos autores">#</th>
                     <th scope="col">Participante</th>
                     <th scope="col">Faculdade</th>
                     <th scope="col">Marcações</th>
@@ -3515,10 +3551,32 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
                   </tr>
                 </thead>
                 <tbody>
-                  {t.participantes.map((p) => {
+                  {t.participantes.map((p, i) => {
                     const vd = vendaDoPart(p);
                     return (
-                      <tr key={p.id}>
+                      <tr key={p.id}
+                        draggable={podeReordenar}
+                        onDragStart={(e) => { setArrastando(p.id); e.dataTransfer.effectAllowed = "move"; }}
+                        onDragEnd={() => { setArrastando(null); setSobre(null); }}
+                        onDragOver={(e) => { if (arrastando) { e.preventDefault(); setSobre(p.id); } }}
+                        onDragLeave={() => setSobre((s) => (s === p.id ? null : s))}
+                        onDrop={(e) => { e.preventDefault(); soltarEm(p.id); }}
+                        className={(arrastando === p.id ? "dp-arrastando" : "") + (sobre === p.id && arrastando !== p.id ? " dp-alvo" : "")}>
+                        <td className="dp-ord">
+                          {/* a alça também funciona pelo teclado: com ela em foco,
+                              ↑ e ↓ movem o autor — arrastar não dá para fazer sem mouse */}
+                          <button type="button" className="dp-grip" disabled={!podeReordenar}
+                            aria-label={`Autor ${i + 1}: ${p.nome}. Use as setas para cima e para baixo para mudar a ordem.`}
+                            title={podeReordenar ? "Arraste para mudar a ordem dos autores (ou use ↑ ↓)" : "Só dá para ordenar com dois ou mais autores"}
+                            onKeyDown={(e) => {
+                              if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+                              e.preventDefault();
+                              mover(i, e.key === "ArrowUp" ? i - 1 : i + 1);
+                            }}>
+                            <span className="dp-grip-pontos" aria-hidden="true">⠿</span>
+                            <span className="dp-grip-num">{i + 1}</span>
+                          </button>
+                        </td>
                         <td>
                           {/* mesma ficha da aba Clientes, aberta por cima: fechando, a publicação
                               continua aberta na tela em vez de jogar o usuário em outra aba */}
@@ -5171,6 +5229,19 @@ select.inp{ cursor:pointer; }
 .dp-tabela td.p-valor{ color:var(--ink); font-weight:500; }
 .dp-marcas{ display:inline-flex; gap:6px; flex-wrap:wrap; }
 /* as ações não estão no desenho: aparecem só ao passar o mouse na linha */
+/* ordem dos autores: alça de arrastar + número da posição */
+.dp-tabela .dp-ord-th{ width:46px; text-align:center; }
+.dp-tabela td.dp-ord{ width:46px; padding-right:0; vertical-align:top; }
+.dp-grip{ display:flex; align-items:center; gap:5px; padding:3px 4px; background:none; border:0;
+  border-radius:var(--r-sm); color:var(--muted2); cursor:grab; font:inherit; }
+.dp-grip:disabled{ cursor:default; }
+.dp-grip:not(:disabled):hover{ background:var(--hover); color:var(--ink); }
+.dp-grip:focus-visible{ outline:2px solid var(--brand); outline-offset:1px; }
+.dp-grip-pontos{ font-size:13px; line-height:1; }
+.dp-grip:disabled .dp-grip-pontos{ opacity:0; }   /* com um autor só não há o que ordenar */
+.dp-grip-num{ font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
+.dp-tabela tr.dp-arrastando{ opacity:.45; }
+.dp-tabela tr.dp-alvo td{ box-shadow:inset 0 2px 0 var(--brand); }
 .dp-tabela td.dp-acoes{ white-space:nowrap; }
 .dp-tabela td.dp-acoes > *{ opacity:0; transition:opacity .14s ease; }
 .dp-tabela tbody tr:hover td.dp-acoes > *,

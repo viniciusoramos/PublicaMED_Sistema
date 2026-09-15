@@ -71,7 +71,14 @@ const partDe = (x) => ({
   cpf: x.cpf || '',
   autorPrincipal: !!x.autor_principal,
   graduado: !!x.graduado,
+  // posição do autor na publicação; criadoEm desempata quem ainda está zerado
+  ordem: Number(x.ordem) || 0,
+  criadoEm: x.criado_em || '',
 });
+/* Ordem dos autores dentro da publicação. O banco devolve os participantes
+ * embutidos sem ordem garantida, então quem ordena é aqui — e a data de
+ * cadastro desempata, que era a sequência de antes da coluna existir. */
+const porOrdem = (a, b) => (a.ordem - b.ordem) || (a.criadoEm || '').localeCompare(b.criadoEm || '');
 const pubDe = (p) => ({
   id: p.id,
   criadoEm: p.criado_em,
@@ -87,7 +94,7 @@ const pubDe = (p) => ({
   // trabalho publicado: não vende mais vaga, mesmo que tenha sobrado. Nulo = ainda em venda.
   fechadaEm: p.fechada_em || null,
   observacoes: p.observacoes || '',   // anotacao livre; vazio enquanto a migracao 22 nao roda
-  participantes: (p.participantes || []).map(partDe),
+  participantes: (p.participantes || []).map(partDe).sort(porOrdem),
 });
 
 /* O PostgREST corta a resposta em 1000 linhas e não avisa: vem uma página e
@@ -334,6 +341,11 @@ export async function removerPublicacao(id) {
   if (error) throw error;
 }
 export async function adicionarParticipante(publicacaoId, p) {
+  // entra como último autor: quem chega depois vai para o fim da lista
+  const ult = await supabase.from('participantes').select('ordem')
+    .eq('publicacao_id', publicacaoId).order('ordem', { ascending: false }).limit(1);
+  if (ult.error) throw ult.error;
+  const ordem = ult.data && ult.data.length ? (Number(ult.data[0].ordem) || 0) + 1 : 0;
   const { data, error } = await supabase.from('participantes').insert({
     publicacao_id: publicacaoId,
     nome: nomeProprio(p.nome),
@@ -344,9 +356,37 @@ export async function adicionarParticipante(publicacaoId, p) {
     cpf: soDigitos(p.cpf),
     autor_principal: !!p.autorPrincipal,
     graduado: !!p.graduado,
+    ordem,
   }).select().single();
   if (error) throw error;
   return partDe(data);
+}
+/* Grava a nova ordem dos autores: recebe os participantes já na sequência.
+ * Um upsert só, em vez de um update por autor — reordenar mexe em quase todas
+ * as linhas, e meia gravação deixaria a autoria embaralhada sem ninguém saber
+ * onde parou.
+ *
+ * Vai a linha inteira, e não só id + ordem, porque o upsert do PostgREST é um
+ * INSERT com ON CONFLICT: o INSERT precisa de publicacao_id, que é obrigatório
+ * e não tem padrão. Mandar tudo também torna o caso raro inofensivo — se a
+ * linha tiver sumido nesse meio tempo, ela volta igual ao que está na tela, em
+ * vez de virar um autor em branco. */
+export async function reordenarParticipantes(publicacaoId, ordenados) {
+  if (!publicacaoId || !ordenados || ordenados.length < 2) return;
+  const { error } = await supabase.from('participantes').upsert(ordenados.map((p, i) => ({
+    id: p.id,
+    publicacao_id: publicacaoId,
+    nome: p.nome || '',          // sem normalizar: reordenar não é hora de reescrever nome
+    email: p.email || '',
+    faculdade: p.faculdade || '',
+    orcid: p.orcid || '',
+    telefone: p.telefone || '',
+    cpf: soDigitos(p.cpf),
+    autor_principal: !!p.autorPrincipal,
+    graduado: !!p.graduado,
+    ordem: i,
+  })));
+  if (error) throw error;
 }
 /* O CPF é da pessoa, não da participação: ao gravar num participante, as outras
  * participações da mesma pessoa que ainda estão sem CPF recebem o mesmo valor.
