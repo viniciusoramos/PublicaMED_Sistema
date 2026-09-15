@@ -297,6 +297,8 @@ const FAC_EXTRAS = [
   ["Universidade São Francisco (USF) - Bragança Paulista", "SP"],
   ["Centro Universitário de Jaguariúna (UniFAJ)", "SP"],
   ["Afya Guanambi", "BA"],
+  ["Universidade Metropolitana de Santos (UNIMES)", "SP"],
+  ["FAMETRO - Faculdade Metropolitana de Manaus", "AM"],
   // Santa Marcelina fica em Itaquera, capital paulista
   ["Faculdade de Medicina Santa Marcelina", "SP"],
   // Barao de Mauá é de Ribeirão Preto — estava virando o Mauá de Brasília, com estado DF errado
