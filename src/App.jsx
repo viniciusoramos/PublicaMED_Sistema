@@ -431,7 +431,7 @@ const CIDADE_UF = {
   "santa cruz do sul": "RS", "novo hamburgo": "RS", "ijui": "RS", "canoas": "RS",
   "florianopolis": "SC", "joinville": "SC", "blumenau": "SC", "criciuma": "SC",
   "chapeco": "SC", "itajai": "SC", "jaragua do sul": "SC",
-  "curitiba": "PR", "londrina": "PR", "maringa": "PR", "cascavel": "PR", "ponta grossa": "PR",
+  "curitiba": "PR", "londrina": "PR", "maringa": "PR", "cascavel": "PR", "ponta grossa": "PR", "pinhais": "PR",
   "niteroi": "RJ", "petropolis": "RJ", "volta redonda": "RJ", "campos dos goytacazes": "RJ",
   "nova iguacu": "RJ", "teresopolis": "RJ", "vassouras": "RJ", "valenca": "RJ",
   "salvador": "BA", "feira de santana": "BA", "vitoria da conquista": "BA", "itabuna": "BA",
@@ -445,17 +445,22 @@ const CIDADE_UF = {
   "cuiaba": "MT", "varzea grande": "MT", "campo grande": "MS", "dourados": "MS",
   "vila velha": "ES", "vitoria": "ES", "colatina": "ES", "cachoeiro de itapemirim": "ES",
   "itaperuna": "RJ", "guanambi": "BA", "jaguariuna": "SP", "iguatu": "CE",
+  "espirito santo do pinhal": "SP",   // o nome do estado dentro do nome da cidade
 };
-const CIDADES_ORD = Object.entries(CIDADE_UF).sort((a, b) => b[0].length - a[0].length);
+/* Estados e cidades no mesmo balaio, do nome mais longo para o mais curto: é o
+ * que faz "Espírito Santo do Pinhal" (SP) ganhar de "Espírito Santo" (ES) e
+ * "Vitória da Conquista" (BA) ganhar de "Vitória" (ES). Testar estado antes de
+ * cidade, como era, entregava o lugar errado sempre que o nome de um estava
+ * escrito dentro do nome do outro. */
+const LUGARES_ORD = [
+  ...Object.entries(CIDADE_UF),
+  ...UF_POR_EXTENSO.map(([sig, ext]) => [ext, sig]),
+].sort((a, b) => b[0].length - a[0].length);
 function ufNoTexto(nome) {
   const t = semAcentoFac(nome);
   for (const [g, uf] of Object.entries(GENTILICO_UF)) if (t.includes(g)) return uf;
-  for (const [sig, ext] of UF_POR_EXTENSO) {
-    if (new RegExp(`(^|[^a-z])${ext}([^a-z]|$)`).test(t)) return sig;
-  }
-  // cidade só depois do estado escrito: "Faculdade de Medicina de Petrópolis - RJ" já resolveu acima
-  for (const [cid, uf] of CIDADES_ORD) {
-    if (new RegExp(`(^|[^a-z])${cid}([^a-z]|$)`).test(t)) return uf;
+  for (const [lugar, uf] of LUGARES_ORD) {
+    if (new RegExp(`(^|[^a-z])${lugar}([^a-z]|$)`).test(t)) return uf;
   }
   // sigla solta em qualquer posição: "Santa Casa Sp - FCMSCSP", "... - SC"
   for (const p of t.split(/[^a-z]+/)) {
