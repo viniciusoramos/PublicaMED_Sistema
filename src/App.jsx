@@ -3562,19 +3562,26 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
                     const vd = vendaDoPart(p);
                     return (
                       <tr key={p.id}
-                        draggable={podeReordenar}
-                        onDragStart={(e) => { setArrastando(p.id); e.dataTransfer.effectAllowed = "move"; }}
-                        onDragEnd={() => { setArrastando(null); setSobre(null); }}
+                        /* a linha inteira recebe o solto, mas não inicia o arraste: com
+                           draggable nela, o navegador tratava qualquer clique como início
+                           de arraste e não dava para selecionar e-mail, CPF nem nome */
                         onDragOver={(e) => { if (arrastando) { e.preventDefault(); setSobre(p.id); } }}
                         onDragLeave={() => setSobre((s) => (s === p.id ? null : s))}
                         onDrop={(e) => { e.preventDefault(); soltarEm(p.id); }}
                         className={(arrastando === p.id ? "dp-arrastando" : "") + (sobre === p.id && arrastando !== p.id ? " dp-alvo" : "")}>
                         <td className="dp-ord">
-                          {/* a alça também funciona pelo teclado: com ela em foco,
-                              ↑ e ↓ movem o autor — arrastar não dá para fazer sem mouse */}
+                          {/* só a alça arrasta. Ela também funciona pelo teclado: com ela
+                              em foco, ↑ e ↓ movem o autor — arrastar exige mouse */}
                           <button type="button" className="dp-grip" disabled={!podeReordenar}
+                            draggable={podeReordenar}
+                            onDragStart={(e) => {
+                              setArrastando(p.id);
+                              e.dataTransfer.effectAllowed = "move";
+                              e.dataTransfer.setData("text/plain", p.id);  // Firefox só arrasta com dado definido
+                            }}
+                            onDragEnd={() => { setArrastando(null); setSobre(null); }}
                             aria-label={`Autor ${i + 1}: ${p.nome}. Use as setas para cima e para baixo para mudar a ordem.`}
-                            title={podeReordenar ? "Arraste para mudar a ordem dos autores (ou use ↑ ↓)" : "Só dá para ordenar com dois ou mais autores"}
+                            title={podeReordenar ? "Arraste por aqui para mudar a ordem dos autores (ou use ↑ ↓)" : "Só dá para ordenar com dois ou mais autores"}
                             onKeyDown={(e) => {
                               if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
                               e.preventDefault();
@@ -5240,7 +5247,10 @@ select.inp{ cursor:pointer; }
 .dp-tabela .dp-ord-th{ width:46px; text-align:center; }
 .dp-tabela td.dp-ord{ width:46px; padding-right:0; vertical-align:top; }
 .dp-grip{ display:flex; align-items:center; gap:5px; padding:3px 4px; background:none; border:0;
-  border-radius:var(--r-sm); color:var(--muted2); cursor:grab; font:inherit; }
+  border-radius:var(--r-sm); color:var(--muted2); cursor:grab; font:inherit; user-select:none; }
+.dp-grip:active{ cursor:grabbing; }
+/* o resto da linha e texto para ler e copiar — nome, e-mail e CPF saem daqui */
+.dp-tabela td:not(.dp-ord){ user-select:text; }
 .dp-grip:disabled{ cursor:default; }
 .dp-grip:not(:disabled):hover{ background:var(--hover); color:var(--ink); }
 .dp-grip:focus-visible{ outline:2px solid var(--brand); outline-offset:1px; }
