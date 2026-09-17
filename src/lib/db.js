@@ -43,6 +43,7 @@ const vendaDe = (r) => ({
   tema: r.tema || '',
   faculdade_id: r.faculdade_id || null,
   participanteId: r.participante_id || null,
+  criadoEm: r.criado_em || '', // instante em que a venda entrou no sistema (ordena o dia e mostra a hora)
 });
 const finDe = (r) => ({
   id: r.id,

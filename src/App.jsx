@@ -109,6 +109,12 @@ const diaDe = (ts) => {
   const d = new Date(ts);
   return isNaN(d) ? String(ts).slice(0, 10) : d.toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
 };
+// hora (HH:MM) de um instante gravado em UTC, lida no horário de Brasília
+const horaDe = (ts) => {
+  if (!ts || String(ts).length <= 10) return ""; // data pura não tem hora
+  const d = new Date(ts);
+  return isNaN(d) ? "" : d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+};
 // soma/subtrai dias de uma data ISO sem passar por fuso nenhum
 const isoSomaDias = (iso, n) => {
   const [y, m, d] = String(iso).split("-").map(Number);
@@ -1975,7 +1981,8 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
         if (fMes !== "" && mesDeIso(v.data) !== parseInt(fMes, 10)) return false;
         return true;
       })
-      .sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+      // mais recente no topo: primeiro a data da venda, e dentro do mesmo dia a última cadastrada
+      .sort((a, b) => (b.data || "").localeCompare(a.data || "") || (b.criadoEm || "").localeCompare(a.criadoEm || ""));
   }, [vendas, busca, fTipo, fUF, fMes, fDe, fAte]);
 
   // opções de faculdade para o seletor: base canônica + qualquer faculdade já usada
@@ -2015,7 +2022,8 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
       salvar(vendas.map((v) => (v.id === editando.id ? { ...v, ...dados } : v)));
       aviso("Venda atualizada");
     } else {
-      salvar([{ id: "s" + uid(), ...dados }, ...vendas]);
+      // criadoEm já na tela: sem ele a venda nova cairia para o fim do dia até o banco responder
+      salvar([{ id: "s" + uid(), criadoEm: new Date().toISOString(), ...dados }, ...vendas]);
       aviso("Venda adicionada");
     }
     setModal(false); setEditando(null);
@@ -2082,7 +2090,12 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
           <tbody>
             {filtradas.slice(0, limite).map((v) => (
               <tr key={v.id}>
-                <td className="nowrap muted">{fmtData(v.data)}</td>
+                <td className="nowrap muted" title={v.criadoEm ? `Adicionada ao sistema em ${fmtData(diaDe(v.criadoEm))} às ${horaDe(v.criadoEm)}` : undefined}>
+                  {fmtData(v.data)}
+                  {/* a hora é a do cadastro; só aparece quando o cadastro foi no mesmo dia da venda,
+                      senão "09:00" embaixo de uma data retroativa (ou importada) enganaria */}
+                  {v.criadoEm && diaDe(v.criadoEm) === v.data && <div className="cel-hora">{horaDe(v.criadoEm)}</div>}
+                </td>
                 <td>
                   <button className="cel-nome link-cliente" title="Ver a ficha deste cliente"
                     onClick={() => { const c = clienteDaVenda(v); c ? setFichaCli(c) : aviso("Essa venda não tem cliente identificado."); }}>
@@ -4930,6 +4943,7 @@ select.inp{ cursor:pointer; }
 .nowrap{ white-space:nowrap; }
 .cel-nome{ font-weight:600; }
 .cel-tema{ font-size:11px; color:var(--muted2); margin-top:2px; max-width:330px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cel-hora{ font-size:11px; color:var(--muted2); margin-top:2px; font-variant-numeric:tabular-nums; }
 .cel-fac{ font-size:12px; color:var(--muted); max-width:200px; }
 .cel-titulo{ font-size:13px; max-width:560px; line-height:1.45; }
 .link-titulo{ background:transparent; border:none; padding:0; font:inherit; font-weight:600; color:var(--ink); text-align:left; cursor:pointer; line-height:1.45; text-decoration:none; display:inline; transition:color .14s ease; }
