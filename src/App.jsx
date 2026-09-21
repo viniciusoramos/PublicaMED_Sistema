@@ -101,7 +101,14 @@ const STATUS_COR = {
 const PALETA = ["#4C9AE0","#34B58A","#8B7BE8","#E0913C","#46B8CE","#D9647E","#C57BD6","#7E8E9C"];
 const hashCor = (s) => PALETA[[...String(s || "")].reduce((a, c) => a + c.charCodeAt(0), 0) % PALETA.length];
 const corTipo = (v) => TIPO_COR[v] || hashCor(v);
-const corStatus = (v) => STATUS_COR[v] || hashCor(v);
+/* Status comparado sem maiúscula e sem acento. "Aguardando Aprovação" gravado nos
+ * trabalhos e "Aguardando aprovação" escrito no código são a mesma etapa — mas
+ * comparados letra a letra não batiam, e a cor da coluna caía numa sorteada.
+ * Fica definido aqui, e não reaproveitando semAcento, porque STATUS_COR_N é
+ * montado na carga do módulo, antes de semAcento existir. */
+const normStatus = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+const STATUS_COR_N = new Map(Object.entries(STATUS_COR).map(([k, v]) => [normStatus(k), v]));
+const corStatus = (v) => STATUS_COR_N.get(normStatus(v)) || hashCor(v);
 // tipos/status disponíveis (padrões + criados pelo usuário) chegam aos componentes por contexto
 const ListasCtx = React.createContext({ tipos: TIPOS, status: STATUS });
 
@@ -1385,9 +1392,21 @@ export default function App() {
   const tiposDisp = useMemo(
     () => [...new Set([...TIPOS, ...temas.map((t) => t.tipo), ...trabalhos.map((t) => t.tipo)])].filter(Boolean),
     [temas, trabalhos]);
-  const statusDisp = useMemo(
-    () => [...new Set([...STATUS, ...trabalhos.map((t) => t.status)])].filter(Boolean),
-    [trabalhos]);
+  /* Um status por etapa, sem repetir grafia. O Set comparava letra a letra, então
+   * "Aguardando aprovação" (do código) e "Aguardando Aprovação" (gravado) entravam
+   * os dois no seletor — e escolher o de minúscula criava mais uma variante no
+   * banco. A ordem segue STATUS (é a ordem das etapas); a grafia é a gravada. */
+  const statusDisp = useMemo(() => {
+    const gravado = new Map();
+    for (const t of trabalhos) if (t.status && !gravado.has(normStatus(t.status))) gravado.set(normStatus(t.status), t.status);
+    const out = [], vistos = new Set();
+    for (const s of [...STATUS, ...trabalhos.map((t) => t.status)]) {
+      if (!s || vistos.has(normStatus(s))) continue;
+      vistos.add(normStatus(s));
+      out.push(gravado.get(normStatus(s)) || s);
+    }
+    return out;
+  }, [trabalhos]);
   // data de abertura de cada publicação, vinda do cronograma (organiza a lista de Publicações
   // e vagas por situação em vez de por data de cadastro). Também antes dos returns condicionais.
   const vinculoCal = useMemo(() => aberturaDasPublicacoes(planejamentos, temas), [planejamentos, temas]);
@@ -2515,7 +2534,7 @@ function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
    * viravam duas colunas — uma com os trabalhos, outra vazia. A coluna é
    * identificada sem maiúscula e sem acento, e o nome que aparece é o que está
    * gravado nos trabalhos, não o que eu escrevi aqui no código. */
-  const chaveStatus = (s) => semAcento(String(s ?? "").trim());
+  const chaveStatus = normStatus;   // o mesmo critério da cor e do seletor
   const porStatus = useMemo(() => {
     const b = busca.trim().toLowerCase();
     const base = trabalhos.filter((t) => (!b || casaBusca(t.titulo, b)) && (!fTipo || t.tipo === fTipo));
