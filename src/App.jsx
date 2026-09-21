@@ -73,10 +73,29 @@ const TIPO_COR = {
   "Apresentação":"#E0913C","Artigo Internacional":"#46B8CE","Artigo Qualis A3":"#D9647E",
   "Combo":"#C57BD6","Personalizado":"#7E8E9C","Outro":"#7E8E9C",
 };
-const STATUS = ["A fazer","Aguardando certificado","Concluído","Certificado emitido"];
+/* As etapas não são uma fila só. A sequência padrão é o caminho do trabalho
+ * comum; a organização do Lattes e as demandas personalizadas têm etapas
+ * próprias, que não fazem parte daquele caminho — misturar as três numa fila
+ * dava a impressão de que um trabalho "Concluído" tinha pulado etapas. O quadro
+ * usa estes grupos para separar as trilhas; a ordem aqui é a ordem na tela. */
+const FLUXO_TRABALHO = [
+  { grupo: "Sequência padrão",        etapas: ["A fazer", "Aguardando aprovação", "Aguardando certificado", "Certificado emitido"] },
+  /* O encerramento do Lattes tem nome próprio, e não "Concluído": um status só
+   * pode ocupar uma coluna, e "Concluído" já é o fim das demandas
+   * personalizadas — repetido nas duas trilhas, o mesmo trabalho apareceria
+   * duas vezes no quadro. */
+  { grupo: "Organização do Lattes",   etapas: ["Aguardando Formulário", "Formulário OK", "Lattes concluído"] },
+  { grupo: "Demandas personalizadas", etapas: ["Concluído"] },
+];
+const STATUS = FLUXO_TRABALHO.flatMap((f) => f.etapas);
 const STATUS_COR = {
-  "A fazer":"#64748B","Aguardando certificado":"#A16207",
-  "Concluído":"#0E7490","Certificado emitido":"#12805C",
+  // a sequência padrão progride de cor: parado, em espera, quase lá, pronto
+  "A fazer":"#64748B", "Aguardando aprovação":"#A16207",
+  "Aguardando certificado":"#0E7490", "Certificado emitido":"#12805C",
+  // as outras trilhas usam outra família, para não parecer parte da sequência
+  // a trilha do Lattes vai escurecendo até o fim, como a padrão faz com as suas
+  "Aguardando Formulário":"#8B7BE8", "Formulário OK":"#6D5DD3", "Lattes concluído":"#5546B8",
+  "Concluído":"#0D9488",
 };
 // cores para tipos/status criados pelo usuário (fora dos padrões): paleta estável por hash
 const PALETA = ["#4C9AE0","#34B58A","#8B7BE8","#E0913C","#46B8CE","#D9647E","#C57BD6","#7E8E9C"];
@@ -2464,20 +2483,68 @@ function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
   const [modal, setModal] = useState(false);
   const [editLocalId, setEditLocalId] = useState(null);
 
+  /* Lista ou quadro. Fica guardado no navegador porque é preferência de quem
+   * olha: quem trabalha por etapa quer o quadro sempre, quem procura título
+   * quer a lista — não faz sentido reescolher a cada visita. */
+  const [visao, setVisao] = useState(() => {
+    try { return localStorage.getItem("trab-visao") === "quadro" ? "quadro" : "lista"; } catch { return "lista"; }
+  });
+  const trocarVisao = (v) => { setVisao(v); try { localStorage.setItem("trab-visao", v); } catch { /* navegador sem storage */ } };
+
+  const cmpOrdem = {
+    recentes: (a, c) => (c.criadoEm || "").localeCompare(a.criadoEm || ""),
+    antigos: (a, c) => (a.criadoEm || "").localeCompare(c.criadoEm || ""),
+    status: (a, c) => statusDisp.indexOf(a.status) - statusDisp.indexOf(c.status) || (c.criadoEm || "").localeCompare(a.criadoEm || ""),
+    titulo: (a, c) => a.titulo.localeCompare(c.titulo),
+  }[ordem];
+
   const filtrados = useMemo(() => {
     const b = busca.trim().toLowerCase();
     const arr = trabalhos.filter((t) =>
       (!b || casaBusca(t.titulo, b)) &&
       (!fStatus || t.status === fStatus) &&
       (!fTipo || t.tipo === fTipo));
-    const cmp = {
-      recentes: (a, c) => (c.criadoEm || "").localeCompare(a.criadoEm || ""),
-      antigos: (a, c) => (a.criadoEm || "").localeCompare(c.criadoEm || ""),
-      status: (a, c) => statusDisp.indexOf(a.status) - statusDisp.indexOf(c.status) || (c.criadoEm || "").localeCompare(a.criadoEm || ""),
-      titulo: (a, c) => a.titulo.localeCompare(c.titulo),
-    }[ordem];
-    return [...arr].sort(cmp);
+    return [...arr].sort(cmpOrdem);
   }, [trabalhos, busca, fStatus, fTipo, ordem]);
+
+  /* No quadro cada coluna é um status, então filtrar POR status esvaziaria todas
+   * menos uma — o filtro de status sai da frente aqui (e some da tela). Status
+   * criado à mão que não esteja na lista padrão ganha coluna própria, senão o
+   * trabalho sumiria do quadro sem ninguém perceber. */
+  /* "Formulário OK" e "Formulário ok" são a mesma etapa escrita de dois jeitos, e
+   * viravam duas colunas — uma com os trabalhos, outra vazia. A coluna é
+   * identificada sem maiúscula e sem acento, e o nome que aparece é o que está
+   * gravado nos trabalhos, não o que eu escrevi aqui no código. */
+  const chaveStatus = (s) => semAcento(String(s ?? "").trim());
+  const porStatus = useMemo(() => {
+    const b = busca.trim().toLowerCase();
+    const base = trabalhos.filter((t) => (!b || casaBusca(t.titulo, b)) && (!fTipo || t.tipo === fTipo));
+    const nomeDe = new Map();                         // chave normalizada -> nome exibido
+    for (const t of trabalhos) if (!nomeDe.has(chaveStatus(t.status))) nomeDe.set(chaveStatus(t.status), t.status);
+    for (const s of statusDisp) if (!nomeDe.has(chaveStatus(s))) nomeDe.set(chaveStatus(s), s);
+    const map = new Map([...nomeDe.values()].map((n) => [n, []]));
+    for (const t of [...base].sort(cmpOrdem)) map.get(nomeDe.get(chaveStatus(t.status))).push(t);
+    return map;
+  }, [trabalhos, busca, fTipo, ordem, statusDisp]);
+
+  /* O quadro em trilhas: cada grupo do FLUXO_TRABALHO vira uma faixa própria.
+   * Status criado à mão, que não está em grupo nenhum, cai numa faixa final —
+   * some do quadro seria pior do que aparecer fora de lugar. */
+  const trilhas = useMemo(() => {
+    // a etapa do código vira o nome como está gravado, quando existe gravado
+    const real = new Map([...porStatus.keys()].map((s) => [chaveStatus(s), s]));
+    const nomeReal = (e) => real.get(chaveStatus(e)) || e;
+    const usados = new Set(FLUXO_TRABALHO.flatMap((f) => f.etapas.map(chaveStatus)));
+    const soltos = [...porStatus.keys()].filter((s) => !usados.has(chaveStatus(s)));
+    return [
+      // etapa sem nenhum trabalho continua na tela: é preciso poder soltar nela
+      ...FLUXO_TRABALHO.map((f) => ({ ...f, etapas: f.etapas.map(nomeReal) })),
+      ...(soltos.length ? [{ grupo: "Outras etapas", etapas: soltos }] : []),
+    ].filter((f) => f.etapas.length);
+  }, [porStatus]);
+
+  const [arrastando, setArrastando] = useState(null);
+  const [colSobre, setColSobre] = useState(null);
 
   const contagem = statusDisp.map((s) => ({ s, n: trabalhos.filter((t) => t.status === s).length }));
 
@@ -2520,6 +2587,26 @@ function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
 
   const mudarStatus = (id, status) => {
     salvar(trabalhos.map((t) => (t.id === id ? { ...t, status } : t)));
+  };
+  // soltar o cartão numa coluna = mudar o status para o dela
+  const soltarNaColuna = (status) => {
+    const id = arrastando;
+    setColSobre(null); setArrastando(null);
+    const t = id && trabalhos.find((x) => x.id === id);
+    if (!t || t.status === status) return;
+    mudarStatus(id, status);
+    aviso(`${t.titulo.length > 38 ? t.titulo.slice(0, 38) + "…" : t.titulo} · ${status}`);
+  };
+  /* ← → com a alça em foco, para quem não usa mouse. Anda só dentro da própria
+   * trilha: passar de "Certificado emitido" para "Aguardando formulário" seria
+   * saltar de um fluxo para outro, o que quase nunca é o que se quer com a seta.
+   * Entre trilhas, arrastar continua funcionando. */
+  const moverEtapa = (t, passo) => {
+    const trilha = trilhas.find((f) => f.etapas.includes(t.status));
+    if (!trilha) return;
+    const j = trilha.etapas.indexOf(t.status) + passo;
+    if (j < 0 || j >= trilha.etapas.length) return;
+    mudarStatus(t.id, trilha.etapas[j]);
   };
   const mudarLocal = (id, local) => {
     salvar(trabalhos.map((t) => (t.id === id ? { ...t, localPublicacao: local } : t)));
@@ -2570,15 +2657,19 @@ function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
           sub={`${num(trabalhos.length)} desde o início`} cor="var(--ok)" />
       </div>
 
-      <div className="status-filtros" role="group" aria-label="Filtrar por status">
-        {contagem.map(({ s, n }) => (
-          <button key={s} className={"chip-filtro" + (fStatus === s ? " ativo" : "")} aria-pressed={fStatus === s}
-            title={fStatus === s ? "Clique para limpar o filtro" : `Filtrar por ${s}`}
-            onClick={() => setFStatus(fStatus === s ? "" : s)}>
-            <span className="cf-dot" style={{ background: corStatus(s) }} />{s}<b>{n}</b>
-          </button>
-        ))}
-      </div>
+      {/* no quadro as colunas já SÃO os status: filtrar por um deles deixaria o
+          resto vazio, então os chips só aparecem na lista */}
+      {visao === "lista" && (
+        <div className="status-filtros" role="group" aria-label="Filtrar por status">
+          {contagem.map(({ s, n }) => (
+            <button key={s} className={"chip-filtro" + (fStatus === s ? " ativo" : "")} aria-pressed={fStatus === s}
+              title={fStatus === s ? "Clique para limpar o filtro" : `Filtrar por ${s}`}
+              onClick={() => setFStatus(fStatus === s ? "" : s)}>
+              <span className="cf-dot" style={{ background: corStatus(s) }} />{s}<b>{n}</b>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="filtros">
         <div className="busca-wrap">
@@ -2594,11 +2685,96 @@ function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
         <select className="inp sel-ordem" aria-label="Ordenação da lista" value={ordem} onChange={(e) => setOrdem(e.target.value)}>
           <option value="recentes">Mais recentes primeiro</option>
           <option value="antigos">Mais antigos primeiro</option>
-          <option value="status">Ordenar por status</option>
+          {visao === "lista" && <option value="status">Ordenar por status</option>}
           <option value="titulo">Ordenar por título</option>
         </select>
+        <div className="visao-troca" role="group" aria-label="Forma de visualização">
+          {[["lista", "Lista"], ["quadro", "Quadro"]].map(([id, rot]) => (
+            <button key={id} className={"visao-btn" + (visao === id ? " ativo" : "")}
+              aria-pressed={visao === id} onClick={() => trocarVisao(id)}>{rot}</button>
+          ))}
+        </div>
       </div>
 
+      {visao === "quadro" && trilhas.map((trilha, iT) => (
+        <section key={trilha.grupo} className={"kb-trilha" + (iT > 0 ? " kb-trilha-extra" : "")}>
+          <div className="kb-trilha-cab">
+            <h3>{trilha.grupo}</h3>
+            <span className="kb-trilha-n">
+              {num(trilha.etapas.reduce((s, e) => s + (porStatus.get(e) || []).length, 0))}
+            </span>
+            {iT > 0 && <span className="kb-trilha-nota">fora da sequência padrão</span>}
+          </div>
+          <div className="kanban">
+            {trilha.etapas.map((status, iE) => {
+              const itens = porStatus.get(status) || [];
+              return (
+                <section key={status} className={"kb-col" + (colSobre === status ? " kb-alvo" : "")}
+                  style={{ "--tc": corStatus(status) }}
+                  onDragOver={(e) => { if (arrastando) { e.preventDefault(); setColSobre(status); } }}
+                  onDragLeave={() => setColSobre((s) => (s === status ? null : s))}
+                  onDrop={(e) => { e.preventDefault(); soltarNaColuna(status); }}>
+                  <header className="kb-cab">
+                    {/* a numeração só existe na sequência padrão, que é a que tem ordem */}
+                    {iT === 0 && <span className="kb-passo">{iE + 1}</span>}
+                    <h4 className="kb-titulo">{status}</h4>
+                    <span className="kb-num">{itens.length}</span>
+                  </header>
+                  <div className="kb-lista">
+                    {itens.map((t) => (
+                      <article key={t.id} className={"kb-card" + (arrastando === t.id ? " kb-arrastando" : "")}>
+                        <a className="link-titulo kb-nome" href={`#pub=${encodeURIComponent(t.titulo)}::${encodeURIComponent(t.tipo || "")}`}
+                          title="Ver em Publicações e vagas"
+                          onClick={(e) => { if (abrirForaDoApp(e)) return; e.preventDefault(); onAbrirPublicacao(t.titulo, t.tipo); }}>
+                          {t.titulo}
+                        </a>
+                        <div className="kb-meta">
+                          {/* só a alça arrasta: o título tem que continuar selecionável e clicável */}
+                          <button type="button" className="kb-grip" draggable
+                            onDragStart={(e) => {
+                              setArrastando(t.id);
+                              e.dataTransfer.effectAllowed = "move";
+                              e.dataTransfer.setData("text/plain", t.id);  // Firefox exige o dado
+                            }}
+                            onDragEnd={() => { setArrastando(null); setColSobre(null); }}
+                            aria-label={`${t.titulo}, em ${status}. Setas esquerda e direita mudam de etapa.`}
+                            title="Arraste por aqui para outra etapa (ou use ← →)"
+                            onKeyDown={(e) => {
+                              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                              e.preventDefault();
+                              moverEtapa(t, e.key === "ArrowLeft" ? -1 : 1);
+                            }}>
+                            <span aria-hidden="true">⠿</span>
+                          </button>
+                          <span className="tipo-pill" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo}</span>
+                          <span className="kb-data">{t.criadoEm ? fmtData(diaDe(t.criadoEm)) : "—"}</span>
+                        </div>
+                        {editLocalId === t.id ? (
+                          <input className="onde-inp kb-onde" autoFocus defaultValue={t.localPublicacao || ""} placeholder="Revista / evento…"
+                            onBlur={(e) => { mudarLocal(t.id, e.target.value.trim()); setEditLocalId(null); }}
+                            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); else if (e.key === "Escape") setEditLocalId(null); }} />
+                        ) : t.localPublicacao ? (
+                          <button className="onde-chip kb-onde" onClick={() => setEditLocalId(t.id)} title="Editar local de publicação">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                            {t.localPublicacao}
+                          </button>
+                        ) : (
+                          <button className="onde-add kb-onde" onClick={() => setEditLocalId(t.id)}>+ onde publicar</button>
+                        )}
+                        <button className="kb-del" onClick={() => remover(t.id)}
+                          aria-label={`Remover trabalho ${t.titulo}`} title="Remover trabalho">×</button>
+                      </article>
+                    ))}
+                    {itens.length === 0 && <p className="kb-vazio">solte um trabalho aqui</p>}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+
+      {visao === "lista" && (
       <div className="card no-pad">
         <table className="tab tab-trab">
           <thead><tr>
@@ -2648,6 +2824,7 @@ function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
           </div>
         )}
       </div>
+      )}
 
       {modal && <FormTrabalho onSalvar={addTrab} onClose={() => setModal(false)} />}
     </>
@@ -4751,6 +4928,9 @@ function Estilos() {
   --shadow-2:0 2px 4px rgba(16,24,40,.04), 0 6px 16px rgba(16,24,40,.08);
   --shadow-3:0 4px 8px rgba(16,24,40,.06), 0 16px 40px rgba(16,24,40,.16);
   --r-sm:6px; --r-md:8px; --r-lg:12px; --r-full:999px;
+  /* Quadro de trabalhos: três níveis de superfície. Sem eles a coluna e o cartão
+     encostam no fundo da página e as etapas viram um borrão só. */
+  --kb-painel:#E4EAF1; --kb-cartao:#FFFFFF;
   --sel-chevron:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%235D6D7D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
 }
 .root.dark{
@@ -4761,6 +4941,9 @@ function Estilos() {
   --brand-solid:#2C7BB6; --brand-solid-hover:#3B9EDE;
   /* superfícies */
   --bg:#000000; --surface:#161617; --soft:#101011; --hover:#1F1F21; --track:#2E2E30;
+  /* no escuro a página é preta, então a coluna sobe um degrau e o cartão sobe
+     mais um — é o que separa visualmente as etapas */
+  --kb-painel:#121214; --kb-cartao:#26262A;
   /* bordas sempre translúcidas, nunca cinza sólido */
   --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.12); --divider:rgba(255,255,255,.06);
   --brand-soft:rgba(59,158,222,.14); --ring:0 0 0 3px rgba(59,158,222,.35);
@@ -4933,6 +5116,75 @@ select.inp{ cursor:pointer; }
 .tab-trab th:nth-child(4){ width:48px; }
 .tab-trab td.cel-data{ font-size:12px; color:var(--muted2); }
 .tab-trab .status-sel{ width:100%; }
+
+/* ---- Trabalhos: quadro por etapa (kanban) ---- */
+.visao-troca{ display:inline-flex; gap:2px; padding:2px; background:var(--soft); border:1px solid var(--border);
+  border-radius:var(--r-md); }
+.visao-btn{ padding:6px 12px; font-size:12px; font-weight:600; color:var(--muted); background:none; border:0;
+  border-radius:var(--r-sm); cursor:pointer; }
+.visao-btn:hover{ color:var(--ink); }
+.visao-btn.ativo{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow-1); }
+/* cada trilha é uma faixa. A primeira é a sequência padrão; as outras vêm
+   depois de um respiro maior, para não parecerem continuação dela */
+.kb-trilha{ margin-bottom:18px; }
+.kb-trilha-extra{ margin-top:26px; padding-top:18px; border-top:1px dashed var(--border); }
+.kb-trilha-cab{ display:flex; align-items:baseline; gap:9px; margin-bottom:10px; }
+.kb-trilha-cab h3{ font-size:13px; font-weight:600; margin:0; color:var(--ink); }
+.kb-trilha-n{ font-size:11px; font-weight:600; color:var(--muted2); background:var(--kb-painel);
+  border:1px solid var(--border); padding:1px 7px; border-radius:var(--r-full); }
+.kb-trilha-nota{ font-size:11px; color:var(--muted2); }
+/* stretch, não flex-start: coluna com 1 trabalho ficava do tamanho do cartão e
+   a de 238 ia até o fim da tela — a fila parecia quebrada. Todas do mesmo
+   tamanho, e o que passa disso rola dentro da própria coluna. */
+.kanban{ display:flex; gap:10px; align-items:stretch; overflow-x:auto; padding-bottom:6px; }
+/* flex:1 1 0 divide a linha em partes iguais: as colunas ficam do mesmo tamanho
+   e ocupam toda a largura disponível, em vez de uma largura fixa que sobrava
+   espaço à direita. O min-width segura a legibilidade — passando disso, a faixa
+   rola na horizontal em vez de espremer os títulos. */
+.kb-col{ flex:1 1 0; min-width:252px; display:flex; flex-direction:column; background:var(--kb-painel);
+  border:1px solid var(--border); border-radius:var(--r-lg);
+  transition:border-color .14s ease, box-shadow .14s ease; }
+/* nas trilhas de apoio não: uma coluna só esticaria pela tela inteira */
+.kb-trilha-extra .kb-col{ flex:0 0 288px; }
+/* a sequência padrão é onde se trabalha: ocupa o máximo de tela que dá sem
+   empurrar o resto para fora */
+.kb-trilha:not(.kb-trilha-extra) .kb-col{ height:calc(100vh - 330px); min-height:360px; max-height:74vh; }
+/* as trilhas de apoio acompanham a mais cheia da própria faixa, sem esticar à toa */
+.kb-trilha-extra .kb-col{ max-height:52vh; }
+/* a coluna inteira acende ao receber o cartão: o alvo é a etapa, não a posição */
+.kb-col.kb-alvo{ border-color:var(--tc); box-shadow:0 0 0 3px color-mix(in srgb, var(--tc) 18%, transparent); }
+.kb-cab{ display:flex; align-items:center; gap:8px; padding:10px 12px; flex:0 0 auto;
+  border-bottom:1px solid var(--border); border-top:2px solid var(--tc);
+  border-radius:var(--r-lg) var(--r-lg) 0 0; }
+.kb-passo{ display:grid; place-items:center; width:17px; height:17px; flex:0 0 auto;
+  font-size:10px; font-weight:700; color:#fff; background:var(--tc); border-radius:var(--r-full); }
+.kb-titulo{ font-size:12px; font-weight:600; margin:0; flex:1;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.kb-num{ font-size:11px; font-weight:600; color:var(--muted2); }
+/* flex:1 preenche a coluna; min-height:0 é o que permite rolar dentro dela —
+   sem isso o filho de um flex cresce em vez de criar barra de rolagem */
+.kb-lista{ display:flex; flex-direction:column; gap:7px; padding:9px; overflow-y:auto; flex:1; min-height:0; }
+.kb-card{ position:relative; background:var(--kb-cartao); border:1px solid var(--border);
+  border-radius:var(--r-md); padding:9px 10px 8px; transition:border-color .14s ease; }
+.kb-card:hover{ border-color:var(--border-strong); }
+.kb-card.kb-arrastando{ opacity:.4; }
+.kb-nome{ display:block; font-size:12.5px; line-height:1.45; font-weight:600; padding-right:14px; }
+.kb-meta{ display:flex; align-items:center; gap:7px; margin-top:7px; }
+.kb-grip{ padding:0; background:none; border:0; color:var(--muted2); cursor:grab; font:inherit;
+  line-height:1; user-select:none; flex:0 0 auto; }
+.kb-grip:active{ cursor:grabbing; }
+.kb-grip:hover{ color:var(--ink); }
+.kb-grip:focus-visible{ outline:2px solid var(--brand); outline-offset:2px; border-radius:var(--r-sm); }
+.kb-data{ font-size:11px; color:var(--muted2); margin-left:auto; }
+.kb-onde{ margin-top:6px; max-width:100%; }
+.kb-del{ position:absolute; top:5px; right:5px; width:18px; height:18px; display:grid; place-items:center;
+  padding:0; font-size:14px; line-height:1; color:var(--muted2); background:none; border:0;
+  border-radius:var(--r-sm); cursor:pointer; opacity:0; transition:opacity .14s ease; }
+.kb-card:hover .kb-del, .kb-del:focus-visible{ opacity:1; }
+.kb-del:hover{ color:var(--danger); background:var(--hover); }
+.kb-vazio{ font-size:11.5px; color:var(--muted2); text-align:center; padding:16px 6px; margin:0;
+  border:1px dashed var(--border); border-radius:var(--r-md); }
+@media (max-width:760px){ .kb-col, .kb-trilha-extra .kb-col{ flex:0 0 236px; min-width:236px; } }
 /* linha de metadados sob o título: tipo + local de publicação */
 .titulo-meta{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:7px; }
 .titulo-meta .onde-chip, .titulo-meta .onde-add, .titulo-meta .onde-inp{ margin-top:0; }
