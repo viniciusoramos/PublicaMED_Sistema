@@ -3564,6 +3564,19 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
   }, [t.id, t.taxa, t.taxaLancada, t.taxaData]);
   const [subindoCert, setSubindoCert] = useState(false);
   const [copiado, setCopiado] = useState(false);
+  /* Menu do "copiar autores". Abre no clique e não ao passar o mouse: menu por
+   * hover abre sem querer quando o cursor só atravessa, e não existe no celular.
+   * Fecha ao escolher, ao clicar fora e no Esc. */
+  const [menuCopiar, setMenuCopiar] = useState(false);
+  const refCopiar = useRef(null);
+  useEffect(() => {
+    if (!menuCopiar) return;
+    const fora = (e) => { if (refCopiar.current && !refCopiar.current.contains(e.target)) setMenuCopiar(false); };
+    const esc = (e) => { if (e.key === "Escape") setMenuCopiar(false); };
+    document.addEventListener("mousedown", fora);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", fora); document.removeEventListener("keydown", esc); };
+  }, [menuCopiar]);
   const [aba, setAba] = useState("participantes");
   const [addAberto, setAddAberto] = useState(false);
   /* Ordem dos autores: arrastar a linha, ou setas com a alça em foco. A ordem é
@@ -3628,16 +3641,27 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
     const msg = `Olá, ${p.nome}! 🎓 Segue o certificado da publicação "${t.nome}".\n\nBaixe aqui: ${t.certificadoUrl}\n\nQualquer dúvida, estou à disposição! — PublicaMED`;
     return `https://wa.me/${waTel(p.telefone)}?text=${encodeURIComponent(msg)}`;
   };
-  const copiarAutores = () => {
+  /* Duas versões do mesmo texto. Sem telefone é o que vai para revista e coautor;
+   * com telefone é para quem precisa falar com os autores. O telefone entra junto
+   * dos outros contatos, antes do ORCID. */
+  const copiarAutores = (comTelefone) => {
     const txt = t.participantes.map((p) => {
       const nome = p.nome + (p.autorPrincipal ? " (autor principal)" : "") + (p.graduado ? " (graduado)" : "");
       // sem CPF de propósito: este texto vai para revista, coautor e grupo de
       // WhatsApp, e o CPF não faz falta em nenhum deles. Ele continua na ficha
       // do participante, que é onde se consulta quando precisa.
       return `Nome: ${nome}\nFaculdade: ${p.faculdade || ""}\nEmail: ${p.email || ""}`
+        + (comTelefone && p.telefone ? `\nTelefone: ${p.telefone}` : "")
         + (p.orcid ? `\nORCID: ${soOrcid(p.orcid)}` : "");
     }).join("\n\n");
-    const ok = () => { setCopiado(true); setTimeout(() => setCopiado(false), 1600); };
+    // copiar "com telefone" e receber um autor sem número passaria despercebido —
+    // então a confirmação diz quantos ficaram de fora
+    const semTel = comTelefone ? t.participantes.filter((p) => !String(p.telefone || "").trim()).length : 0;
+    const ok = () => {
+      setMenuCopiar(false);
+      setCopiado(semTel ? `✓ copiado · ${semTel} sem telefone` : "✓ copiado!");
+      setTimeout(() => setCopiado(false), semTel ? 3200 : 1600);
+    };
     if (navigator.clipboard) navigator.clipboard.writeText(txt).then(ok, () => alert(txt));
     else alert(txt);
   };
@@ -3734,7 +3758,24 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
               {porVaga != null ? ` · ${brl(porVaga)} por vaga` : ""}
             </span>
             <span className="dp-barra-acoes">
-              {vagasOcupadas > 0 && <button className="mini copiar-btn" onClick={copiarAutores}>{copiado ? "✓ copiado!" : "copiar autores"}</button>}
+              {vagasOcupadas > 0 && (
+                <span className="copiar-wrap" ref={refCopiar}>
+                  <button className="mini copiar-btn" aria-haspopup="menu" aria-expanded={menuCopiar}
+                    onClick={() => setMenuCopiar((v) => !v)}>
+                    {copiado || <>copiar autores <span className="copiar-seta" aria-hidden="true">▾</span></>}
+                  </button>
+                  {menuCopiar && (
+                    <span className="copiar-menu" role="menu">
+                      <button role="menuitem" onClick={() => copiarAutores(false)}>
+                        Sem telefone<small>para revista e coautores</small>
+                      </button>
+                      <button role="menuitem" onClick={() => copiarAutores(true)}>
+                        Com telefone<small>para falar com os autores</small>
+                      </button>
+                    </span>
+                  )}
+                </span>
+              )}
               {cheio
                 ? <span className="dp-lotado-inline">Lotada — aumente as vagas para adicionar</span>
                 : <button className="btn" onClick={() => setAddAberto((v) => !v)}>{addAberto ? "Cancelar" : "Adicionar participante"}</button>}
@@ -5665,6 +5706,17 @@ select.inp{ cursor:pointer; }
 .dp-sec-head{ display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
   margin:22px 0 6px; padding-top:16px; border-top:1px solid var(--divider); }
 .copiar-btn{ white-space:nowrap; }
+/* menu das duas versões do texto, ancorado no próprio botão */
+.copiar-wrap{ position:relative; display:inline-block; }
+.copiar-seta{ font-size:9px; margin-left:3px; opacity:.7; }
+.copiar-menu{ position:absolute; top:calc(100% + 5px); right:0; z-index:30; min-width:210px;
+  display:flex; flex-direction:column; padding:4px; background:var(--surface);
+  border:1px solid var(--border-strong); border-radius:var(--r-md); box-shadow:var(--shadow-3); }
+.copiar-menu button{ display:flex; flex-direction:column; align-items:flex-start; gap:1px; width:100%;
+  padding:8px 10px; font:inherit; font-size:12.5px; font-weight:600; color:var(--ink); text-align:left;
+  background:none; border:0; border-radius:var(--r-sm); cursor:pointer; }
+.copiar-menu button:hover, .copiar-menu button:focus-visible{ background:var(--hover); outline:none; }
+.copiar-menu small{ font-size:11px; font-weight:400; color:var(--muted2); }
 .dp-lotado{ font-size:12px; color:var(--danger); background:var(--danger-soft); border:1px solid var(--danger-border); border-radius:var(--r-md); padding:10px 13px; margin-top:11px; }
 .dp-footer{ display:flex; justify-content:flex-end; margin-top:22px; padding-top:14px; border-top:1px solid var(--divider); }
 .p-acoes{ display:flex; gap:6px; align-items:center; flex-shrink:0; }
