@@ -4293,6 +4293,19 @@ const situacaoDaPub = (t, abertura, hoje) => {
   if (!data) return "anterior";           // fora do cronograma
   return data > hoje ? "programada" : "venda";
 };
+/* Situação de um tema no calendário. Separa o que situacaoDaPub junta: lá,
+ * lotada e fechada são a mesma coisa ("não vende mais"), porque é isso que
+ * importa para listar. No calendário a diferença é o que se quer ver — lotada
+ * vendeu tudo, fechada parou antes e pode ter deixado vaga para trás.
+ * Fechada vence lotada: uma publicação cheia e já publicada terminou, não está
+ * só esperando. */
+const situacaoTema = (pub) => {
+  if (!pub) return "prevista";
+  if (pub.fechadaEm) return "fechada";
+  if (pub.participantes.length >= pub.maxVagas) return "lotada";
+  return "aberta";
+};
+const SIT_TEMA = { prevista: "ainda não aberta", aberta: "vendendo", lotada: "lotada", fechada: "fechada" };
 // `editavel` é falso enquanto o cronograma ainda não está no banco (SQL 11-planejamento.sql
 // não aplicado): a tela mostra o plano do arquivo, mas sem os botões que gravariam.
 /* ============================================================
@@ -4553,6 +4566,20 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
   }, [temas, plano]);
   // sempre consultado com o tipo do lançamento junto
   const pubDoTema = (l, t) => pubPorTitulo.get(chaveTipo(t.tipo || l.tipo) + "|" + chaveTitulo(t.titulo));
+  /* Resumo do dia por situação, no lugar do antigo "6 de 6 abertos" — que ficou
+   * ambíguo quando "aberta" passou a querer dizer "vendendo". Só aparece o que
+   * existe: um dia com tudo vendendo diz só isso. */
+  const resumoSituacao = (l) => {
+    const n = { aberta: 0, lotada: 0, fechada: 0, prevista: 0 };
+    for (const t of temasDe(l)) n[situacaoTema(pubDoTema(l, t))] += 1;
+    const s = (q, um, varios) => (q ? `${q} ${q > 1 ? varios : um}` : null);
+    return [
+      s(n.aberta, "vendendo", "vendendo"),
+      s(n.lotada, "lotado", "lotados"),
+      s(n.fechada, "fechado", "fechados"),
+      s(n.prevista, "não aberto", "não abertos"),
+    ].filter(Boolean).join(" · ") || "sem temas";
+  };
   // índices de venda p/ apurar o que já foi pago sem varrer a lista inteira por participante
   const idxVendas = useMemo(() => {
     const porPart = new Map(), porTemaNome = new Map();
@@ -4795,7 +4822,7 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
 
                 <div className="dp-sec-head">
                   <h4 className="dp-sub">{grupos.length > 1 ? `Trabalhos do dia (${grupos.length})` : `Temas (${temasDe(lanc).length})`}</h4>
-                  <span className="hint">{r.criadas} de {temasDe(lanc).length} abertos · {r.ocupadas}/{c.vagas} vagas vendidas</span>
+                  <span className="hint">{resumoSituacao(lanc)} · {r.ocupadas}/{c.vagas} vagas vendidas</span>
                 </div>
 
                 {/* um bloco por TIPO de trabalho: capítulo, apresentação e artigo do mesmo dia
@@ -4819,8 +4846,9 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
                       {g.temas.map((t) => {
                         const pub = pubDoTema(lanc, t);
                         const vagasPrev = t.vagas ?? lanc.vagas;
+                        const sit = situacaoTema(pub);
                         return (
-                          <li key={t.id || t.titulo} className={pub ? "aberta" : "fechada"}>
+                          <li key={t.id || t.titulo} className={sit}>
                             <div className="cal-tema-topo">
                               <div className="cal-tema-areas">{t.areas}</div>
                               {editavel && (
@@ -4838,8 +4866,12 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
                             )}
                             {pub ? (
                               <>
-                                <span className="cal-tema-st ok">
-                                  ✓ aberta · {pub.participantes.length}/{pub.maxVagas} vagas · {brl(faturamentoDaPub(pub))} vendidos
+                                <span className="cal-tema-st">
+                                  <span className={"cal-sit " + sit}>{SIT_TEMA[sit]}</span>
+                                  {pub.participantes.length}/{pub.maxVagas} vagas · {brl(faturamentoDaPub(pub))} vendidos
+                                  {sit === "fechada" && pub.participantes.length < pub.maxVagas && (
+                                    <> · {pub.maxVagas - pub.participantes.length} sobraram</>
+                                  )}
                                 </span>
                                 {chaveTitulo(pub.nome) !== chaveTitulo(t.titulo) && (
                                   <span className="cal-tema-st cadastro" title="Título cadastrado no sistema">no sistema: “{pub.nome}”</span>
@@ -5754,12 +5786,32 @@ select.inp{ cursor:pointer; }
 .cal-temas li:last-child{ border-bottom:none; }
 /* aberta = já existe publicação vendendo · fechada = ainda não aberta no sistema.
    A diferença precisa saltar aos olhos: é o que diz o que ainda falta fazer no dia. */
+/* Quatro situações, cada uma com cor e etiqueta — a cor sozinha não basta para
+   quem não distingue verde de âmbar. "prevista" era a classe "fechada" até aqui,
+   o que confundia: ela quer dizer que a publicação AINDA NÃO FOI CRIADA. */
+.cal-temas li.prevista{ border-left:2px dashed var(--border); background:transparent; }
+.cal-temas li.prevista .cal-tema-tit{ color:var(--muted); font-weight:500; }
+/* vendendo: o que ainda pede ação, então é o único que se destaca */
 .cal-temas li.aberta{ border-left-color:var(--ok); background:color-mix(in srgb, var(--ok) 9%, transparent); }
-.cal-temas li.fechada{ border-left:2px dashed var(--border); background:transparent; }
-.cal-temas li.fechada .cal-tema-tit{ color:var(--muted); font-weight:500; }
+/* Lotada e fechada dizem a mesma coisa no calendário — "este não vende mais" —,
+   então têm a mesma cor, em segundo plano. Só a etiqueta diz qual das duas. */
+.cal-temas li.lotada, .cal-temas li.fechada{ border-left-color:var(--border-strong); background:transparent; }
+/* Mas o título delas fica aceso, como o dos que vendem: é trabalho que existe,
+   com gente dentro. O que fica apagado é só o que ainda não foi criado — é essa
+   diferença de brilho e peso que separa "saiu de cena" de "nem entrou". */
 .cal-tema-areas{ font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
 .cal-temas li.aberta .cal-tema-areas{ color:var(--ok); }
-.cal-temas li.fechada .cal-tema-areas{ color:var(--muted2); opacity:.8; }
+.cal-temas li.lotada .cal-tema-areas, .cal-temas li.fechada .cal-tema-areas{ color:var(--muted); }
+.cal-temas li.prevista .cal-tema-areas{ color:var(--muted2); opacity:.75; }
+/* a etiqueta abre a linha de status: é a primeira coisa lida */
+.cal-sit{ display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+  padding:1px 6px; margin-right:7px; border-radius:var(--r-sm); border:1px solid; vertical-align:1px; }
+.cal-sit.aberta{ color:var(--ok); background:var(--ok-soft); border-color:var(--ok-border); }
+/* A linha de lotada e fechada é cinza igual — dizem a mesma coisa. A etiqueta é
+   o único lugar em que a diferença aparece, então ali cada uma tem cor própria:
+   âmbar para "esgotou", vermelho para "encerrou". */
+.cal-sit.lotada{ color:var(--warn); background:var(--warn-soft); border-color:var(--warn-border); }
+.cal-sit.fechada{ color:var(--danger); background:var(--danger-soft); border-color:var(--danger-border); }
 .cal-tema-tit{ font-size:13px; font-weight:600; color:var(--ink); line-height:1.4; display:block; }
 .cal-tema-acao{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:5px; }
 .cal-tema-acao .cal-tema-st{ margin-top:0; }
@@ -5770,7 +5822,6 @@ select.inp{ cursor:pointer; }
 .criar-pub:hover:not(:disabled){ border-color:var(--brand); color:var(--brand); background:var(--brand-soft); }
 .cal-temas .link-titulo{ font-size:13px; line-height:1.4; }
 .cal-tema-st{ display:block; font-size:11px; color:var(--muted2); margin-top:4px; }
-.cal-tema-st.ok{ color:var(--ok); font-weight:600; }
 .cal-tema-st.cadastro{ color:var(--muted2); font-style:italic; margin-top:2px; }
 .cal-nota{ border-top:none; margin-top:4px; }
 /* gerador de mensagem de vendas */
