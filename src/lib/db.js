@@ -44,6 +44,9 @@ const vendaDe = (r) => ({
   faculdade_id: r.faculdade_id || null,
   participanteId: r.participante_id || null,
   criadoEm: r.criado_em || '', // instante em que a venda entrou no sistema (ordena o dia e mostra a hora)
+  // grupo de WhatsApp de onde veio a venda; vazio = desconhecida, e também
+  // enquanto a migração 24 não roda
+  origem: r.origem || '',
 });
 const finDe = (r) => ({
   id: r.id,
@@ -163,6 +166,10 @@ const vendaLinha = async (d) => ({
   tipo: d.tipo || 'Outro',
   valor: d.valor || 0,
   tema: d.tema || '',
+  /* origem fica de fora de propósito. Esta linha é regravada inteira a cada
+   * edição de venda: incluir origem aqui faria qualquer edição apagar a origem
+   * importada dos grupos, e antes da migração 24 derrubaria toda venda nova com
+   * "column not found". Origem só se escreve por definirOrigemVendas. */
 });
 
 /* ---------- vendas ---------- */
@@ -205,6 +212,13 @@ export async function removerVenda(id) {
 export async function definirUFVendas(ids, uf) {
   if (!ids || !ids.length) return;
   const { error } = await supabase.from('vendas').update({ uf }).in('id', ids);
+  if (error) throw error;
+}
+// grupo de origem em lote — um update por grupo, e não por venda, porque o
+// preenchimento vem de uma leitura só e meia gravação deixaria a métrica torta
+export async function definirOrigemVendas(ids, origem) {
+  if (!ids || !ids.length) return;
+  const { error } = await supabase.from('vendas').update({ origem }).in('id', ids);
   if (error) throw error;
 }
 // renomeia o tema (nome da publicação) em todas as vendas ligadas — 1 update em lote

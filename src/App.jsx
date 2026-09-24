@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useContext } from "react";
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, LineChart, Line,
+  Tooltip, ResponsiveContainer, LineChart, Line, LabelList,
 } from "recharts";
 import { PLANEJAMENTOS } from "./planejamento";
 import * as db from "./lib/db.js";
@@ -901,7 +901,7 @@ export default function App() {
       return;
     }
     const id = h.replace(/^#/, "");
-    if (["overview", "vendas", "clientes", "trabalhos", "financeiro", "temas", "planejamento"].includes(id)) setTab(id);
+    if (["overview", "vendas", "clientes", "origem", "trabalhos", "financeiro", "temas", "planejamento"].includes(id)) setTab(id);
     else if (!h) setTab("overview");
   };
   const irPara = (id) => {
@@ -1437,6 +1437,7 @@ export default function App() {
     ["financeiro", "Financeiro", "$"],
     ["temas", "Publicações e vagas", "≡"],
     ["planejamento", "Calendário", "▤"],
+    ["origem", "Origem das vendas", "◎"],
   ];
 
   return (
@@ -1504,6 +1505,7 @@ export default function App() {
             clienteDaVenda={clienteDaVenda} contatoDe={contatoDe} salvarCliente={salvarCliente} />
         )}
         {tab === "clientes" && <Clientes m={m} vendas={vendas} salvarCliente={salvarCliente} onAbrirPublicacao={abrirPublicacao} contatoDe={contatoDe} />}
+        {tab === "origem" && <Origem vendas={vendas} dark={dark} />}
         {tab === "trabalhos" && (
           <Trabalhos trabalhos={trabalhos} temas={temas} salvar={salvarTrabalhos} aviso={aviso} onAbrirPublicacao={abrirPublicacao} />
         )}
@@ -1968,6 +1970,319 @@ function Destaque({ rotulo, principal, detalhe }) {
       <div className="dq-pri">{principal}</div>
       <div className="dq-det">{detalhe}</div>
     </div>
+  );
+}
+
+/* ============================================================
+   ORIGEM DAS VENDAS
+   ============================================================ */
+/* A origem (vendas.origem) é o nome exato do grupo de WhatsApp de onde veio a
+ * venda, gravado pelo cruzamento da lista de membros com as vendas (skill
+ * origem-vendas). Os cinco grupos têm o mesmo nome e só muda o número — e o #5
+ * foi criado com acento em "Científicos" —, então na tela viram "Grupo #1" a
+ * "Grupo #5". Outra origem que venha a existir aparece com o próprio nome. */
+const SEM_ORIGEM = "Sem origem";
+const rotuloOrigem = (o) => {
+  const t = String(o || "").trim();
+  if (!t) return SEM_ORIGEM;
+  const m = semAcentoFac(t).match(/^publicamed \(artigos cientificos\)\s*(?:#\s*(\d+))?$/);
+  return m ? "Grupo #" + (m[1] || "1") : t;
+};
+const numGrupo = (rot) => Number((rot.match(/^Grupo #(\d+)$/) || [])[1]) || 0;
+const ordemOrigem = (a, b) => (numGrupo(a) || 99) - (numGrupo(b) || 99) || a.localeCompare(b, "pt-BR");
+// Recharts não lê var(): cor fixa por grupo, calibrada para cada tema
+const COR_GRUPO = {
+  claro: ["#256E93", "#DD6B20", "#0F7A4D", "#6D5DD3", "#B03063"],
+  escuro: ["#5AA7CC", "#E8A33D", "#57CF9A", "#A99CF0", "#E4837E"],
+};
+const corOrigem = (rot, dark) => {
+  if (rot === SEM_ORIGEM) return dark ? "#3A3A3D" : "#C9D3DD";
+  const n = numGrupo(rot), pal = COR_GRUPO[dark ? "escuro" : "claro"];
+  return n ? pal[(n - 1) % pal.length] : hashCor(rot);
+};
+// mesma chave de cliente de calcMetricas: e-mail em minúsculas ou, sem ele, o nome
+const chaveCliente = (v) => (v.email || "").trim().toLowerCase() || (v.nome || "").trim().toLowerCase();
+const brlInteiro = (n) => (n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+const pctInteiro = (a, b) => (b ? Math.round((a / b) * 100) : 0) + "%";
+function Origem({ vendas, dark }) {
+  // o ano de hoje entra na lista mesmo antes da primeira venda dele: é o filtro inicial
+  const hoje = hojeIso();
+  const anos = useMemo(
+    () => [...new Set([anoDeIso(hoje), ...vendas.map((v) => anoDeIso(v.data)).filter(Boolean)])].sort((a, b) => b - a),
+    [vendas, hoje]);
+  /* Diferente das outras abas, esta abre sempre no mês corrente: a pergunta aqui
+   * é "como os grupos estão indo agora". A aba é montada de novo a cada visita,
+   * então o filtro volta para o mês atual toda vez que ela é aberta. */
+  const [anoSel, setAno] = useState(() => String(anoDeIso(hoje)));
+  const [mes, setMes] = useState(() => String(mesDeIso(hoje)));
+  const [metrica, setMetrica] = useState("vendas"); // o que o comparativo mensal conta
+  /* Gráfico com uma barra por mês ou por grupo. Segue o filtro: com um mês
+   * escolhido (que é como a aba abre) vêm os grupos daquele mês; no ano inteiro,
+   * a evolução mês a mês. O botão continua trocando à mão. */
+  const [eixoGraf, setEixoGraf] = useState("grupos");
+  const trocarMes = (v) => { setMes(v); setEixoGraf(v === "" ? "meses" : "grupos"); };
+  // novo × recorrente só faz sentido num mês: no ano inteiro, quem voltou em
+  // agosto e chegou em março é as duas coisas ao mesmo tempo
+  const umMes = mes !== "" && anoSel !== "todos";
+
+  /* Tudo na tabela conta só o período escolhido. A única coisa que vem de fora
+   * dele é a data da primeira compra de cada cliente, que separa quem chegou
+   * agora de quem já era cliente e voltou. */
+  const primeiraCompra = useMemo(() => {
+    const p = new Map();
+    for (const v of vendas) {
+      const k = chaveCliente(v);
+      if (k && v.data && (!p.has(k) || v.data < p.get(k))) p.set(k, v.data);
+    }
+    return p;
+  }, [vendas]);
+
+  const doAno = useMemo(
+    () => vendas.filter((v) => anoSel === "todos" || anoDeIso(v.data) === Number(anoSel)), [vendas, anoSel]);
+  const doPeriodo = useMemo(
+    () => (mes === "" ? doAno : doAno.filter((v) => mesDeIso(v.data) === Number(mes))), [doAno, mes]);
+
+  const resumo = useMemo(() => {
+    // novo = a primeira compra da vida caiu dentro do mês escolhido
+    const noPeriodo = (iso) => anoDeIso(iso) === Number(anoSel) && mesDeIso(iso) === Number(mes);
+    const resumir = (lista) => {
+      const fat = lista.reduce((s, v) => s + (v.valor || 0), 0);
+      const cli = new Set(lista.map(chaveCliente).filter(Boolean));
+      let novos = 0;
+      for (const k of cli) if (noPeriodo(primeiraCompra.get(k))) novos++;
+      return { n: lista.length, fat, ticket: lista.length ? fat / lista.length : 0, clientes: cli.size,
+        novos, recorrentes: cli.size - novos, gastoCliente: cli.size ? fat / cli.size : 0 };
+    };
+    const por = new Map(), nomes = new Map();
+    for (const v of doPeriodo) {
+      const r = rotuloOrigem(v.origem);
+      if (!por.has(r)) { por.set(r, []); nomes.set(r, new Set()); }
+      por.get(r).push(v);
+      if (v.origem) nomes.get(r).add(v.origem.trim());
+    }
+    const grupos = [...por.keys()].filter((r) => r !== SEM_ORIGEM).sort(ordemOrigem)
+      .map((r) => ({ rot: r, nomes: [...nomes.get(r)].join(" · "), ...resumir(por.get(r)) }));
+    return { grupos, sem: por.has(SEM_ORIGEM) ? resumir(por.get(SEM_ORIGEM)) : null, total: resumir(doPeriodo) };
+  }, [doPeriodo, primeiraCompra, anoSel, mes]);
+
+  /* Comparativo mensal: o ano inteiro (o mês escolhido só fica destacado), mais
+   * recente primeiro. Cliente novo do mês é quem fez ali a primeira compra da
+   * vida; conta no grupo da venda, e no total uma vez só. */
+  const meses = useMemo(() => {
+    const mapa = new Map();
+    for (const v of doAno) {
+      const a = anoDeIso(v.data), o = mesDeIso(v.data);
+      if (a == null || o == null) continue;
+      const k = `${a}-${String(o + 1).padStart(2, "0")}`;
+      if (!mapa.has(k)) mapa.set(k, { chave: k, ano: a, ordem: o, por: new Map(), n: 0, fat: 0, novos: new Set() });
+      const e = mapa.get(k), r = rotuloOrigem(v.origem);
+      const c = e.por.get(r) || { n: 0, fat: 0, novos: new Set() };
+      c.n += 1; c.fat += v.valor || 0;
+      const cli = chaveCliente(v);
+      if (cli && (primeiraCompra.get(cli) || "").slice(0, 7) === k) { c.novos.add(cli); e.novos.add(cli); }
+      e.por.set(r, c);
+      e.n += 1; e.fat += v.valor || 0;
+    }
+    return [...mapa.values()].sort((x, y) => (x.chave < y.chave ? 1 : -1));
+  }, [doAno, primeiraCompra]);
+  const gruposAno = useMemo(
+    () => [...new Set(doAno.map((v) => rotuloOrigem(v.origem)))].filter((r) => r !== SEM_ORIGEM).sort(ordemOrigem), [doAno]);
+  const series = [...gruposAno, SEM_ORIGEM];
+  const valorDe = (c) => (c ? (metrica === "vendas" ? c.n : metrica === "novos" ? c.novos.size : c.fat) : 0);
+  const fmtCel = (x) => (metrica === "faturamento" ? brlInteiro(x) : num(x));
+  const rotMes = (e) => MESES[e.ordem].slice(0, 3).toLowerCase() + (anoSel === "todos" ? "/" + String(e.ano).slice(2) : "");
+  const grafico = [...meses].reverse().map((e) => ({
+    mes: rotMes(e), ...Object.fromEntries(series.map((r) => [r, valorDe(e.por.get(r))])),
+  }));
+  /* Uma barra por grupo, no período do filtro. Sai da soma dos meses, e não de
+   * uma conta à parte, para bater com a tabela: cliente novo aparece uma vez só,
+   * no mês da primeira compra. */
+  const graficoGrupos = series.map((r) => ({
+    grupo: r.replace("Grupo ", ""), nome: r, cor: corOrigem(r, dark),
+    valor: meses.filter((e) => mes === "" || e.ordem === Number(mes)).reduce((s, e) => s + valorDe(e.por.get(r)), 0),
+  }));
+
+  const t = resumo.total, comOrigem = t.n - (resumo.sem?.n || 0);
+  const rotuloPeriodo = (anoSel === "todos" ? "todos os anos" : anoSel) + (mes !== "" ? " · " + MESES[Number(mes)] : "");
+  const eixo = dark ? "#8A8A8F" : "#5B6B73", grade = dark ? "#2E2E30" : "#EAEFF1";
+
+  const linha = (rot, r, title, className = "") => (
+    <tr key={rot} className={className}>
+      <td><span className="org-rot" title={title}><span className="dot" style={{ background: corOrigem(rot, dark) }} />{rot}</span></td>
+      <td className="r"><b>{num(r.n)}</b></td>
+      <td className="r">{brl(r.fat)}</td>
+      <td className="r">{brl(r.ticket)}</td>
+      <td className="r">{num(r.clientes)}</td>
+      {umMes && <td className="r">{num(r.novos)}<span className="org-pct">{pctInteiro(r.novos, r.clientes)}</span></td>}
+      {umMes && <td className="r">{num(r.recorrentes)}<span className="org-pct">{pctInteiro(r.recorrentes, r.clientes)}</span></td>}
+      <td className="r">{brl(r.gastoCliente)}</td>
+    </tr>
+  );
+
+  return (
+    <>
+      <Header titulo="Origem das vendas"
+        sub={`Período: ${rotuloPeriodo} · ${num(comOrigem)} de ${num(t.n)} vendas com grupo identificado (${pctInteiro(comOrigem, t.n)})`} />
+
+      <div className="periodo-bar">
+        <span className="periodo-lab">Período</span>
+        <select className="inp" value={anoSel} onChange={(e) => setAno(e.target.value)}>
+          <option value="todos">Todos os anos</option>
+          {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select className="inp" value={mes} onChange={(e) => trocarMes(e.target.value)}>
+          <option value="">Ano inteiro</option>
+          {MESES.map((nm, i) => <option key={i} value={i}>{nm}</option>)}
+        </select>
+      </div>
+
+      <div className="card no-pad">
+        <div className="card-head pad">
+          <h3>Por grupo</h3>
+          <span className="hint">{rotuloPeriodo}</span>
+        </div>
+        <div className="scroll-x">
+          <table className="tab tab-origem">
+            <thead>
+              <tr>
+                <th scope="col">Origem</th>
+                <th scope="col" className="r">Vendas</th>
+                <th scope="col" className="r">Faturamento</th>
+                <th scope="col" className="r">Ticket médio</th>
+                <th scope="col" className="r">Clientes</th>
+                {umMes && <th scope="col" className="r" title="Clientes cuja primeira compra na PublicaMED foi neste mês">Novos</th>}
+                {umMes && <th scope="col" className="r" title="Clientes do mês que já tinham comprado antes dele">Recorrentes</th>}
+                <th scope="col" className="r" title="Faturamento do período dividido pelos clientes do período">Gasto por cliente</th>
+              </tr>
+            </thead>
+            <tbody>
+              {resumo.grupos.map((g) => linha(g.rot, g, g.nomes))}
+              {resumo.sem && linha(SEM_ORIGEM, resumo.sem,
+                "Venda sem telefone cadastrado, ou de alguém que não está em nenhum grupo", "org-sem")}
+              {!t.n && <tr><td colSpan={umMes ? 8 : 6} className="vazio">Nenhuma venda no período.</td></tr>}
+            </tbody>
+            {t.n > 0 && (
+              <tfoot>
+                <tr>
+                  <td>Total</td>
+                  <td className="r">{num(t.n)}</td>
+                  <td className="r">{brl(t.fat)}</td>
+                  <td className="r">{brl(t.ticket)}</td>
+                  <td className="r">{num(t.clientes)}</td>
+                  {umMes && <td className="r">{num(t.novos)}<span className="org-pct">{pctInteiro(t.novos, t.clientes)}</span></td>}
+                  {umMes && <td className="r">{num(t.recorrentes)}<span className="org-pct">{pctInteiro(t.recorrentes, t.clientes)}</span></td>}
+                  <td className="r">{brl(t.gastoCliente)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+        <p className="nota org-nota">
+          Tudo conta só o período escolhido.{" "}
+          {umMes ? (
+            <><b>Novo</b> é quem fez a primeira compra na PublicaMED neste mês; <b>recorrente</b> é quem já tinha
+            comprado antes e voltou. Compare os grupos entre si: <b>Sem origem</b> tem menos recorrentes porque quem
+            compra várias vezes tem mais chance de ter telefone cadastrado e ganhar grupo.</>
+          ) : (
+            <>Novos e recorrentes aparecem quando um mês é escolhido no filtro. Para ver os clientes novos de cada
+            mês do ano, use <b>Clientes novos</b> no quadro abaixo.</>
+          )}
+        </p>
+      </div>
+
+      <div className="card">
+        <div className="card-head org-head">
+          <h3>{eixoGraf === "meses" ? "Mês a mês" : "Grupos"}
+            {eixoGraf === "grupos" && <span className="hint"> · {rotuloPeriodo}</span>}</h3>
+          <div className="org-trocas">
+            <div className="visao-troca" role="group" aria-label="O que comparar">
+              {[["vendas", "Vendas"], ["faturamento", "Faturamento"], ["novos", "Clientes novos"]].map(([id, rot]) => (
+                <button key={id} className={"visao-btn" + (metrica === id ? " ativo" : "")}
+                  aria-pressed={metrica === id} onClick={() => setMetrica(id)}>{rot}</button>
+              ))}
+            </div>
+            <div className="visao-troca" role="group" aria-label="Uma barra por">
+              {[["meses", "Por mês"], ["grupos", "Por grupo"]].map(([id, rot]) => (
+                <button key={id} className={"visao-btn" + (eixoGraf === id ? " ativo" : "")}
+                  aria-pressed={eixoGraf === id} onClick={() => setEixoGraf(id)}>{rot}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+        {meses.length > 0 ? (
+          <>
+            {eixoGraf === "meses" ? (
+              <>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={grafico} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={grade} />
+                    <XAxis dataKey="mes" tick={{ fontSize: 12, fill: eixo }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: eixo }} axisLine={false} tickLine={false}
+                      tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
+                    <Tooltip formatter={(v, nome) => [fmtCel(v), nome]} cursor={{ fill: dark ? "#1F1F21" : "#F0F4F5" }} />
+                    {series.map((r) => <Bar key={r} dataKey={r} stackId="o" fill={corOrigem(r, dark)} maxBarSize={46} />)}
+                  </BarChart>
+                </ResponsiveContainer>
+                <div className="org-legenda">
+                  {series.map((r) => <span key={r} className="leg"><span className="dot" style={{ background: corOrigem(r, dark) }} />{r}</span>)}
+                </div>
+              </>
+            ) : (
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={graficoGrupos} margin={{ top: 22, right: 10, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={grade} />
+                  <XAxis dataKey="grupo" tick={{ fontSize: 12, fill: eixo }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: eixo }} axisLine={false} tickLine={false}
+                    tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
+                  <Tooltip formatter={(v, _n, item) => [fmtCel(v), item?.payload?.nome]} labelFormatter={() => rotuloPeriodo}
+                    cursor={{ fill: dark ? "#1F1F21" : "#F0F4F5" }} />
+                  <Bar dataKey="valor" radius={[5, 5, 0, 0]} maxBarSize={64}>
+                    {graficoGrupos.map((g) => <Cell key={g.nome} fill={g.cor} />)}
+                    <LabelList dataKey="valor" position="top" formatter={fmtCel} style={{ fontSize: 12, fill: eixo }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+            <div className="scroll-x org-mensal">
+              <table className="tab">
+                <thead>
+                  <tr>
+                    <th scope="col">Mês</th>
+                    {gruposAno.map((r) => <th key={r} scope="col" className="r">{r.replace("Grupo ", "")}</th>)}
+                    <th scope="col" className="r">Sem origem</th>
+                    <th scope="col" className="r">Total</th>
+                    <th scope="col" className="r" title="Parte das vendas do mês com grupo identificado">Com origem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {meses.map((e) => {
+                    const sem = e.por.get(SEM_ORIGEM)?.n || 0;
+                    const sel = mes !== "" && e.ordem === Number(mes);
+                    return (
+                      <tr key={e.chave} className={sel ? "org-mes-sel" : ""}>
+                        <td>{MESES[e.ordem]}{anoSel === "todos" && <span className="muted"> {e.ano}</span>}</td>
+                        {gruposAno.map((r) => {
+                          const x = valorDe(e.por.get(r));
+                          return <td key={r} className={"r" + (x ? "" : " muted")}>{x ? fmtCel(x) : "—"}</td>;
+                        })}
+                        <td className="r muted">{fmtCel(valorDe(e.por.get(SEM_ORIGEM)))}</td>
+                        <td className="r"><b>{fmtCel(metrica === "vendas" ? e.n : metrica === "novos" ? e.novos.size : e.fat)}</b></td>
+                        <td className="r muted">{pctInteiro(e.n - sem, e.n)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : <p className="vazio">Nenhuma venda no período.</p>}
+        <p className="nota">
+          A origem vem da lista de membros dos grupos, cruzada pelo telefone de quem comprou (e pelo nome, quando falta
+          o telefone). Venda antiga fica sem origem quando a pessoa já saiu do grupo ou não tem telefone cadastrado.
+          Quem está em dois grupos também fica sem, porque não dá para saber de qual veio.
+        </p>
+      </div>
+    </>
   );
 }
 
@@ -5535,6 +5850,18 @@ select.inp{ cursor:pointer; }
 .root.dark .tag-grad{ color:#8CC9EE; }
 .tag-grad{ font-size:11px; font-weight:500; background:rgba(59,158,222,.14); color:#1E5F82;
   border:1px solid rgba(59,158,222,.45); padding:2px 9px; border-radius:999px; white-space:nowrap; }
+/* ORIGEM DAS VENDAS */
+.org-rot{ display:inline-flex; align-items:center; gap:8px; font-weight:600; white-space:nowrap; }
+.org-sem td, .org-sem .org-rot{ color:var(--muted); font-weight:400; }
+.tab tfoot td{ padding:12px 14px; border-top:1px solid var(--border); font-size:13px; font-weight:600; background:var(--soft); }
+.org-pct{ display:inline-block; min-width:38px; margin-left:6px; font-size:12px; font-weight:400; color:var(--muted2); }
+.org-nota{ margin:0; padding:11px 20px 14px; }
+.org-legenda{ display:flex; flex-wrap:wrap; gap:6px 18px; margin:10px 0 4px; }
+.org-head{ flex-wrap:wrap; align-items:center; }
+.org-trocas{ display:flex; gap:8px; flex-wrap:wrap; }
+.org-mensal{ margin-top:14px; border:1px solid var(--border); border-radius:var(--r-md); }
+.org-mes-sel td{ background:var(--brand-soft); }
+.tab-origem th:first-child, .org-mensal th:first-child{ min-width:130px; }
 /* PERIODO BAR */
 .periodo-bar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--surface);
   border:1px solid var(--border); border-radius:var(--r-lg); padding:10px 14px; margin-bottom:16px; }
