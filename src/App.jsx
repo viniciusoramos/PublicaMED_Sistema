@@ -2739,6 +2739,10 @@ function Clientes({ m, vendas, salvarCliente, onAbrirPublicacao, contatoDe = () 
  * ele continua ali — em vez de ser levado para outra aba. */
 function FichaCliente({ cliente, contato = {}, onSalvar, onAbrirPublicacao, onFechar }) {
   const [editando, setEditando] = useState(false);
+  // grupo(s) de onde o cliente veio, pela origem das compras; o mais recente primeiro
+  const grupos = [...new Set([...cliente.compras]
+    .sort((a, b) => (b.data || "").localeCompare(a.data || ""))
+    .filter((v) => v.origem).map((v) => rotuloOrigem(v.origem)))];
   return (
     <Modal titulo={editando ? `Editar cliente · ${cliente.nome}` : cliente.nome} onClose={onFechar} wide>
       {editando ? (
@@ -2757,6 +2761,16 @@ function FichaCliente({ cliente, contato = {}, onSalvar, onAbrirPublicacao, onFe
             <div><span className="ci-lab">Graduado</span>{contato.graduado ? <span className="tag-grad">Graduado</span> : "Não"}</div>
             <div><span className="ci-lab">Total gasto</span><b>{brl(cliente.total)}</b></div>
             <div><span className="ci-lab">Trabalhos</span><b>{cliente.qtd}</b></div>
+            {/* depois de Trabalhos, na grade de 3 colunas ele cai embaixo de Graduado (com ou sem ORCID) */}
+            <div><span className="ci-lab">Grupo</span>
+              {grupos.length ? (
+                <span className="tags-grupo">
+                  {grupos.map((g) => (
+                    <span key={g} className="tag-grupo" style={{ "--tc": numGrupo(g) ? `var(--grupo-${numGrupo(g)})` : "var(--brand)" }}>{g}</span>
+                  ))}
+                </span>
+              ) : "—"}
+            </div>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
             <button className="btn-ghost" onClick={() => setEditando(true)}>Editar dados do cliente</button>
@@ -5855,6 +5869,11 @@ select.inp{ cursor:pointer; }
 .ci-lab{ font-size:11px; color:var(--muted2); text-transform:uppercase; font-weight:600; letter-spacing:.05em; }
 /* o campo é uma coluna flex e esticaria o selo na largura toda: ele fica do tamanho do texto */
 .cli-info .tag-grad{ align-self:flex-start; }
+/* grupo de origem do cliente: mesma etiqueta do Graduado, na cor do grupo */
+.cli-info .tags-grupo{ display:flex; flex-wrap:wrap; gap:6px; align-self:flex-start; }
+.tag-grupo{ font-size:11px; font-weight:500; padding:2px 9px; border-radius:999px; white-space:nowrap;
+  background:color-mix(in srgb, var(--tc) 14%, transparent); border:1px solid color-mix(in srgb, var(--tc) 45%, transparent);
+  color:color-mix(in srgb, var(--tc) 70%, var(--ink)); }
 /* nome do cliente na lista de vendas: abre a ficha, sem virar um azulão na tabela */
 /* faculdades: aviso de estado faltando e as variações de escrita agrupadas */
 .aviso-uf{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; color:var(--warn);
