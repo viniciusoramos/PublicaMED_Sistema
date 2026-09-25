@@ -100,6 +100,10 @@ Nunca sobrescreva origem já preenchida.
   isso o cruzamento por nome existe.
 - **20 clientes recorrentes não têm telefone cadastrado** (ver
   [[campanha-lattes-4-compras]]); esses só casam por nome.
+- **Desde 25/09/2026 o grupo é escolhido no cadastro**: o seletor "Selecionar
+  grupo" em adicionar/editar participante grava a origem na venda lançada ali.
+  Venda nova com grupo já chega com origem; o cruzamento só cuida das que
+  ficaram sem, e nunca mexe no que foi escolhido à mão.
 - **Quem está em dois grupos fica sem origem**, por decisão do Lucas. Na leitura
   de 23/09/2026 foram seis clientes.
 - **O #5 foi criado com acento** ("Científicos"); os outros quatro, sem. A

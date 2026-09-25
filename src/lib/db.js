@@ -168,14 +168,15 @@ const vendaLinha = async (d) => ({
   tema: d.tema || '',
   /* origem fica de fora de propósito. Esta linha é regravada inteira a cada
    * edição de venda: incluir origem aqui faria qualquer edição apagar a origem
-   * importada dos grupos, e antes da migração 24 derrubaria toda venda nova com
-   * "column not found". Origem só se escreve por definirOrigemVendas. */
+   * importada dos grupos. Origem só se escreve na criação (criarVenda, quando
+   * o grupo é escolhido no cadastro) e por definirOrigemVendas. */
 });
 
 /* ---------- vendas ---------- */
 export async function criarVenda(d) {
   const row = await vendaLinha(d);
   if (d.participanteId) row.participante_id = d.participanteId;
+  if (d.origem) row.origem = d.origem;
   const { data, error } = await supabase.from('vendas').insert(row).select('*, faculdades(nome)').single();
   if (error) throw error;
   return vendaDe(data);

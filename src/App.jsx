@@ -110,7 +110,7 @@ const normStatus = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "
 const STATUS_COR_N = new Map(Object.entries(STATUS_COR).map(([k, v]) => [normStatus(k), v]));
 const corStatus = (v) => STATUS_COR_N.get(normStatus(v)) || hashCor(v);
 // tipos/status disponíveis (padrões + criados pelo usuário) chegam aos componentes por contexto
-const ListasCtx = React.createContext({ tipos: TIPOS, status: STATUS });
+const ListasCtx = React.createContext({ tipos: TIPOS, status: STATUS, grupos: [] });
 
 /* ---------- Utilidades ---------- */
 const brl = (n) =>
@@ -1160,10 +1160,10 @@ export default function App() {
         const venda = await db.criarVenda({
           data: dados.data || hojeIso(), nome: dados.nome, email: dados.email,
           faculdade: dados.faculdade, uf, tipo: tema.tipo, valor: dados.valor, tema: tema.nome,
-          participanteId: part.id,
+          participanteId: part.id, origem: dados.origem || "",
         });
         setVendas((vs) => [venda, ...vs]);
-        acoes.push("venda lançada");
+        acoes.push("venda lançada" + (venda.origem ? ` · ${rotuloOrigem(venda.origem)}` : ""));
       }
       const outras = await propagarCpf(dados);
       if (outras) acoes.push(`CPF aplicado em ${outras} participação(ões) anterior(es)`);
@@ -1208,10 +1208,13 @@ export default function App() {
       if (vendaDB) {
         const valor = dados.valorMexido ? dados.valor : vendaDB.valor; // só troca o valor se o usuário mexeu
         const atual = await db.atualizarVenda(vendaDB.id, { ...vendaDB, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, valor, participanteId: part.id });
-        setVendas((vs) => [atual, ...vs.filter((v) => v.id !== atual.id)]);
+        // o grupo só é regravado quando foi mexido: salvar sem tocar nele não apaga a origem vinda do Cowork
+        if (dados.origemMexida) await db.definirOrigemVendas([atual.id], dados.origem || "");
+        const final = dados.origemMexida ? { ...atual, origem: dados.origem || "" } : atual;
+        setVendas((vs) => [final, ...vs.filter((v) => v.id !== final.id)]);
       } else if (dados.valorMexido && (dados.valor || 0) > 0) {
         // participante sem venda: cria uma já vinculada, com o valor informado
-        const nova = await db.criarVenda({ data: hojeIso(), nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, tipo: tema.tipo, valor: dados.valor, tema: tema.nome, participanteId: part.id });
+        const nova = await db.criarVenda({ data: hojeIso(), nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, tipo: tema.tipo, valor: dados.valor, tema: tema.nome, participanteId: part.id, origem: dados.origem || "" });
         setVendas((vs) => [nova, ...vs]);
       }
       const outras = await propagarCpf(dados);
@@ -1426,6 +1429,22 @@ export default function App() {
     }
     return out;
   }, [trabalhos]);
+  /* Grupos que o cadastro oferece: os que já aparecem como origem de alguma venda.
+   * O nome gravado varia (o #5 tem acento), então cada grupo entra uma vez só,
+   * com a grafia mais usada — é ela que vai para a venda nova. */
+  const gruposOrigem = useMemo(() => {
+    const cont = new Map();
+    for (const v of vendas) {
+      const o = (v.origem || "").trim();
+      if (o) cont.set(o, (cont.get(o) || 0) + 1);
+    }
+    const porRot = new Map();
+    for (const [valor, n] of cont) {
+      const rot = rotuloOrigem(valor);
+      if (!porRot.has(rot) || n > porRot.get(rot).n) porRot.set(rot, { valor, rot, n });
+    }
+    return [...porRot.values()].sort((a, b) => ordemOrigem(a.rot, b.rot));
+  }, [vendas]);
   // data de abertura de cada publicação, vinda do cronograma (organiza a lista de Publicações
   // e vagas por situação em vez de por data de cadastro). Também antes dos returns condicionais.
   const vinculoCal = useMemo(() => aberturaDasPublicacoes(planejamentos, temas), [planejamentos, temas]);
@@ -1460,7 +1479,7 @@ export default function App() {
   ];
 
   return (
-    <ListasCtx.Provider value={{ tipos: tiposDisp, status: statusDisp }}>
+    <ListasCtx.Provider value={{ tipos: tiposDisp, status: statusDisp, grupos: gruposOrigem }}>
     <div className={"root" + (dark ? " dark" : "") + (AMBIENTE_TESTE || DEV_NO_REAL ? " com-tarja" : "")}>
       <Estilos />
       {AMBIENTE_TESTE && (
@@ -3728,13 +3747,14 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
       const atual = map.get(k);
       if (!atual) { map.set(k, { ...dados, nome: dados.nome.trim(), _data: data || "" }); return; }
       const maisNovo = (data || "") >= (atual._data || "");
-      for (const c of ["email", "faculdade", "orcid", "telefone", "cpf"]) {
+      for (const c of ["email", "faculdade", "orcid", "telefone", "cpf", "origem"]) {
         if (dados[c] && (maisNovo || !atual[c])) atual[c] = dados[c];
       }
       if (dados.graduado) atual.graduado = true;
       if (maisNovo) atual._data = data || "";
     };
-    vendas.forEach((v) => upsert({ nome: v.nome || "", email: v.email || "", faculdade: v.faculdade || "" }, v.data));
+    // origem: o grupo da compra mais recente com grupo, que o cadastro sugere para a próxima
+    vendas.forEach((v) => upsert({ nome: v.nome || "", email: v.email || "", faculdade: v.faculdade || "", origem: v.origem || "" }, v.data));
     temas.forEach((tm) => tm.participantes.forEach((p) =>
       upsert({ nome: p.nome || "", email: p.email || "", faculdade: p.faculdade || "", orcid: p.orcid || "", telefone: p.telefone || "", cpf: p.cpf || "", graduado: !!p.graduado }, "")));
     return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
@@ -4393,7 +4413,8 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
 
       {editP && (
         <Modal titulo="Editar participante" onClose={() => setEditP(null)}>
-          <FormParticipante part={editP} valorAtual={vendaDoPart(editP)?.valor ?? ""} onSalvar={(d) => { onEditPart(t, editP, d); setEditP(null); }} onCancelar={() => setEditP(null)} />
+          <FormParticipante part={editP} valorAtual={vendaDoPart(editP)?.valor ?? ""} origemAtual={vendaDoPart(editP)?.origem || ""}
+            temVenda={!!vendaDoPart(editP)} onSalvar={(d) => { onEditPart(t, editP, d); setEditP(null); }} onCancelar={() => setEditP(null)} />
         </Modal>
       )}
 
@@ -4405,8 +4426,30 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
   );
 }
 
+/* Grupo de WhatsApp de onde veio a venda. "Não sei" é o padrão para o cadastro
+ * nunca travar; a venda fica sem origem e o cruzamento com os grupos preenche
+ * depois. Uma origem gravada com outra grafia do mesmo grupo (o #5 com e sem
+ * acento) aparece como o próprio grupo, e não como opção a mais. */
+// sem grupo escolhido a venda fica sem origem ("não sei"): o texto só convida a escolher
+function SeletorGrupo({ valor = "", onChange, disabled, rotuloVazio = "Selecionar grupo", className = "inp", title }) {
+  const { grupos = [] } = useContext(ListasCtx);
+  const mostrado = valor ? (grupos.find((g) => g.valor === valor || g.rot === rotuloOrigem(valor))?.valor || valor) : "";
+  const avulso = mostrado && !grupos.some((g) => g.valor === mostrado);
+  // grupo escolhido ganha a bolinha na cor dele, a mesma do painel de origem
+  const n = mostrado ? numGrupo(rotuloOrigem(mostrado)) : 0;
+  return (
+    <select className={className + " sel-grupo" + (mostrado ? " com-grupo" : "")} value={mostrado} disabled={disabled}
+      title={title} aria-label="Grupo de origem" onChange={(e) => onChange(e.target.value)}
+      style={mostrado ? { "--tc": n ? `var(--grupo-${n})` : "var(--brand)" } : undefined}>
+      <option value="">{rotuloVazio}</option>
+      {grupos.map((g) => <option key={g.valor} value={g.valor}>{g.rot}</option>)}
+      {avulso && <option value={mostrado}>{rotuloOrigem(mostrado)}</option>}
+    </select>
+  );
+}
+
 function FormPart({ tema, pessoas = [], onAdd }) {
-  const vazio = { nome: "", faculdade: "", email: "", orcid: "", telefone: "", cpf: "", autorPrincipal: false, graduado: false, valor: "", data: hojeIso(), lancarVenda: true };
+  const vazio = { nome: "", faculdade: "", email: "", orcid: "", telefone: "", cpf: "", autorPrincipal: false, graduado: false, valor: "", data: hojeIso(), lancarVenda: true, origem: "" };
   const [p, setP] = useState(vazio);
   const [reconhecida, setReconhecida] = useState(null);
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
@@ -4422,6 +4465,7 @@ function FormPart({ tema, pessoas = [], onAdd }) {
       telefone: x.telefone || ph.telefone || "",
       cpf: x.cpf || ph.cpf || "",
       graduado: x.graduado || !!ph.graduado,
+      origem: x.origem || ph.origem || "",
     } : { ...x, nome: v });
   };
   const enviar = () => {
@@ -4456,23 +4500,30 @@ function FormPart({ tema, pessoas = [], onAdd }) {
           <input type="checkbox" checked={p.lancarVenda} onChange={(e) => set("lancarVenda", e.target.checked)} /> Lançar venda</label>
         <label className="check sm"><input type="checkbox" checked={p.autorPrincipal} onChange={(e) => set("autorPrincipal", e.target.checked)} /> Autor principal</label>
         <label className="check sm"><input type="checkbox" checked={p.graduado} onChange={(e) => set("graduado", e.target.checked)} /> Graduado</label>
+        {/* a origem mora na venda: sem venda lançada não há onde gravar o grupo */}
+        <SeletorGrupo valor={p.origem} onChange={(v) => set("origem", v)}
+          className="inp sm fp-grupo" disabled={!p.lancarVenda}
+          title={p.lancarVenda ? "Grupo de WhatsApp de onde a pessoa veio" : "O grupo fica na venda: marque Lançar venda"} />
         <button className="btn" onClick={enviar}>Salvar</button>
       </div>
     </div>
   );
 }
 
-function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
+function FormParticipante({ part, valorAtual = "", origemAtual = "", temVenda = false, onSalvar, onCancelar }) {
   const [f, setF] = useState({
     nome: part.nome || "", faculdade: part.faculdade || "", email: part.email || "", orcid: part.orcid || "", telefone: part.telefone || "", cpf: part.cpf || "",
     autorPrincipal: !!part.autorPrincipal, graduado: !!part.graduado,
     valor: valorAtual === "" || valorAtual == null ? "" : String(valorAtual),
+    origem: origemAtual || "",
   });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  // sem venda e sem valor, salvar não cria venda — e o grupo não teria onde ficar
+  const semOndeGravarGrupo = !temVenda && !(numBR(f.valor) > 0);
   const salvar = () => {
     if (!f.nome.trim()) { alert("Informe o nome."); return; }
     const inicial = valorAtual === "" || valorAtual == null ? "" : String(valorAtual);
-    onSalvar({ ...f, valor: numBR(f.valor), valorMexido: String(f.valor) !== inicial });
+    onSalvar({ ...f, valor: numBR(f.valor), valorMexido: String(f.valor) !== inicial, origemMexida: f.origem !== (origemAtual || "") });
   };
   return (
     <>
@@ -4494,6 +4545,10 @@ function FormParticipante({ part, valorAtual = "", onSalvar, onCancelar }) {
           <input className={"inp" + (avisoCPF(f.cpf) ? " erro" : "")} inputMode="numeric" placeholder="000.000.000-00"
             value={fmtCPF(f.cpf)} onChange={(e) => set("cpf", e.target.value)} />
           {avisoCPF(f.cpf) && <span className="campo-erro">{avisoCPF(f.cpf)}</span>}
+        </Campo>
+        <Campo label="Grupo de origem">
+          <SeletorGrupo valor={f.origem} onChange={(v) => set("origem", v)} disabled={semOndeGravarGrupo}
+            title={semOndeGravarGrupo ? "O grupo fica na venda: informe o valor pago para lançar a venda" : "Grupo de WhatsApp de onde a pessoa veio"} />
         </Campo>
       </div>
       <div className="fp-opts">
@@ -5357,6 +5412,8 @@ function Estilos() {
   /* Quadro de trabalhos: três níveis de superfície. Sem eles a coluna e o cartão
      encostam no fundo da página e as etapas viram um borrão só. */
   --kb-painel:#E4EAF1; --kb-cartao:#FFFFFF;
+  /* grupos de WhatsApp: mesmas cores de COR_GRUPO (o gráfico precisa delas em hex) */
+  --grupo-1:#256E93; --grupo-2:#DD6B20; --grupo-3:#0F7A4D; --grupo-4:#6D5DD3; --grupo-5:#B03063;
   --sel-chevron:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%235D6D7D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
 }
 .root.dark{
@@ -5370,6 +5427,7 @@ function Estilos() {
   /* no escuro a página é preta, então a coluna sobe um degrau e o cartão sobe
      mais um — é o que separa visualmente as etapas */
   --kb-painel:#121214; --kb-cartao:#26262A;
+  --grupo-1:#5AA7CC; --grupo-2:#E8A33D; --grupo-3:#57CF9A; --grupo-4:#A99CF0; --grupo-5:#E4837E;
   /* bordas sempre translúcidas, nunca cinza sólido */
   --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.12); --divider:rgba(255,255,255,.06);
   --brand-soft:rgba(59,158,222,.14); --ring:0 0 0 3px rgba(59,158,222,.35);
@@ -6091,6 +6149,15 @@ select.inp{ cursor:pointer; }
 .fp-grid .inp{ width:100%; }
 .fp-opts{ display:flex; flex-wrap:wrap; align-items:center; gap:18px; margin-top:14px; }
 .fp-opts .btn{ margin-left:auto; }
+.fp-opts .fp-grupo{ width:auto; min-width:150px; }
+.fp-opts .fp-grupo:disabled{ opacity:.55; cursor:not-allowed; }
+/* .form-part .inp redefine o fundo inteiro e apagava a seta dos selects do formulário */
+.form-part select.inp{ background-image:var(--sel-chevron); background-repeat:no-repeat;
+  background-position:right 10px center; padding-right:30px; }
+/* grupo escolhido: bolinha na cor do grupo + borda tingida, como no seletor de status */
+select.inp.sel-grupo.com-grupo{ background-image:radial-gradient(circle, var(--tc) 0 3.5px, transparent 4px), var(--sel-chevron);
+  background-repeat:no-repeat; background-position:11px center, right 10px center; background-size:9px 9px, 12px 12px;
+  padding-left:28px; padding-right:30px; font-weight:600; border-color:color-mix(in srgb, var(--tc) 55%, transparent); }
 .fp-reconhecida{ font-size:12px; font-weight:600; color:var(--ok); margin-top:9px; }
 @media (max-width:1100px){ .fp-grid{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
 @media (max-width:640px){ .fp-grid{ grid-template-columns:1fr; } }
