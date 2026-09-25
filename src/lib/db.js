@@ -221,6 +221,12 @@ export async function definirOrigemVendas(ids, origem) {
   const { error } = await supabase.from('vendas').update({ origem }).in('id', ids);
   if (error) throw error;
 }
+// tipo da publicação nas vendas dela, quando o tipo muda depois de vendida — 1 update em lote
+export async function definirTipoVendas(ids, tipo) {
+  if (!ids || !ids.length) return;
+  const { error } = await supabase.from('vendas').update({ tipo }).in('id', ids);
+  if (error) throw error;
+}
 // renomeia o tema (nome da publicação) em todas as vendas ligadas — 1 update em lote
 export async function renomearTemaVendas(antigo, novo) {
   if (!antigo || antigo === novo) return;
@@ -248,6 +254,11 @@ export async function removerTrabalho(id) {
 // atualiza só o título do trabalho (não toca nas outras colunas)
 export async function renomearTrabalho(id, titulo) {
   const { error } = await supabase.from('trabalhos').update({ titulo: titulo || '' }).eq('id', id);
+  if (error) throw error;
+}
+// atualiza só o tipo do trabalho (acompanha a troca de tipo da publicação)
+export async function definirTipoTrabalho(id, tipo) {
+  const { error } = await supabase.from('trabalhos').update({ tipo: tipo || 'Artigo' }).eq('id', id);
   if (error) throw error;
 }
 // atualiza só o local de publicação do trabalho

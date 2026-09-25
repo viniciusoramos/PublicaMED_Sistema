@@ -1044,12 +1044,31 @@ export default function App() {
     if (rec) setPlanejamentos(rec);
   };
   const editPublicacao = async (id, campos) => {
-    const antes = temas; setTemas((ts) => ts.map((t) => (t.id === id ? { ...t, ...campos } : t)));
+    /* O tipo mora também na venda e no trabalho, gravados na hora da venda. Trocar
+     * só na publicação deixava a aba Vendas e o quadro de Trabalhos com o tipo
+     * antigo (publicação criada como Artigo e passada para Artigo PSU). */
+    const pub = temas.find((t) => t.id === id);
+    let idsV = [], trab = null;
+    if ("tipo" in campos && pub && campos.tipo !== pub.tipo) {
+      const partIds = new Set((pub.participantes || []).map((p) => p.id));
+      // com outra publicação de mesmo título, só o que está no tipo antigo é desta
+      const homonima = temas.some((t) => t.id !== id && t.nome === pub.nome);
+      idsV = vendas.filter((v) => v.tipo !== campos.tipo && ((v.participanteId && partIds.has(v.participanteId))
+        || (v.tema === pub.nome && (!homonima || v.tipo === pub.tipo)))).map((v) => v.id);
+      trab = trabalhos.find((x) => x.titulo === pub.nome && (!homonima || x.tipo === pub.tipo)) || null;
+    }
+    const antes = temas, antesV = vendas, antesTr = trabalhos;
+    setTemas((ts) => ts.map((t) => (t.id === id ? { ...t, ...campos } : t)));
+    if (idsV.length) setVendas((vs) => vs.map((v) => (idsV.includes(v.id) ? { ...v, tipo: campos.tipo } : v)));
+    if (trab) setTrabalhos((tr) => tr.map((x) => (x.id === trab.id ? { ...x, tipo: campos.tipo } : x)));
     try {
       await db.atualizarPublicacao(id, campos);
       if ("tipo" in campos) await sincronizarTemasDoCal(id, { tipo: campos.tipo });
+      if (idsV.length) await db.definirTipoVendas(idsV, campos.tipo);
+      if (trab && trab.tipo !== campos.tipo) await db.definirTipoTrabalho(trab.id, campos.tipo);
+      if (idsV.length) aviso(`Tipo atualizado · ${idsV.length} venda(s) acompanharam`);
     }
-    catch (e) { aviso("Erro: " + e.message); setTemas(antes); }
+    catch (e) { aviso("Erro: " + e.message); setTemas(antes); setVendas(antesV); setTrabalhos(antesTr); }
   };
   /* Fecha um lote de publicações (a tela usa para limpar as "Anteriores" de uma vez).
    * Um update só: se falhar, nada foi gravado e a tela volta ao que era. */

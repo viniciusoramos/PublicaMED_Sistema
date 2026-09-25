@@ -64,6 +64,13 @@ casaram por grupo, por telefone e por nome, quantas estão em dois grupos e
 quantas ficaram sem origem (e por quê). Mostre isso ao Lucas, com o nome das
 vendas novas que não casaram, antes de gerar o UPDATE.
 
+**As que não casaram, pergunte ao Lucas antes de mandar rodar o Cowork.** Ele
+costuma saber de qual grupo é cada cliente novo. Em 25/09/2026 ele identificou
+na hora as nove que ficaram de fora, entre elas quatro sem telefone
+cadastrado, que nenhuma leitura pegaria. O grupo que ele disser vale e é gravado
+direto: um UPDATE por grupo com os ids, só em origem vazia, e a contagem no fim.
+Se ele citar a pessoa só pelo primeiro nome, confirme o nome completo antes.
+
 Como casar:
 
 - **Telefone** primeiro, comparando só os dígitos e ignorando o DDI. Muitos
