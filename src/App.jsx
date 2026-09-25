@@ -4236,8 +4236,11 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
                         <td className="dp-fac">{p.faculdade}</td>
                         <td>
                           <span className="dp-marcas">
-                            {p.autorPrincipal && <span className="tag-autor">Autor principal</span>}
+                            {/* uma embaixo da outra, sempre nesta ordem: grupo, graduado, autor principal.
+                                O grupo vem da venda desta participação, discreto como na lista de Vendas */}
+                            {vd?.origem && <TagGrupo origem={vd.origem} title={vd.origem} discreta />}
                             {p.graduado && <span className="tag-grad">Graduado</span>}
+                            {p.autorPrincipal && <span className="tag-autor">Autor principal</span>}
                           </span>
                         </td>
                         <td className="r p-valor" title="Valor pago na vaga">{vd ? brl(vd.valor) : "—"}</td>
@@ -6048,7 +6051,7 @@ select.inp{ cursor:pointer; }
 /* azul é reservado a link/acento: o e-mail fica azul, a faculdade é texto comum */
 .dp-tabela td.dp-fac{ color:var(--muted); }
 .dp-tabela td.p-valor{ color:var(--ink); font-weight:500; }
-.dp-marcas{ display:inline-flex; gap:6px; flex-wrap:wrap; }
+.dp-marcas{ display:inline-flex; flex-direction:column; align-items:flex-start; gap:5px; }
 /* as ações não estão no desenho: aparecem só ao passar o mouse na linha */
 /* ordem dos autores: alça de arrastar + número da posição */
 .dp-tabela .dp-ord-th{ width:46px; text-align:center; }
