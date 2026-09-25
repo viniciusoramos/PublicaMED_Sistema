@@ -1204,7 +1204,8 @@ export default function App() {
     try {
       await db.atualizarParticipante(part.id, dados);
       // busca a venda no BANCO (evita duplicar por causa de estado desatualizado)
-      const vendaDB = await db.buscarVendaDoParticipante(part.id, tema.nome, part.nome);
+      const vendaDB = await db.buscarVendaDoParticipante(part.id, tema.nome, part.nome,
+        (tema.participantes || []).filter((x) => x.id !== part.id).map((x) => x.id));
       if (vendaDB) {
         const valor = dados.valorMexido ? dados.valor : vendaDB.valor; // só troca o valor se o usuário mexeu
         const atual = await db.atualizarVenda(vendaDB.id, { ...vendaDB, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf, valor, participanteId: part.id });
@@ -2532,7 +2533,7 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
       </div>
 
       {modal && (
-        <FormVenda venda={editando} onSalvar={salvarVenda} onClose={() => { setModal(false); setEditando(null); }} temasExist={temasExist} facOpts={facOpts} />
+        <FormVenda venda={editando} onSalvar={salvarVenda} onClose={() => { setModal(false); setEditando(null); }} temasExist={temasExist} facOpts={facOpts} vendasExist={vendas} />
       )}
 
       {popData && (
@@ -2586,7 +2587,7 @@ function SelectComNovo({ valor, opcoes = [], onChange, rotuloNovo, className = "
   );
 }
 
-function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts }) {
+function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts, vendasExist = [] }) {
   const { tipos: tiposDisp } = useContext(ListasCtx);
   const opts = facOpts || { nomes: FAC_BASE.nomes, ufMap: FAC_BASE.ufMap };
   // se a venda em edição tem faculdade fora da lista, tratamos como "outra"
@@ -2605,8 +2606,22 @@ function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts }) {
     const uf = opts.ufMap[nome] || "N/I";
     setF((p) => ({ ...p, faculdade: nome, uf }));
   };
-  const submeter = () => {
+  // venda nova num tema em que a pessoa já está (como participante ou com outra venda)
+  const [repetido, setRepetido] = useState(null);
+  const acharRepetido = () => {
+    const tema = (f.tema || "").trim();
+    if (venda || !tema) return null;
+    const v = vendasExist.find((x) => (x.tema || "").trim() === tema && mesmaPessoa(x, f));
+    if (v) return { nome: v.nome, detalhe: `venda de ${fmtData(v.data)}, ${brl(v.valor)}` };
+    for (const t of temasExist.filter((x) => (x.nome || "").trim() === tema)) {
+      const p = (t.participantes || []).find((x) => mesmaPessoa(x, f));
+      if (p) return { nome: p.nome, detalhe: "já é participante" };
+    }
+    return null;
+  };
+  const submeter = (forcar = false) => {
     if (!f.nome.trim() && !f.email.trim()) { alert("Informe ao menos o nome ou o email."); return; }
+    if (!forcar) { const r = acharRepetido(); if (r) { setRepetido(r); return; } }
     onSalvar({ ...f, valor: numBR(f.valor) });
   };
 
@@ -2645,10 +2660,16 @@ function FormVenda({ venda, onSalvar, onClose, temasExist, facOpts }) {
           <datalist id="temas-list">{temasExist.map((t) => <option key={t.id} value={t.nome} />)}</datalist>
         </Campo>
       </div>
-      <div className="form-acoes">
-        <button className="btn-ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn" onClick={submeter}>{venda ? "Salvar alterações" : "Adicionar venda"}</button>
-      </div>
+      {/* o aviso toma o lugar dos botões, dentro desta mesma janela: abrir outra por cima
+          faria o Esc fechar as duas */}
+      {repetido ? (
+        <MsgRepetido quem={repetido} onVoltar={() => setRepetido(null)} onSeguir={() => { setRepetido(null); submeter(true); }} />
+      ) : (
+        <div className="form-acoes">
+          <button className="btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn" onClick={() => submeter()}>{venda ? "Salvar alterações" : "Adicionar venda"}</button>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -3987,26 +4008,33 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
     if (v <= 0) { alert("Informe o valor da taxa."); return; }
     onLancarTaxa(t, v, taxaData); setTaxaVal("");
   };
-  // faturamento = soma de UMA venda por participante (à prova de venda duplicada);
-  // bate exatamente com os valores mostrados por pessoa na lista
-  const faturamento = useMemo(() => {
-    const vistos = new Set();
-    let total = 0;
+  /* Venda de cada participante: primeiro a ligada a ele; o nome (tema + nome) só
+   * entra para quem ficou sem, e nunca com venda que já é de outro participante.
+   * Antes era um find só com "ligada OU mesmo nome": a mesma pessoa em duas vagas
+   * (Yan Bispo Cerezuela, Traqueostomia) caía duas vezes na mesma venda, a lista
+   * mostrava R$ 90 nas duas e o faturamento contava uma só. */
+  const vendaPorPart = useMemo(() => {
+    const mapa = new Map(), usadas = new Set();
+    const idsPub = new Set(t.participantes.map((p) => p.id));
     for (const p of t.participantes) {
-      const v = vendas.find((x) =>
-        (x.participanteId && x.participanteId === p.id) ||
-        (x.tema === t.nome && (x.nome || "").trim().toLowerCase() === (p.nome || "").trim().toLowerCase())
-      );
-      if (v && !vistos.has(v.id)) { total += v.valor || 0; vistos.add(v.id); }
+      const v = vendas.find((x) => x.participanteId && x.participanteId === p.id);
+      if (v) { mapa.set(p.id, v); usadas.add(v.id); }
     }
-    return total;
+    const mesmoNome = (a, b) => (a || "").trim().toLowerCase() === (b || "").trim().toLowerCase();
+    for (const p of t.participantes) {
+      if (mapa.has(p.id)) continue;
+      const v = vendas.find((x) => !usadas.has(x.id) && x.tema === t.nome && mesmoNome(x.nome, p.nome)
+        && !(x.participanteId && idsPub.has(x.participanteId)));
+      if (v) { mapa.set(p.id, v); usadas.add(v.id); }
+    }
+    return mapa;
   }, [vendas, t.participantes, t.nome]);
+  // faturamento = soma das vendas dos participantes, cada uma uma vez só;
+  // bate exatamente com os valores mostrados por pessoa na lista
+  const faturamento = useMemo(
+    () => [...vendaPorPart.values()].reduce((s, v) => s + (v.valor || 0), 0), [vendaPorPart]);
   const lucro = faturamento - (t.taxa || 0);
-  // venda de um participante (vínculo direto ou pelo tema + nome)
-  const vendaDoPart = (p) => vendas.find((v) =>
-    (v.participanteId && v.participanteId === p.id) ||
-    (v.tema === t.nome && (v.nome || "").trim().toLowerCase() === (p.nome || "").trim().toLowerCase())
-  );
+  const vendaDoPart = (p) => vendaPorPart.get(p.id);
   const semGraduado = t.requiresGrad && !t.participantes.some((p) => p.graduado);
   const enviarCert = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -4487,6 +4515,34 @@ function SeletorGrupo({ valor = "", onChange, disabled, rotuloVazio = "Seleciona
   );
 }
 
+/* A mesma pessoa não pode ter duas vagas no mesmo trabalho (Yan Bispo Cerezuela
+ * entrou duas vezes na Traqueostomia sem ninguém perceber). Mesma pessoa = mesmo
+ * CPF, mesmo e-mail ou mesmo nome, sem acento nem maiúscula. Homônimo existe, por
+ * isso o aviso deixa seguir, mas só depois de a pessoa confirmar que é outra. */
+const soDigitos = (s) => String(s || "").replace(/\D/g, "");
+const mesmaPessoa = (a, b) => {
+  const ca = soDigitos(a.cpf), cb = soDigitos(b.cpf);
+  if (ca.length === 11 && ca === cb) return true;
+  const ea = (a.email || "").trim().toLowerCase(), eb = (b.email || "").trim().toLowerCase();
+  if (ea && ea === eb) return true;
+  return !!chaveTitulo(a.nome) && chaveTitulo(a.nome) === chaveTitulo(b.nome);
+};
+function MsgRepetido({ quem, onVoltar, onSeguir, rotuloSeguir = "Adicionar mesmo assim" }) {
+  return (
+    <>
+      <p className="aviso-rep" role="alert">
+        <b>{quem.nome}</b> já está neste trabalho{quem.detalhe ? ` (${quem.detalhe})` : ""}.
+        A mesma pessoa não pode ter duas vagas no mesmo tema.
+      </p>
+      <p className="aviso-rep-sub">Se for outra pessoa com o mesmo nome, dá para seguir assim mesmo.</p>
+      <div className="form-acoes">
+        <button className="btn-ghost" onClick={onSeguir}>{rotuloSeguir}</button>
+        <button className="btn" onClick={onVoltar} autoFocus>Não adicionar</button>
+      </div>
+    </>
+  );
+}
+
 function FormPart({ tema, pessoas = [], onAdd }) {
   const vazio = { nome: "", faculdade: "", email: "", orcid: "", telefone: "", cpf: "", autorPrincipal: false, graduado: false, valor: "", data: hojeIso(), lancarVenda: true, origem: "" };
   const [p, setP] = useState(vazio);
@@ -4507,8 +4563,14 @@ function FormPart({ tema, pessoas = [], onAdd }) {
       origem: x.origem || ph.origem || "",
     } : { ...x, nome: v });
   };
-  const enviar = () => {
+  const [repetido, setRepetido] = useState(null); // participante do trabalho que parece a mesma pessoa
+  const enviar = (forcar = false) => {
     if (!p.nome.trim()) { alert("Informe o nome."); return; }
+    if (!forcar) {
+      const i = (tema.participantes || []).findIndex((x) => mesmaPessoa(x, p));
+      if (i >= 0) { setRepetido({ nome: tema.participantes[i].nome, detalhe: `vaga ${i + 1}` }); return; }
+    }
+    setRepetido(null);
     const valor = numBR(p.valor);
     onAdd({ ...p, valor });
     setP({ ...vazio, data: p.data });
@@ -4543,8 +4605,13 @@ function FormPart({ tema, pessoas = [], onAdd }) {
         <SeletorGrupo valor={p.origem} onChange={(v) => set("origem", v)}
           className="inp sm fp-grupo" disabled={!p.lancarVenda}
           title={p.lancarVenda ? "Grupo de WhatsApp de onde a pessoa veio" : "O grupo fica na venda: marque Lançar venda"} />
-        <button className="btn" onClick={enviar}>Salvar</button>
+        <button className="btn" onClick={() => enviar()}>Salvar</button>
       </div>
+      {repetido && (
+        <Modal titulo="Essa pessoa já está no trabalho" onClose={() => setRepetido(null)}>
+          <MsgRepetido quem={repetido} onVoltar={() => setRepetido(null)} onSeguir={() => enviar(true)} />
+        </Modal>
+      )}
     </div>
   );
 }
@@ -5050,20 +5117,31 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
     ].filter(Boolean).join(" · ") || "sem temas";
   };
   // índices de venda p/ apurar o que já foi pago sem varrer a lista inteira por participante
+  // (porTemaNome guarda todas as vendas do nome, não só a última: a mesma pessoa pode ter duas vagas)
   const idxVendas = useMemo(() => {
     const porPart = new Map(), porTemaNome = new Map();
     (vendas || []).forEach((v) => {
       if (v.participanteId) porPart.set(v.participanteId, v);
-      porTemaNome.set(`${v.tema}|${chaveTitulo(v.nome)}`, v);
+      const k = `${v.tema}|${chaveTitulo(v.nome)}`;
+      if (!porTemaNome.has(k)) porTemaNome.set(k, []);
+      porTemaNome.get(k).push(v);
     });
     return { porPart, porTemaNome };
   }, [vendas]);
+  // mesma regra do painel da publicação: primeiro a venda ligada ao participante; pelo
+  // nome só para quem ficou sem, e nunca uma venda que já foi contada para outra vaga
   const faturamentoDaPub = (pub) => {
-    const vistos = new Set();
+    const usadas = new Set(), semVenda = [];
+    const idsPub = new Set(pub.participantes.map((p) => p.id));
     let total = 0;
     for (const p of pub.participantes) {
-      const v = idxVendas.porPart.get(p.id) || idxVendas.porTemaNome.get(`${pub.nome}|${chaveTitulo(p.nome)}`);
-      if (v && !vistos.has(v.id)) { total += v.valor || 0; vistos.add(v.id); }
+      const v = idxVendas.porPart.get(p.id);
+      if (v && !usadas.has(v.id)) { total += v.valor || 0; usadas.add(v.id); } else if (!v) semVenda.push(p);
+    }
+    for (const p of semVenda) {
+      const v = (idxVendas.porTemaNome.get(`${pub.nome}|${chaveTitulo(p.nome)}`) || [])
+        .find((x) => !usadas.has(x.id) && !(x.participanteId && idsPub.has(x.participanteId)));
+      if (v) { total += v.valor || 0; usadas.add(v.id); }
     }
     return total;
   };
@@ -5721,6 +5799,10 @@ select.inp{ cursor:pointer; }
 .cel-hora{ font-size:11px; color:var(--muted2); margin-top:2px; font-variant-numeric:tabular-nums; }
 .cel-fac{ font-size:12px; color:var(--muted); max-width:200px; }
 .cel-grupo{ white-space:nowrap; }
+/* aviso de pessoa repetida no mesmo trabalho */
+.aviso-rep{ font-size:13px; line-height:1.5; color:var(--ink); background:var(--warn-soft); border:1px solid var(--warn-border);
+  border-radius:var(--r-md); padding:12px 14px; margin-top:4px; }
+.aviso-rep-sub{ font-size:12px; color:var(--muted); margin:8px 2px 0; }
 .cel-titulo{ font-size:13px; max-width:560px; line-height:1.45; }
 .link-titulo{ background:transparent; border:none; padding:0; font:inherit; font-weight:600; color:var(--ink); text-align:left; cursor:pointer; line-height:1.45; text-decoration:none; display:inline; transition:color .14s ease; }
 .link-titulo:hover{ text-decoration:underline; text-underline-offset:3px; color:var(--brand); }

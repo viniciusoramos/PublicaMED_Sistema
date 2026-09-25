@@ -189,7 +189,11 @@ export async function atualizarVenda(id, d) {
   return vendaDe(data);
 }
 // procura a venda de um participante direto no banco (confiável, evita duplicar): por vínculo, senão por tema+nome
-export async function buscarVendaDoParticipante(participanteId, tema, nome) {
+/* Venda de um participante: a ligada a ele e, na falta, a da mesma publicação com
+ * o mesmo nome — mas nunca uma que já é de outro participante da publicação
+ * (outrosIds). Sem isso, a mesma pessoa em duas vagas fazia a edição da segunda
+ * pegar a venda da primeira e religá-la a si, tirando a venda da outra vaga. */
+export async function buscarVendaDoParticipante(participanteId, tema, nome, outrosIds = []) {
   if (participanteId) {
     const r = await supabase.from('vendas').select('*, faculdades(nome)').eq('participante_id', participanteId).limit(1);
     if (r.error) throw r.error;
@@ -197,9 +201,11 @@ export async function buscarVendaDoParticipante(participanteId, tema, nome) {
   }
   const n = (nome || '').trim();
   if (tema && n) {
-    const r = await supabase.from('vendas').select('*, faculdades(nome)').eq('tema', tema).ilike('nome', n).limit(1);
+    const r = await supabase.from('vendas').select('*, faculdades(nome)').eq('tema', tema).ilike('nome', n).limit(20);
     if (r.error) throw r.error;
-    if (r.data && r.data.length) return vendaDe(r.data[0]);
+    const outros = new Set(outrosIds);
+    const livre = (r.data || []).find((x) => !(x.participante_id && outros.has(x.participante_id)));
+    if (livre) return vendaDe(livre);
   }
   return null;
 }
