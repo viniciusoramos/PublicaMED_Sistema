@@ -1310,14 +1310,18 @@ export default function App() {
     const uf = dados.uf && dados.uf !== "N/I" ? dados.uf : ufDaFaculdade(dados.faculdade);
     const ids = new Set((cliente.compras || []).map((v) => v.id));
     const antes = vendas;
-    setVendas((vs) => vs.map((v) => (ids.has(v.id) ? { ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf } : v)));
+    // grupo só é regravado quando foi mexido: salvar sem tocar nele preserva a origem de cada compra
+    const comOrigem = (v) => (dados.origemMudou ? { ...v, origem: dados.origem || "" } : v);
+    setVendas((vs) => vs.map((v) => (ids.has(v.id) ? comOrigem({ ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf }) : v)));
     try {
       for (const v of cliente.compras) {
         await db.atualizarVenda(v.id, { ...v, nome: dados.nome, email: dados.email, faculdade: dados.faculdade, uf });
       }
+      if (dados.origemMudou) await db.definirOrigemVendas([...ids], dados.origem || "");
       // CPF e telefone moram no participante: aplica nas participações da mesma pessoa
       const n = await sincronizarContato(cliente, dados);
-      aviso("Cliente atualizado" + (n ? ` · contato em ${n} participação(ões)` : ""));
+      aviso("Cliente atualizado" + (n ? ` · contato em ${n} participação(ões)` : "")
+        + (dados.origemMudou ? ` · ${dados.origem ? rotuloOrigem(dados.origem) : "grupo apagado"} em ${ids.size} compra(s)` : ""));
     } catch (e) { aviso("Erro: " + e.message); setVendas(antes); }
   };
   /* Espelha CPF/telefone editados na aba Clientes para as participações da pessoa
@@ -2476,7 +2480,7 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
       <div className="card no-pad">
         <table className="tab">
           <thead>
-            <tr><th scope="col">Data</th><th scope="col">Cliente</th><th scope="col">Faculdade</th><th scope="col">UF</th><th scope="col">Tipo</th><th scope="col" className="r">Valor</th><th scope="col"><span className="sr-only">Ações</span></th></tr>
+            <tr><th scope="col">Data</th><th scope="col">Cliente</th><th scope="col">Grupo</th><th scope="col">Faculdade</th><th scope="col">UF</th><th scope="col">Tipo</th><th scope="col" className="r">Valor</th><th scope="col"><span className="sr-only">Ações</span></th></tr>
           </thead>
           <tbody>
             {filtradas.slice(0, limite).map((v) => (
@@ -2502,6 +2506,7 @@ function Vendas({ vendas, salvar, aviso, temasExist, onAbrirPublicacao, clienteD
                     </div>
                   )}
                 </td>
+                <td className="cel-grupo">{v.origem ? <TagGrupo origem={v.origem} title={v.origem} discreta /> : <span className="muted">—</span>}</td>
                 <td className="cel-fac">{v.faculdade || "—"}</td>
                 <td><span className="uf-pill">{v.uf}</span></td>
                 <td><span className="tipo-pill" style={{ "--tc": corTipo(v.tipo) }}>{v.tipo}</span></td>
@@ -2764,11 +2769,7 @@ function FichaCliente({ cliente, contato = {}, onSalvar, onAbrirPublicacao, onFe
             {/* depois de Trabalhos, na grade de 3 colunas ele cai embaixo de Graduado (com ou sem ORCID) */}
             <div><span className="ci-lab">Grupo</span>
               {grupos.length ? (
-                <span className="tags-grupo">
-                  {grupos.map((g) => (
-                    <span key={g} className="tag-grupo" style={{ "--tc": numGrupo(g) ? `var(--grupo-${numGrupo(g)})` : "var(--brand)" }}>{g}</span>
-                  ))}
-                </span>
+                <span className="tags-grupo">{grupos.map((g) => <TagGrupo key={g} origem={g} />)}</span>
               ) : "—"}
             </div>
           </div>
@@ -2806,12 +2807,18 @@ function FichaCliente({ cliente, contato = {}, onSalvar, onAbrirPublicacao, onFe
 }
 
 function FormCliente({ cliente, contato = {}, onSalvar, onCancelar }) {
+  // grupo: o da compra mais recente que tem grupo; escolher outro aplica em todas as compras
+  const recentes = [...cliente.compras].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+  const origemInicial = (recentes.find((v) => v.origem) || {}).origem || "";
+  const gruposCli = [...new Set(recentes.filter((v) => v.origem).map((v) => rotuloOrigem(v.origem)))];
   const [f, setF] = useState({
     nome: cliente.nome || "", email: cliente.email || "", faculdade: cliente.faculdade || "", uf: cliente.uf || "N/I",
     // guardados no participante; entram aqui para não ter que abrir a publicação só p/ ver o CPF
     cpf: fmtCPF(contato.cpf || ""), telefone: contato.telefone || "",
     graduado: !!contato.graduado,
+    origem: origemInicial,
   });
+  const origemMudou = f.origem !== origemInicial;
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const escolherFac = (nome) => {
     const uf = ufDaFaculdade(nome);
@@ -2837,6 +2844,9 @@ function FormCliente({ cliente, contato = {}, onSalvar, onCancelar }) {
           {avisoCPF(f.cpf) && <span className="campo-erro">{avisoCPF(f.cpf)}</span>}
         </Campo>
         <Campo label="Telefone / WhatsApp"><input className="inp" placeholder="(31) 99999-9999" value={f.telefone} onChange={(e) => set("telefone", e.target.value)} /></Campo>
+        <Campo label="Grupo de origem">
+          <SeletorGrupo valor={f.origem} onChange={(v) => set("origem", v)} title="Grupo de WhatsApp de onde o cliente veio" />
+        </Campo>
       </div>
       <label className="check" style={{ marginTop: 4 }}>
         <input type="checkbox" checked={f.graduado} onChange={(e) => set("graduado", e.target.checked)} /> Graduado
@@ -2845,12 +2855,14 @@ function FormCliente({ cliente, contato = {}, onSalvar, onCancelar }) {
         Aplica nome, email, faculdade e estado em <b>todas as {cliente.qtd} compra(s)</b> deste cliente.
         CPF, telefone e graduado valem para as <b>participações</b> dele nas publicações.
         {f.graduado !== !!contato.graduado && <> A marcação de graduado muda em <b>todas</b> as participações dele.</>}
+        {gruposCli.length > 1 && !origemMudou && <> As compras dele estão em grupos diferentes ({gruposCli.join(" e ")}); escolher um grupo aplica em todas.</>}
+        {origemMudou && <> O grupo {f.origem ? <>passa a ser <b>{rotuloOrigem(f.origem)}</b></> : <>é <b>apagado</b></>} em <b>todas as {cliente.qtd} compra(s)</b> dele.</>}
       </p>
       <div className="form-acoes">
         <button className="btn-ghost" onClick={onCancelar}>Cancelar</button>
         <button className="btn" onClick={() => {
           if (!f.nome.trim() && !f.email.trim()) { alert("Informe nome ou email."); return; }
-          onSalvar({ ...f, graduadoMudou: f.graduado !== !!contato.graduado });
+          onSalvar({ ...f, graduadoMudou: f.graduado !== !!contato.graduado, origemMudou });
         }}>Salvar alterações</button>
       </div>
     </>
@@ -4444,6 +4456,16 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
  * nunca travar; a venda fica sem origem e o cruzamento com os grupos preenche
  * depois. Uma origem gravada com outra grafia do mesmo grupo (o #5 com e sem
  * acento) aparece como o próprio grupo, e não como opção a mais. */
+/* etiqueta do grupo de origem, na cor dele (a mesma do painel e do seletor).
+ * "discreta" é a da lista de Vendas: neutra, só a bolinha na cor do grupo —
+ * numa tabela longa, etiqueta toda colorida em cada linha pesava demais. */
+function TagGrupo({ origem, title, discreta = false }) {
+  const rot = rotuloOrigem(origem);
+  const n = numGrupo(rot);
+  return <span className={"tag-grupo" + (discreta ? " discreta" : "")} title={title}
+    style={{ "--tc": n ? `var(--grupo-${n})` : "var(--brand)" }}>{rot}</span>;
+}
+
 // sem grupo escolhido a venda fica sem origem ("não sei"): o texto só convida a escolher
 function SeletorGrupo({ valor = "", onChange, disabled, rotuloVazio = "Selecionar grupo", className = "inp", title }) {
   const { grupos = [] } = useContext(ListasCtx);
@@ -5695,6 +5717,7 @@ select.inp{ cursor:pointer; }
 .cel-tema{ font-size:11px; color:var(--muted2); margin-top:2px; max-width:330px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cel-hora{ font-size:11px; color:var(--muted2); margin-top:2px; font-variant-numeric:tabular-nums; }
 .cel-fac{ font-size:12px; color:var(--muted); max-width:200px; }
+.cel-grupo{ white-space:nowrap; }
 .cel-titulo{ font-size:13px; max-width:560px; line-height:1.45; }
 .link-titulo{ background:transparent; border:none; padding:0; font:inherit; font-weight:600; color:var(--ink); text-align:left; cursor:pointer; line-height:1.45; text-decoration:none; display:inline; transition:color .14s ease; }
 .link-titulo:hover{ text-decoration:underline; text-underline-offset:3px; color:var(--brand); }
@@ -5874,6 +5897,9 @@ select.inp{ cursor:pointer; }
 .tag-grupo{ font-size:11px; font-weight:500; padding:2px 9px; border-radius:999px; white-space:nowrap;
   background:color-mix(in srgb, var(--tc) 14%, transparent); border:1px solid color-mix(in srgb, var(--tc) 45%, transparent);
   color:color-mix(in srgb, var(--tc) 70%, var(--ink)); }
+.tag-grupo.discreta{ display:inline-flex; align-items:center; gap:6px; background:transparent;
+  border-color:var(--border-strong); color:var(--muted); }
+.tag-grupo.discreta::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--tc); flex-shrink:0; }
 /* nome do cliente na lista de vendas: abre a ficha, sem virar um azulão na tabela */
 /* faculdades: aviso de estado faltando e as variações de escrita agrupadas */
 .aviso-uf{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; color:var(--warn);
