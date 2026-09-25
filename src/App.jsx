@@ -341,6 +341,22 @@ const FAC_EXTRAS = [
   ["Universidade da Amazônia (UNAMA)", "PA"],
   ["Estácio IDOMED - Iguatu", "CE"],
   ["ITPAC - Instituto Tocantinense Presidente Antônio Carlos", "TO"],
+  // vendas sem estado conferidas em 25/09/2026: nenhuma destas estava na base
+  /* Sem "São Paulo" no nome de propósito: com essas duas palavras, que quase só elas
+   * tinham, "Universidade de São Paulo" (USP), "Santa Casa de São Paulo" e "PUC São
+   * Paulo" passavam a cair na UNIFESP. O nome completo entra em FAC_NOMES_EXATOS. */
+  ["UNIFESP - Escola Paulista de Medicina", "SP"],
+  ["Universidade Cidade (UNICID)", "SP"],
+  ["Centro Universitário Lusíada (UNILUS)", "SP"],                 // Santos
+  ["Hospital Heliópolis", "SP"],                                   // capital paulista
+  ["Centro Universitário de Caratinga (UNEC)", "MG"],
+  // o nome completo termina em "Apparecido dos Santos": "santos" ficaria dividida com as de Santos/SP
+  ["UNICEPLAC - Centro Universitário do Planalto Central", "DF"],  // Gama
+  ["Centro Universitário Facisa (UNIFACISA)", "PB"],               // Campina Grande
+  ["Centro Universitário Integrado (Campo Mourão)", "PR"],
+  ["Centro Universitário Campo Real", "PR"],                       // Guarapuava
+  // a UNESA é a do Rio; as outras Estácio de medicina são IDOMED e já estão na lista
+  ["Universidade Estácio de Sá (UNESA)", "RJ"],
 ];
 /* Instituição que trocou de nome. A chave é o nome que está na base importada; o
  * valor é como ela se chama hoje, e é o que aparece nos relatórios. O nome antigo
@@ -354,6 +370,15 @@ const FAC_RENOMEADA = {
  * linha nova: entram no reconhecimento da instituição à esquerda. */
 const FAC_APELIDOS = {
   "Afya Centro Universitário Itaperuna": ["Afya Itaperuna", "UniRedentor"],
+  // "UniEvangélica" é uma palavra só e não batia com "Evangélica"
+  "Universidade Evangélica de Goiás": ["UniEvangélica"],
+};
+/* Nomes que só valem escritos igualzinho (sem acento/pontuação à parte). Diferente
+ * dos apelidos, as palavras deles NÃO entram na comparação por palavra: é para
+ * nome genérico demais, que puxaria outras instituições para esta. */
+const FAC_NOMES_EXATOS = {
+  "UNIFESP - Escola Paulista de Medicina": ["Universidade Federal de São Paulo", "Universidade Federal de São Paulo (UNIFESP)"],
+  "Universidade Cidade (UNICID)": ["Universidade Cidade de São Paulo", "Universidade Cidade de São Paulo (UNICID)"],
 };
 const FAC_BASE = (() => {
   const ufMap = {};
@@ -405,7 +430,7 @@ const FAC_IX = FAC_BASE.nomes.map((nome) => {
     nome, uf: FAC_BASE.ufMap[nome] || "N/I",
     chave: semAcentoFac(nome).replace(/[^a-z0-9]+/g, ""),
     // o nome antigo também resolve na batida exata, sem depender da comparação por palavra
-    chaves: [nome, ...apel].map((s) => semAcentoFac(s).replace(/[^a-z0-9]+/g, "")),
+    chaves: [nome, ...apel, ...(FAC_NOMES_EXATOS[nome] || [])].map((s) => semAcentoFac(s).replace(/[^a-z0-9]+/g, "")),
     // as palavras dos apelidos contam como se fossem do nome: é o que faz
     // "Afya Itaperuna" e "UniRedentor" caírem na mesma instituição
     toks: tokensFac([nome, ...apel].join(" ")),
@@ -477,6 +502,7 @@ const CIDADE_UF = {
   "cuiaba": "MT", "varzea grande": "MT", "campo grande": "MS", "dourados": "MS",
   "vila velha": "ES", "vitoria": "ES", "colatina": "ES", "cachoeiro de itapemirim": "ES",
   "itaperuna": "RJ", "guanambi": "BA", "jaguariuna": "SP", "iguatu": "CE",
+  "campo mourao": "PR", "guarapuava": "PR", "caratinga": "MG",
   "espirito santo do pinhal": "SP",   // o nome do estado dentro do nome da cidade
 };
 /* Estados e cidades no mesmo balaio, do nome mais longo para o mais curto: é o
@@ -516,6 +542,8 @@ const FAC_PALAVRAS_FRACAS = new Set([
   "professor", "presidente", "vale", "vales", "leste", "oeste", "central",
   "nova", "novo", "grande", "alto", "baixo", "campos", "serra", "monte",
   "porto", "vila", "cidade", "estado", "brasil", "brasileira", "brasileiro",
+  // "Real Hospital Português" (Recife) não pode cair na Campo Real nem no Heliópolis
+  "real", "hospital",
 ].filter((w) => w.length >= 2));
 
 /* Acha a instituição da base correspondente ao nome digitado. Devolve null quando
