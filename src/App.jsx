@@ -5284,15 +5284,6 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
         </p>
       )}
 
-      <div className="kpis kpis-4">
-        <KPI label="Já vendido no mês" valor={brl(tot.receitaReal)} sub={`${num(tot.ocupadas)} de ${num(tot.vagas)} vagas planejadas preenchidas`} cor="var(--ok)" />
-        <KPI label="Lucro real" valor={brl(tot.lucroReal)}
-          sub={`Vendido menos ${brl(tot.custoReal)} de taxas lançadas` + (tot.impostoReal ? ` e ${brl(tot.impostoReal)} de imposto` : "")} cor="var(--ok)" />
-        <KPI label={`Faturamento projetado (${Math.round(plano.conversao * 100)}%)`} valor={brl(tot.receita)} sub={`${num(tot.criadas)} de ${num(tot.temas)} temas abertos · teto ${brl(tot.teto)}`} cor="#6D5DD3" />
-        <KPI label="Lucro projetado" valor={brl(tot.lucro)}
-          sub={`Custo ${brl(tot.custo)}` + (tot.imposto ? ` (imposto ${brl(tot.imposto)})` : "") + ` · margem ${tot.receita ? (tot.lucro / tot.receita * 100).toFixed(1) : 0}%`} cor="var(--accent)" />
-      </div>
-
       <div className="card meta-bar">
         <div className="meta-txt">
           <span className="dp-sub">Meta do mês · {brl(plano.meta)}</span>
