@@ -1192,6 +1192,9 @@ export default function App() {
         });
         setVendas((vs) => [venda, ...vs]);
         acoes.push("venda lançada" + (venda.origem ? ` · ${rotuloOrigem(venda.origem)}` : ""));
+      } else if (dados.origem) {
+        // o grupo mora na venda: sem venda ele se perdia calado
+        acoes.push("grupo não gravado: sem valor pago não há venda");
       }
       const outras = await propagarCpf(dados);
       if (outras) acoes.push(`CPF aplicado em ${outras} participação(ões) anterior(es)`);
@@ -4063,6 +4066,15 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
     () => [...vendaPorPart.values()].reduce((s, v) => s + (v.valor || 0), 0), [vendaPorPart]);
   const lucro = faturamento - (t.taxa || 0);
   const vendaDoPart = (p) => vendaPorPart.get(p.id);
+  /* Grupo das outras compras do cliente (a mais recente que tem grupo). A edição
+   * sugere esse quando a venda desta vaga não tem grupo, ou ainda nem existe: a
+   * Maria Fernanda entrou sem valor pago, a venda nasceu depois pela edição e
+   * saiu sem o #2 que ela já tinha. */
+  const origemDoCliente = (p) => {
+    const c = clienteDoParticipante && clienteDoParticipante(p);
+    const v = [...((c && c.compras) || [])].sort((a, b) => (b.data || "").localeCompare(a.data || "")).find((x) => x.origem);
+    return v ? v.origem : "";
+  };
   const semGraduado = t.requiresGrad && !t.participantes.some((p) => p.graduado);
   const enviarCert = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -4499,6 +4511,7 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
       {editP && (
         <Modal titulo="Editar participante" onClose={() => setEditP(null)}>
           <FormParticipante part={editP} valorAtual={vendaDoPart(editP)?.valor ?? ""} origemAtual={vendaDoPart(editP)?.origem || ""}
+            origemSugerida={origemDoCliente(editP)}
             temVenda={!!vendaDoPart(editP)} onSalvar={(d) => { onEditPart(t, editP, d); setEditP(null); }} onCancelar={() => setEditP(null)} />
         </Modal>
       )}
@@ -4571,6 +4584,51 @@ function MsgRepetido({ quem, onVoltar, onSeguir, rotuloSeguir = "Adicionar mesmo
   );
 }
 
+/* Nome com sugestão de quem já comprou. Era um <datalist>, mas o Chrome passou a
+ * tratar o campo como endereço: abria o preenchimento automático com a base
+ * inteira (e "Gerenciar endereços...") mesmo com o nome já escolhido. Aqui a
+ * lista filtra pelas palavras digitadas, sem acento, e some quando o nome já é
+ * de alguém da base. */
+function CampoNomePessoa({ valor, pessoas = [], onChange, placeholder }) {
+  const [aberto, setAberto] = useState(false);
+  const [ativo, setAtivo] = useState(-1);
+  const q = semAcento(valor.trim());
+  const jaEscolhido = !!q && pessoas.some((x) => semAcento(x.nome.trim()) === q);
+  const sugestoes = q.length < 2 || jaEscolhido ? [] : pessoas
+    .filter((x) => casaBusca(x.nome, valor))
+    .sort((a, b) => (semAcento(b.nome).startsWith(q) ? 1 : 0) - (semAcento(a.nome).startsWith(q) ? 1 : 0))
+    .slice(0, 8);
+  const mostrar = aberto && sugestoes.length > 0;
+  const escolher = (x) => { onChange(x.nome); setAberto(false); setAtivo(-1); };
+  const teclas = (e) => {
+    if (!mostrar) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setAtivo((i) => Math.min(i + 1, sugestoes.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setAtivo((i) => Math.max(i - 1, 0)); }
+    else if (e.key === "Enter" && ativo >= 0) { e.preventDefault(); escolher(sugestoes[ativo]); }
+    else if (e.key === "Escape") { setAberto(false); }
+  };
+  return (
+    <div className="nome-combo">
+      <input className="inp" autoComplete="off" placeholder={placeholder} value={valor}
+        role="combobox" aria-autocomplete="list" aria-expanded={mostrar} aria-controls="nome-sug"
+        onChange={(e) => { onChange(e.target.value); setAberto(true); setAtivo(-1); }}
+        onFocus={() => setAberto(true)} onBlur={() => setAberto(false)} onKeyDown={teclas} />
+      {mostrar && (
+        <ul className="nome-sug" id="nome-sug" role="listbox">
+          {sugestoes.map((x, i) => (
+            // mousedown, e não click: o click viria depois do blur, com a lista já fechada
+            <li key={x.nome} role="option" aria-selected={i === ativo} className={i === ativo ? "ativo" : ""}
+              onMouseDown={(e) => { e.preventDefault(); escolher(x); }}>
+              <b>{x.nome}</b>
+              {(x.faculdade || x.email) && <span>{x.faculdade || x.email}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function FormPart({ tema, pessoas = [], onAdd }) {
   const vazio = { nome: "", faculdade: "", email: "", orcid: "", telefone: "", cpf: "", autorPrincipal: false, graduado: false, valor: "", data: hojeIso(), lancarVenda: true, origem: "" };
   const [p, setP] = useState(vazio);
@@ -4607,7 +4665,7 @@ function FormPart({ tema, pessoas = [], onAdd }) {
   return (
     <div className="form-part">
       <div className="fp-grid">
-        <input className="inp" placeholder="Nome (busca quem já comprou)" list="pessoas-datalist" value={p.nome} onChange={(e) => aoMudarNome(e.target.value)} />
+        <CampoNomePessoa valor={p.nome} pessoas={pessoas} onChange={aoMudarNome} placeholder="Nome (busca quem já comprou)" />
         <input className="inp" placeholder="Faculdade" list="fac-datalist" value={p.faculdade} onChange={(e) => set("faculdade", e.target.value)} />
         <input className="inp" placeholder="Email" value={p.email} onChange={(e) => set("email", e.target.value)} />
         <input className="inp" placeholder="Telefone / WhatsApp" value={p.telefone} onChange={(e) => set("telefone", e.target.value)} />
@@ -4621,7 +4679,6 @@ function FormPart({ tema, pessoas = [], onAdd }) {
         <input className="inp" type="date" aria-label="Data da venda" value={p.data} onChange={(e) => set("data", e.target.value)} />
       </div>
       <datalist id="fac-datalist">{FAC_BASE.nomes.map((n) => <option key={n} value={n} />)}</datalist>
-      <datalist id="pessoas-datalist">{pessoas.map((x) => <option key={x.nome} value={x.nome}>{x.faculdade || x.email || ""}</option>)}</datalist>
       {reconhecida && <div className="fp-reconhecida" role="status">✓ {reconhecida} já está na base — dados preenchidos, confira e ajuste se precisar.</div>}
       <div className="fp-opts">
         {/* o tipo da venda sai do rótulo (fica no title) para bater com o desenho aprovado */}
@@ -4644,12 +4701,14 @@ function FormPart({ tema, pessoas = [], onAdd }) {
   );
 }
 
-function FormParticipante({ part, valorAtual = "", origemAtual = "", temVenda = false, onSalvar, onCancelar }) {
+function FormParticipante({ part, valorAtual = "", origemAtual = "", origemSugerida = "", temVenda = false, onSalvar, onCancelar }) {
+  // venda sem grupo (ou que ainda vai nascer) já vem com o grupo das outras compras do cliente
+  const sugerido = !origemAtual && !!origemSugerida;
   const [f, setF] = useState({
     nome: part.nome || "", faculdade: part.faculdade || "", email: part.email || "", orcid: part.orcid || "", telefone: part.telefone || "", cpf: part.cpf || "",
     autorPrincipal: !!part.autorPrincipal, graduado: !!part.graduado,
     valor: valorAtual === "" || valorAtual == null ? "" : String(valorAtual),
-    origem: origemAtual || "",
+    origem: origemAtual || origemSugerida || "",
   });
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   // sem venda e sem valor, salvar não cria venda — e o grupo não teria onde ficar
@@ -4683,6 +4742,9 @@ function FormParticipante({ part, valorAtual = "", origemAtual = "", temVenda = 
         <Campo label="Grupo de origem">
           <SeletorGrupo valor={f.origem} onChange={(v) => set("origem", v)} disabled={semOndeGravarGrupo}
             title={semOndeGravarGrupo ? "O grupo fica na venda: informe o valor pago para lançar a venda" : "Grupo de WhatsApp de onde a pessoa veio"} />
+          {sugerido && f.origem === origemSugerida && !semOndeGravarGrupo && (
+            <span className="campo-dica">Sugerido pelas outras compras. Salve para gravar nesta venda.</span>
+          )}
         </Campo>
       </div>
       <div className="fp-opts">
@@ -5932,6 +5994,8 @@ select.inp{ cursor:pointer; }
 .campo-erro{ display:block; font-size:11px; font-weight:500; color:var(--danger); text-transform:none;
   letter-spacing:0; margin-top:3px; }
 .inp.erro{ border-color:var(--danger-border); }
+.campo .campo-dica{ display:block; font-size:11px; font-weight:500; color:var(--muted); text-transform:none;
+  letter-spacing:0; margin-top:3px; }
 .inp.erro:focus{ border-color:var(--danger); box-shadow:0 0 0 3px var(--danger-soft); }
 .fp-campo{ display:flex; flex-direction:column; }
 .campo .campo-calc b{ font-weight:700; }
@@ -6296,6 +6360,15 @@ select.inp{ cursor:pointer; }
 /* 4 colunas: nome, faculdade, email, telefone na 1a linha; CPF, orcid, valor e data na 2a */
 .fp-grid{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; }
 .fp-grid .inp{ width:100%; }
+/* sugestão de nome (substitui o datalist do navegador) */
+.nome-combo{ position:relative; }
+.nome-sug{ position:absolute; z-index:30; top:calc(100% + 4px); left:0; min-width:100%; width:max-content; max-width:440px;
+  max-height:300px; overflow-y:auto; list-style:none; margin:0; padding:4px; background:var(--surface);
+  border:1px solid var(--border-strong); border-radius:var(--r-md); box-shadow:var(--shadow-3); }
+.nome-sug li{ display:flex; flex-direction:column; gap:1px; padding:7px 10px; border-radius:var(--r-sm); cursor:pointer; }
+.nome-sug li:hover, .nome-sug li.ativo{ background:var(--hover); }
+.nome-sug b{ font-size:13px; font-weight:600; color:var(--ink); }
+.nome-sug span{ font-size:11px; color:var(--muted2); }
 .fp-opts{ display:flex; flex-wrap:wrap; align-items:center; gap:18px; margin-top:14px; }
 .fp-opts .btn{ margin-left:auto; }
 .fp-opts .fp-grupo{ width:auto; min-width:150px; }
