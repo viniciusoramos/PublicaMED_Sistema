@@ -291,4 +291,196 @@ export const PLANEJAMENTOS = [
       },
     ],
   },
+  {
+    // Fonte: Planejamento_PublicaMED_Outubro2026.pdf. Primeiro mês com a taxa por tema
+    // (taxaPorTema): criar a publicação pelo calendário já lança a taxa no Financeiro.
+    id: "2026-10",
+    ano: 2026,
+    mes: 9, // 0 = janeiro
+    meta: 90000,
+    /* O PDF projeta 70% no PSU, 75% no não indexado e 85% nos demais. O plano tem uma
+     * conversão só, então vai a média ponderada: 84.511,00 ÷ 105.100,00 = 80,4%, que
+     * mantém o total projetado do calendário igual ao do PDF. */
+    conversao: 0.804,
+    nota: "Um tipo de publicação por lançamento, com temas diferentes dentro do mesmo tipo, alternando artigo e não artigo sem repetir tipo em lançamentos vizinhos · o edital do PSU fecha em 15/10 e o certificado leva 30 dias, então nenhuma venda de PSU do mês serve àquele edital: o produto é anunciado pela indexação LILACS e Qualis B2 (HCPA, SES-GO, UNESP, AMRIGS e outros), com o PSU citado só como um entre vários · PSU nos dias 09, 21 e 31, sempre com eixo de fisioterapia (exigência da Fisioterapia Brasil) · artigo não indexado estreia no dia 05 · 12/10 é feriado e fica livre, assim como os domingos · conversão do PDF: 70% no PSU, 75% no não indexado e 85% nos demais · nenhum lançamento concentra mais de dois temas da mesma área · nenhum tema repete o banco de 333 títulos já publicados.",
+    lancamentos: [
+      {
+        dia: 1, produto: "Artigo Qualis A3", tipo: "Artigo Qualis A3", vagas: 5, preco: 240, custo: 1750, taxaPorTema: 350,
+        veiculo: "Revista Artefactum · certificado em 7 dias",
+        temas: [
+          { areas: "Cirurgia Geral · Emergência · Radiologia", titulo: "Apendicectomia Negativa: Escores Diagnósticos e Uso Racional de Imagem" },
+          { areas: "Neurocirurgia · Geriatria", titulo: "Hematoma Subdural Crônico no Idoso: Indicação de Drenagem e Fatores de Recidiva" },
+          { areas: "Dermatologia · Clínica Médica", titulo: "Alopecia Areata Grave: Inibidores de JAK e Resposta ao Tratamento" },
+          { areas: "Psiquiatria · Clínica Médica", titulo: "Transtorno de Ansiedade Generalizada: Rastreamento e Escolha do Tratamento Inicial" },
+          { areas: "Pediatria · Neonatologia · Infectologia", titulo: "Sepse Neonatal Precoce: Reconhecimento Clínico e Uso Racional de Antibióticos" },
+        ],
+      },
+      {
+        dia: 3, produto: "Capítulo de livro", tipo: "Capítulo", vagas: 7, preco: 180, custo: 1000, taxaPorTema: 200,
+        veiculo: "ISBN · válido em HCPA e FELUMA · certificado em 7 dias",
+        temas: [
+          { areas: "Ortopedia · Geriatria", titulo: "Fratura do Úmero Proximal no Idoso: Critérios para Tratamento Conservador e Indicação de Artroplastia" },
+          { areas: "Oftalmologia · Geriatria", titulo: "Catarata: Critérios para Indicação Cirúrgica e Escolha da Lente Intraocular" },
+          { areas: "Clínica Médica · Nefrologia", titulo: "Doença Renal Crônica: Estadiamento e Critérios de Encaminhamento ao Nefrologista" },
+          { areas: "Clínica Médica · Infectologia", titulo: "Tuberculose Pulmonar: Diagnóstico, Esquema Básico e Manejo dos Efeitos Adversos" },
+          { areas: "Cirurgia Geral · Endocrinologia", titulo: "Nódulo Tireoidiano: Critérios de Punção e Extensão da Tireoidectomia" },
+        ],
+      },
+      {
+        dia: 5, produto: "Artigo não indexado", tipo: "Artigo Não Indexado", vagas: 7, preco: 180, custo: 640, taxaPorTema: 160,
+        veiculo: "Artigo não indexado · certificado em 7 dias",
+        temas: [
+          { areas: "Clínica Médica · Pneumologia", titulo: "Pneumonia Adquirida na Comunidade: Escores de Gravidade e Critérios de Internação" },
+          { areas: "Clínica Médica · Pneumologia", titulo: "Exacerbação Aguda da DPOC: Manejo Inicial e Indicação de Ventilação Não Invasiva" },
+          { areas: "Cirurgia Geral · Infectologia", titulo: "Infecção de Sítio Cirúrgico: Fatores de Risco e Medidas de Prevenção" },
+          { areas: "Cirurgia Geral · Hematologia", titulo: "Cirurgia de Urgência no Paciente Anticoagulado: Reversão da Anticoagulação e Risco de Sangramento" },
+        ],
+      },
+      {
+        dia: 7, produto: "Apresentação em congresso", tipo: "Apresentação", vagas: 10, preco: 110, custo: 67.92, taxaPorTema: 16.98,
+        veiculo: "Anais do Congresso · certificado em 15 dias",
+        temas: [
+          { areas: "Pediatria · Alergologia · Emergência", titulo: "Anafilaxia na Criança: Uso da Adrenalina e Prevenção de Recorrência" },
+          { areas: "Cirurgia Geral · Emergência", titulo: "Queimaduras: Cálculo da Superfície Corporal e Critérios de Transferência" },
+          { areas: "Neurologia · Emergência", titulo: "Crise Convulsiva no Pronto-Socorro: Manejo Inicial e Estado de Mal Epiléptico" },
+          { areas: "Clínica Médica · Endocrinologia · Emergência", titulo: "Hipoglicemia Grave no Paciente Diabético: Reconhecimento e Conduta Imediata" },
+        ],
+      },
+      {
+        dia: 9, produto: "Artigo PSU / LILACS", tipo: "Artigo PSU", vagas: 4, preco: 600, custo: 2000, taxaPorTema: 500,
+        veiculo: "Fisioterapia Brasil · Qualis B2 · LILACS · certificado em 30 dias",
+        temas: [
+          { areas: "Cirurgia Geral · Nefrologia · Fisioterapia", titulo: "Transplante Renal: Reabilitação Física no Pós-Operatório e Retorno às Atividades" },
+          { areas: "Clínica Médica · Angiologia · Fisioterapia", titulo: "Doença Arterial Obstrutiva Periférica: Treino de Caminhada Supervisionado e Distância de Claudicação" },
+          { areas: "Clínica Médica · Endocrinologia · Fisioterapia", titulo: "Neuropatia Diabética Periférica: Treino de Equilíbrio e Preservação da Marcha" },
+          { areas: "Ortopedia · Clínica Médica · Fisioterapia", titulo: "Lesões do Manguito Rotador: Exercício Terapêutico e Recuperação da Função do Ombro" },
+        ],
+      },
+      {
+        dia: 10, produto: "Capítulo de livro", tipo: "Capítulo", vagas: 7, preco: 180, custo: 1000, taxaPorTema: 200,
+        veiculo: "ISBN · válido em HCPA e FELUMA · certificado em 7 dias",
+        temas: [
+          { areas: "Cirurgia Geral · Coloproctologia", titulo: "Abscesso e Fístula Perianal: Drenagem e Técnicas de Preservação Esfincteriana" },
+          { areas: "Clínica Médica · Nefrologia", titulo: "Injúria Renal Aguda no Paciente Internado: Causas Evitáveis e Critérios de Diálise" },
+          { areas: "Clínica Médica · Infectologia · Dermatologia", titulo: "Erisipela e Celulite: Diagnóstico Diferencial e Critérios de Internação" },
+          { areas: "Otorrinolaringologia · Neurologia", titulo: "Paralisia Facial Periférica: Diagnóstico Diferencial e Corticoterapia Precoce" },
+          { areas: "Oftalmologia · Pediatria", titulo: "Ambliopia na Infância: Rastreamento Precoce e Janela Terapêutica" },
+        ],
+      },
+      {
+        dia: 13, produto: "Artigo internacional", tipo: "Artigo Internacional", vagas: 5, preco: 230, custo: 1600, taxaPorTema: 320,
+        veiculo: "International Health Sciences Review · certificado em 7 dias",
+        temas: [
+          { areas: "Oftalmologia · Infectologia", titulo: "Toxoplasmose Ocular: Esquemas Terapêuticos e Prevenção de Recorrências" },
+          { areas: "Clínica Médica · Infectologia", titulo: "Leishmaniose Visceral: Reconhecimento Precoce e Escolha do Esquema Terapêutico" },
+          { areas: "Otorrinolaringologia", titulo: "Perda Auditiva Súbita: Investigação Etiológica e Impacto do Tempo até o Tratamento" },
+          { areas: "Neurologia · Clínica Médica", titulo: "Miastenia Gravis: Diagnóstico Precoce e Manejo da Crise Miastênica" },
+          { areas: "Cardiologia · Obstetrícia", titulo: "Cardiomiopatia Periparto: Diagnóstico Diferencial e Prognóstico Materno" },
+        ],
+      },
+      {
+        // cada tema do combo sai como capítulo E apresentação, com o mesmo título
+        dia: 15, produto: "Combo capítulo + apresentação", tipo: "Combo", vagas: 7, preco: 220, custo: 867.92, taxaPorTema: 216.98,
+        veiculo: "Capítulo de livro + apresentação em congresso · certificado em 7 dias",
+        temas: [
+          { areas: "Clínica Médica · Nefrologia · Emergência", titulo: "Distúrbios do Potássio: Reconhecimento da Hipercalemia e da Hipocalemia na Emergência" },
+          { areas: "Neurologia · Neurocirurgia", titulo: "Acidente Vascular Cerebral Hemorrágico: Controle Pressórico e Indicação Cirúrgica" },
+          { areas: "Geriatria · Clínica Médica", titulo: "Síndrome da Fragilidade no Idoso: Rastreamento e Intervenções Multidimensionais" },
+          { areas: "Gastroenterologia · Endocrinologia", titulo: "Doença Hepática Gordurosa Metabólica: Rastreamento e Estratificação de Fibrose" },
+        ],
+      },
+      {
+        dia: 17, produto: "Artigo internacional", tipo: "Artigo Internacional", vagas: 5, preco: 230, custo: 1600, taxaPorTema: 320,
+        veiculo: "International Health Sciences Review · certificado em 7 dias",
+        temas: [
+          { areas: "Oftalmologia · Endocrinologia", titulo: "Edema Macular Diabético: Terapia Anti-VEGF e Preditores de Resposta" },
+          { areas: "Cirurgia Geral · Endocrinologia", titulo: "Cirurgia Bariátrica Comparada aos Agonistas do GLP-1: Durabilidade da Perda de Peso e Controle das Comorbidades" },
+          { areas: "Clínica Médica · Pneumologia · Cardiologia", titulo: "Hipertensão Pulmonar: Classificação Diagnóstica e Terapias Específicas" },
+          { areas: "Neurologia", titulo: "Doença de Parkinson: Terapias Avançadas e Indicação de Estimulação Cerebral Profunda" },
+          { areas: "Gastroenterologia · Ginecologia e Obstetrícia", titulo: "Doença Inflamatória Intestinal na Gestação: Controle da Atividade e Desfechos Perinatais" },
+        ],
+      },
+      {
+        dia: 19, produto: "Apresentação em congresso", tipo: "Apresentação", vagas: 10, preco: 110, custo: 67.92, taxaPorTema: 16.98,
+        veiculo: "Anais do Congresso · certificado em 15 dias",
+        temas: [
+          { areas: "Pediatria · Neonatologia", titulo: "Icterícia Neonatal: Indicação de Fototerapia e Critérios de Exsanguineotransfusão" },
+          { areas: "Clínica Médica · Toxicologia · Emergência", titulo: "Acidentes por Animais Peçonhentos: Classificação da Gravidade e Soroterapia" },
+          { areas: "Cirurgia Geral · Buco-Maxilo-Facial · Emergência", titulo: "Trauma de Face no Pronto-Socorro: Avaliação Inicial e Critérios de Encaminhamento" },
+          { areas: "Clínica Médica · Infectologia", titulo: "Dengue Grave: Sinais de Alarme e Reposição Volêmica" },
+        ],
+      },
+      {
+        dia: 21, produto: "Artigo PSU / LILACS", tipo: "Artigo PSU", vagas: 4, preco: 600, custo: 2000, taxaPorTema: 500,
+        veiculo: "Fisioterapia Brasil · Qualis B2 · LILACS · certificado em 30 dias",
+        temas: [
+          { areas: "Cirurgia Geral · Hepatologia · Fisioterapia", titulo: "Transplante Hepático: Recuperação da Capacidade Funcional e Força Muscular" },
+          { areas: "Clínica Médica · Geriatria · Fisioterapia", titulo: "Obesidade Sarcopênica no Idoso: Exercício Resistido e Capacidade Funcional" },
+          { areas: "Ortopedia · Geriatria · Fisioterapia", titulo: "Artroplastia Total de Quadril: Protocolos de Reabilitação e Recuperação da Marcha" },
+          { areas: "Psiquiatria · Clínica Médica · Fisioterapia", titulo: "Exercício Físico no Tratamento da Depressão: Sintomas Depressivos e Capacidade Funcional" },
+        ],
+      },
+      {
+        dia: 23, produto: "Capítulo de livro", tipo: "Capítulo", vagas: 7, preco: 180, custo: 800, taxaPorTema: 200,
+        veiculo: "ISBN · válido em HCPA e FELUMA · certificado em 7 dias",
+        temas: [
+          { areas: "Ortopedia · Geriatria", titulo: "Fratura Vertebral Osteoporótica: Tratamento Conservador e Indicação de Vertebroplastia" },
+          { areas: "Oftalmologia · Emergência", titulo: "Olho Vermelho: Diagnóstico Diferencial e Sinais de Alerta para Encaminhamento Urgente" },
+          { areas: "Pediatria · Gastroenterologia", titulo: "Refluxo Gastroesofágico no Lactente: Diagnóstico Diferencial e Critérios de Investigação" },
+          { areas: "Clínica Médica · Neurologia · Psiquiatria", titulo: "Cannabis Medicinal: Indicações Baseadas em Evidência e Regulamentação no Brasil" },
+        ],
+      },
+      {
+        dia: 24, produto: "Artigo internacional", tipo: "Artigo Internacional", vagas: 5, preco: 230, custo: 1280, taxaPorTema: 320,
+        veiculo: "International Health Sciences Review · certificado em 7 dias",
+        temas: [
+          { areas: "Oftalmologia · Reumatologia", titulo: "Uveíte Anterior Aguda: Investigação Etiológica e Relação com o HLA-B27" },
+          { areas: "Neurologia · Ginecologia e Obstetrícia", titulo: "Epilepsia na Mulher em Idade Fértil: Teratogenicidade e Ajuste Terapêutico" },
+          { areas: "Cardiologia · Medicina Intensiva", titulo: "Choque Cardiogênico no Infarto Agudo do Miocárdio: Suporte Circulatório Mecânico e Desfechos" },
+          { areas: "Oncologia · Clínica Médica", titulo: "Imunoterapia com Inibidores de Checkpoint: Toxicidades Imunomediadas e Manejo Clínico" },
+        ],
+      },
+      {
+        dia: 27, produto: "Combo capítulo + apresentação", tipo: "Combo", vagas: 7, preco: 220, custo: 867.92, taxaPorTema: 216.98,
+        veiculo: "Capítulo de livro + apresentação em congresso · certificado em 7 dias",
+        temas: [
+          { areas: "Cardiologia · Emergência", titulo: "Síndrome Coronariana Aguda sem Supradesnivelamento do ST: Estratificação de Risco e Estratégia Invasiva" },
+          { areas: "Clínica Médica · Endocrinologia", titulo: "Insuficiência Adrenal Aguda: Reconhecimento Clínico e Reposição de Corticoide" },
+          { areas: "Cirurgia Geral · Gastroenterologia", titulo: "Hemorragia Digestiva Alta: Estratificação de Risco e Momento da Endoscopia" },
+          { areas: "Medicina Intensiva · Clínica Médica", titulo: "Parada Cardiorrespiratória Intra-Hospitalar: Qualidade da Reanimação e Cuidados Pós-Parada" },
+        ],
+      },
+      {
+        dia: 29, produto: "Artigo Qualis A3", tipo: "Artigo Qualis A3", vagas: 5, preco: 240, custo: 1750, taxaPorTema: 350,
+        veiculo: "Revista Artefactum · certificado em 7 dias",
+        temas: [
+          { areas: "Cirurgia Geral · Radiologia Intervencionista", titulo: "Colecistostomia Percutânea na Colecistite Aguda do Paciente de Alto Risco" },
+          { areas: "Urologia · Nefrologia", titulo: "Litíase Urinária de Repetição: Investigação Metabólica e Estratégias de Prevenção" },
+          { areas: "Dermatologia", titulo: "Vitiligo: Estratégias Terapêuticas Atuais e Impacto Psicossocial" },
+          { areas: "Ortopedia · Neurologia", titulo: "Síndrome do Túnel do Carpo: Tratamento Conservador e Retorno ao Trabalho" },
+          { areas: "Ginecologia e Obstetrícia", titulo: "Infertilidade Feminina: Investigação Inicial e Critérios de Encaminhamento" },
+        ],
+      },
+      {
+        dia: 30, produto: "Apresentação em congresso", tipo: "Apresentação", vagas: 10, preco: 110, custo: 67.92, taxaPorTema: 16.98,
+        veiculo: "Anais do Congresso · certificado em 15 dias",
+        temas: [
+          { areas: "Clínica Médica · Hematologia", titulo: "Doença Falciforme: Crise Vaso-Oclusiva e Manejo da Dor" },
+          { areas: "Infectologia · Emergência", titulo: "Profilaxia Pós-Exposição ao HIV: Indicações e Seguimento Ambulatorial" },
+          { areas: "Pediatria · Nefrologia", titulo: "Síndrome Nefrótica na Infância: Diagnóstico e Resposta à Corticoterapia" },
+          { areas: "Neurologia", titulo: "Cefaleia em Salvas: Reconhecimento Clínico e Tratamento Abortivo" },
+        ],
+      },
+      {
+        dia: 31, produto: "Artigo PSU / LILACS", tipo: "Artigo PSU", vagas: 4, preco: 600, custo: 2000, taxaPorTema: 500,
+        veiculo: "Fisioterapia Brasil · Qualis B2 · LILACS · certificado em 30 dias",
+        temas: [
+          { areas: "Cirurgia Geral · Oncologia · Fisioterapia", titulo: "Duodenopancreatectomia: Fisioterapia no Pós-Operatório e Complicações Pulmonares" },
+          { areas: "Cirurgia Geral · Cirurgia Torácica · Fisioterapia", titulo: "Drenagem Torácica no Empiema Pleural: Fisioterapia Respiratória e Reexpansão Pulmonar" },
+          { areas: "Clínica Médica · Pneumologia · Fisioterapia", titulo: "Doença Pulmonar Intersticial Fibrosante: Reabilitação Pulmonar e Capacidade de Exercício" },
+          { areas: "Reumatologia · Clínica Médica · Fisioterapia", titulo: "Espondilite Anquilosante: Exercício Terapêutico e Preservação da Mobilidade" },
+        ],
+      },
+    ],
+  },
 ];

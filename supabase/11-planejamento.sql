@@ -590,6 +590,449 @@ select l.id, 'Lesão do Ligamento Cruzado Anterior: Tratamento Conservador Compa
  where l.planejamento_id = '2026-09' and l.dia = 30
 on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
 
+-- 2026-10
+insert into public.planejamentos (id, ano, mes, meta, conversao, nota) values
+  ('2026-10', 2026, 9, 90000, 0.804, 'Um tipo de publicação por lançamento, com temas diferentes dentro do mesmo tipo, alternando artigo e não artigo sem repetir tipo em lançamentos vizinhos · o edital do PSU fecha em 15/10 e o certificado leva 30 dias, então nenhuma venda de PSU do mês serve àquele edital: o produto é anunciado pela indexação LILACS e Qualis B2 (HCPA, SES-GO, UNESP, AMRIGS e outros), com o PSU citado só como um entre vários · PSU nos dias 09, 21 e 31, sempre com eixo de fisioterapia (exigência da Fisioterapia Brasil) · artigo não indexado estreia no dia 05 · 12/10 é feriado e fica livre, assim como os domingos · conversão do PDF: 70% no PSU, 75% no não indexado e 85% nos demais · nenhum lançamento concentra mais de dois temas da mesma área · nenhum tema repete o banco de 333 títulos já publicados.')
+on conflict (id) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 1, 'Artigo Qualis A3', 'Artigo Qualis A3', 5, 240, 1750, 'Revista Artefactum · certificado em 7 dias', 350, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Apendicectomia Negativa: Escores Diagnósticos e Uso Racional de Imagem', 'Cirurgia Geral · Emergência · Radiologia', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 1
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Hematoma Subdural Crônico no Idoso: Indicação de Drenagem e Fatores de Recidiva', 'Neurocirurgia · Geriatria', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 1
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Alopecia Areata Grave: Inibidores de JAK e Resposta ao Tratamento', 'Dermatologia · Clínica Médica', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 1
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Transtorno de Ansiedade Generalizada: Rastreamento e Escolha do Tratamento Inicial', 'Psiquiatria · Clínica Médica', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 1
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Sepse Neonatal Precoce: Reconhecimento Clínico e Uso Racional de Antibióticos', 'Pediatria · Neonatologia · Infectologia', null, null, 4
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 1
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 3, 'Capítulo de livro', 'Capítulo', 7, 180, 1000, 'ISBN · válido em HCPA e FELUMA · certificado em 7 dias', 200, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Fratura do Úmero Proximal no Idoso: Critérios para Tratamento Conservador e Indicação de Artroplastia', 'Ortopedia · Geriatria', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 3
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Catarata: Critérios para Indicação Cirúrgica e Escolha da Lente Intraocular', 'Oftalmologia · Geriatria', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 3
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Doença Renal Crônica: Estadiamento e Critérios de Encaminhamento ao Nefrologista', 'Clínica Médica · Nefrologia', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 3
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Tuberculose Pulmonar: Diagnóstico, Esquema Básico e Manejo dos Efeitos Adversos', 'Clínica Médica · Infectologia', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 3
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Nódulo Tireoidiano: Critérios de Punção e Extensão da Tireoidectomia', 'Cirurgia Geral · Endocrinologia', null, null, 4
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 3
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 5, 'Artigo não indexado', 'Artigo Não Indexado', 7, 180, 640, 'Artigo não indexado · certificado em 7 dias', 160, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Pneumonia Adquirida na Comunidade: Escores de Gravidade e Critérios de Internação', 'Clínica Médica · Pneumologia', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 5
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Exacerbação Aguda da DPOC: Manejo Inicial e Indicação de Ventilação Não Invasiva', 'Clínica Médica · Pneumologia', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 5
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Infecção de Sítio Cirúrgico: Fatores de Risco e Medidas de Prevenção', 'Cirurgia Geral · Infectologia', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 5
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Cirurgia de Urgência no Paciente Anticoagulado: Reversão da Anticoagulação e Risco de Sangramento', 'Cirurgia Geral · Hematologia', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 5
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 7, 'Apresentação em congresso', 'Apresentação', 10, 110, 67.92, 'Anais do Congresso · certificado em 15 dias', 16.98, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Anafilaxia na Criança: Uso da Adrenalina e Prevenção de Recorrência', 'Pediatria · Alergologia · Emergência', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 7
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Queimaduras: Cálculo da Superfície Corporal e Critérios de Transferência', 'Cirurgia Geral · Emergência', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 7
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Crise Convulsiva no Pronto-Socorro: Manejo Inicial e Estado de Mal Epiléptico', 'Neurologia · Emergência', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 7
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Hipoglicemia Grave no Paciente Diabético: Reconhecimento e Conduta Imediata', 'Clínica Médica · Endocrinologia · Emergência', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 7
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 9, 'Artigo PSU / LILACS', 'Artigo PSU', 4, 600, 2000, 'Fisioterapia Brasil · Qualis B2 · LILACS · certificado em 30 dias', 500, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Transplante Renal: Reabilitação Física no Pós-Operatório e Retorno às Atividades', 'Cirurgia Geral · Nefrologia · Fisioterapia', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 9
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Doença Arterial Obstrutiva Periférica: Treino de Caminhada Supervisionado e Distância de Claudicação', 'Clínica Médica · Angiologia · Fisioterapia', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 9
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Neuropatia Diabética Periférica: Treino de Equilíbrio e Preservação da Marcha', 'Clínica Médica · Endocrinologia · Fisioterapia', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 9
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Lesões do Manguito Rotador: Exercício Terapêutico e Recuperação da Função do Ombro', 'Ortopedia · Clínica Médica · Fisioterapia', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 9
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 10, 'Capítulo de livro', 'Capítulo', 7, 180, 1000, 'ISBN · válido em HCPA e FELUMA · certificado em 7 dias', 200, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Abscesso e Fístula Perianal: Drenagem e Técnicas de Preservação Esfincteriana', 'Cirurgia Geral · Coloproctologia', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 10
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Injúria Renal Aguda no Paciente Internado: Causas Evitáveis e Critérios de Diálise', 'Clínica Médica · Nefrologia', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 10
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Erisipela e Celulite: Diagnóstico Diferencial e Critérios de Internação', 'Clínica Médica · Infectologia · Dermatologia', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 10
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Paralisia Facial Periférica: Diagnóstico Diferencial e Corticoterapia Precoce', 'Otorrinolaringologia · Neurologia', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 10
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Ambliopia na Infância: Rastreamento Precoce e Janela Terapêutica', 'Oftalmologia · Pediatria', null, null, 4
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 10
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 13, 'Artigo internacional', 'Artigo Internacional', 5, 230, 1600, 'International Health Sciences Review · certificado em 7 dias', 320, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Toxoplasmose Ocular: Esquemas Terapêuticos e Prevenção de Recorrências', 'Oftalmologia · Infectologia', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 13
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Leishmaniose Visceral: Reconhecimento Precoce e Escolha do Esquema Terapêutico', 'Clínica Médica · Infectologia', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 13
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Perda Auditiva Súbita: Investigação Etiológica e Impacto do Tempo até o Tratamento', 'Otorrinolaringologia', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 13
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Miastenia Gravis: Diagnóstico Precoce e Manejo da Crise Miastênica', 'Neurologia · Clínica Médica', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 13
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Cardiomiopatia Periparto: Diagnóstico Diferencial e Prognóstico Materno', 'Cardiologia · Obstetrícia', null, null, 4
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 13
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 15, 'Combo capítulo + apresentação', 'Combo', 7, 220, 867.92, 'Capítulo de livro + apresentação em congresso · certificado em 7 dias', 216.98, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Distúrbios do Potássio: Reconhecimento da Hipercalemia e da Hipocalemia na Emergência', 'Clínica Médica · Nefrologia · Emergência', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 15
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Acidente Vascular Cerebral Hemorrágico: Controle Pressórico e Indicação Cirúrgica', 'Neurologia · Neurocirurgia', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 15
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Síndrome da Fragilidade no Idoso: Rastreamento e Intervenções Multidimensionais', 'Geriatria · Clínica Médica', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 15
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Doença Hepática Gordurosa Metabólica: Rastreamento e Estratificação de Fibrose', 'Gastroenterologia · Endocrinologia', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 15
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 17, 'Artigo internacional', 'Artigo Internacional', 5, 230, 1600, 'International Health Sciences Review · certificado em 7 dias', 320, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Edema Macular Diabético: Terapia Anti-VEGF e Preditores de Resposta', 'Oftalmologia · Endocrinologia', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 17
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Cirurgia Bariátrica Comparada aos Agonistas do GLP-1: Durabilidade da Perda de Peso e Controle das Comorbidades', 'Cirurgia Geral · Endocrinologia', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 17
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Hipertensão Pulmonar: Classificação Diagnóstica e Terapias Específicas', 'Clínica Médica · Pneumologia · Cardiologia', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 17
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Doença de Parkinson: Terapias Avançadas e Indicação de Estimulação Cerebral Profunda', 'Neurologia', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 17
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Doença Inflamatória Intestinal na Gestação: Controle da Atividade e Desfechos Perinatais', 'Gastroenterologia · Ginecologia e Obstetrícia', null, null, 4
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 17
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 19, 'Apresentação em congresso', 'Apresentação', 10, 110, 67.92, 'Anais do Congresso · certificado em 15 dias', 16.98, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Icterícia Neonatal: Indicação de Fototerapia e Critérios de Exsanguineotransfusão', 'Pediatria · Neonatologia', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 19
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Acidentes por Animais Peçonhentos: Classificação da Gravidade e Soroterapia', 'Clínica Médica · Toxicologia · Emergência', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 19
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Trauma de Face no Pronto-Socorro: Avaliação Inicial e Critérios de Encaminhamento', 'Cirurgia Geral · Buco-Maxilo-Facial · Emergência', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 19
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Dengue Grave: Sinais de Alarme e Reposição Volêmica', 'Clínica Médica · Infectologia', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 19
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 21, 'Artigo PSU / LILACS', 'Artigo PSU', 4, 600, 2000, 'Fisioterapia Brasil · Qualis B2 · LILACS · certificado em 30 dias', 500, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Transplante Hepático: Recuperação da Capacidade Funcional e Força Muscular', 'Cirurgia Geral · Hepatologia · Fisioterapia', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 21
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Obesidade Sarcopênica no Idoso: Exercício Resistido e Capacidade Funcional', 'Clínica Médica · Geriatria · Fisioterapia', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 21
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Artroplastia Total de Quadril: Protocolos de Reabilitação e Recuperação da Marcha', 'Ortopedia · Geriatria · Fisioterapia', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 21
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Exercício Físico no Tratamento da Depressão: Sintomas Depressivos e Capacidade Funcional', 'Psiquiatria · Clínica Médica · Fisioterapia', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 21
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 23, 'Capítulo de livro', 'Capítulo', 7, 180, 800, 'ISBN · válido em HCPA e FELUMA · certificado em 7 dias', 200, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Fratura Vertebral Osteoporótica: Tratamento Conservador e Indicação de Vertebroplastia', 'Ortopedia · Geriatria', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 23
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Olho Vermelho: Diagnóstico Diferencial e Sinais de Alerta para Encaminhamento Urgente', 'Oftalmologia · Emergência', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 23
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Refluxo Gastroesofágico no Lactente: Diagnóstico Diferencial e Critérios de Investigação', 'Pediatria · Gastroenterologia', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 23
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Cannabis Medicinal: Indicações Baseadas em Evidência e Regulamentação no Brasil', 'Clínica Médica · Neurologia · Psiquiatria', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 23
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 24, 'Artigo internacional', 'Artigo Internacional', 5, 230, 1280, 'International Health Sciences Review · certificado em 7 dias', 320, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Uveíte Anterior Aguda: Investigação Etiológica e Relação com o HLA-B27', 'Oftalmologia · Reumatologia', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 24
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Epilepsia na Mulher em Idade Fértil: Teratogenicidade e Ajuste Terapêutico', 'Neurologia · Ginecologia e Obstetrícia', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 24
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Choque Cardiogênico no Infarto Agudo do Miocárdio: Suporte Circulatório Mecânico e Desfechos', 'Cardiologia · Medicina Intensiva', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 24
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Imunoterapia com Inibidores de Checkpoint: Toxicidades Imunomediadas e Manejo Clínico', 'Oncologia · Clínica Médica', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 24
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 27, 'Combo capítulo + apresentação', 'Combo', 7, 220, 867.92, 'Capítulo de livro + apresentação em congresso · certificado em 7 dias', 216.98, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Síndrome Coronariana Aguda sem Supradesnivelamento do ST: Estratificação de Risco e Estratégia Invasiva', 'Cardiologia · Emergência', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 27
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Insuficiência Adrenal Aguda: Reconhecimento Clínico e Reposição de Corticoide', 'Clínica Médica · Endocrinologia', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 27
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Hemorragia Digestiva Alta: Estratificação de Risco e Momento da Endoscopia', 'Cirurgia Geral · Gastroenterologia', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 27
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Parada Cardiorrespiratória Intra-Hospitalar: Qualidade da Reanimação e Cuidados Pós-Parada', 'Medicina Intensiva · Clínica Médica', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 27
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 29, 'Artigo Qualis A3', 'Artigo Qualis A3', 5, 240, 1750, 'Revista Artefactum · certificado em 7 dias', 350, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Colecistostomia Percutânea na Colecistite Aguda do Paciente de Alto Risco', 'Cirurgia Geral · Radiologia Intervencionista', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 29
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Litíase Urinária de Repetição: Investigação Metabólica e Estratégias de Prevenção', 'Urologia · Nefrologia', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 29
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Vitiligo: Estratégias Terapêuticas Atuais e Impacto Psicossocial', 'Dermatologia', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 29
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Síndrome do Túnel do Carpo: Tratamento Conservador e Retorno ao Trabalho', 'Ortopedia · Neurologia', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 29
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Infertilidade Feminina: Investigação Inicial e Critérios de Encaminhamento', 'Ginecologia e Obstetrícia', null, null, 4
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 29
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 30, 'Apresentação em congresso', 'Apresentação', 10, 110, 67.92, 'Anais do Congresso · certificado em 15 dias', 16.98, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Doença Falciforme: Crise Vaso-Oclusiva e Manejo da Dor', 'Clínica Médica · Hematologia', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 30
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Profilaxia Pós-Exposição ao HIV: Indicações e Seguimento Ambulatorial', 'Infectologia · Emergência', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 30
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Síndrome Nefrótica na Infância: Diagnóstico e Resposta à Corticoterapia', 'Pediatria · Nefrologia', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 30
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Cefaleia em Salvas: Reconhecimento Clínico e Tratamento Abortivo', 'Neurologia', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 30
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_lancamentos
+  (planejamento_id, dia, produto, tipo, vagas, preco, custo, veiculo, taxa_por_tema, exige_graduado) values
+  ('2026-10', 31, 'Artigo PSU / LILACS', 'Artigo PSU', 4, 600, 2000, 'Fisioterapia Brasil · Qualis B2 · LILACS · certificado em 30 dias', 500, false)
+on conflict (planejamento_id, dia) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Duodenopancreatectomia: Fisioterapia no Pós-Operatório e Complicações Pulmonares', 'Cirurgia Geral · Oncologia · Fisioterapia', null, null, 0
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 31
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Drenagem Torácica no Empiema Pleural: Fisioterapia Respiratória e Reexpansão Pulmonar', 'Cirurgia Geral · Cirurgia Torácica · Fisioterapia', null, null, 1
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 31
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Doença Pulmonar Intersticial Fibrosante: Reabilitação Pulmonar e Capacidade de Exercício', 'Clínica Médica · Pneumologia · Fisioterapia', null, null, 2
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 31
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
+select l.id, 'Espondilite Anquilosante: Exercício Terapêutico e Preservação da Mobilidade', 'Reumatologia · Clínica Médica · Fisioterapia', null, null, 3
+  from public.planejamento_lancamentos l
+ where l.planejamento_id = '2026-10' and l.dia = 31
+on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
+
 -- ============================================================
 --  ROW LEVEL SECURITY (mesmo critério das demais tabelas:
 --  anon sem acesso, authenticated com CRUD completo)

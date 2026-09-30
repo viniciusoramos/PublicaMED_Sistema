@@ -4973,67 +4973,73 @@ const rodapeMsg = (valor, certDias, extra) => [
   "Interesse? Chama no privado 👇",
 ];
 const cabTemas = ["📌 TEMAS DISPONÍVEIS", SEP_MSG];
+/* Prazo do certificado e revista saem do veículo do lançamento ("Revista Artefactum ·
+ * certificado em 7 dias"), com o valor de sempre quando o veículo não diz. Fixos no
+ * texto, o A3 de outubro sairia anunciado como REASE com certificado em 20 dias. */
+const prazoDoVeiculo = (veiculo, padrao) => Number((String(veiculo || "").match(/certificado em (\d+) dias/i) || [])[1]) || padrao;
+const revistaDoVeiculo = (veiculo, padrao) => ((String(veiculo || "").match(/revista\s+([^·|]+)/i) || [])[1] || padrao).trim();
 const MODELOS_MSG = {
-  internacional: ({ blocos, valor }) => [
+  internacional: ({ blocos, valor, veiculo }) => [
     "🌐 VAGAS EM ARTIGO INTERNACIONAL INDEXADO", SEP_MSG,
     "📄 Revista: International Health Sciences Review",
     "✅ ISSN e DOI garantidos", SEP_MSG,
     ...cabTemas, blocos,
-    ...rodapeMsg(valor, 7, "📊 Indexação: LATINDEX · LiVre · Google Acadêmico ResearchBid · Crossref · ORCID Eurasian Scientific Journal Index"),
+    ...rodapeMsg(valor, prazoDoVeiculo(veiculo, 7), "📊 Indexação: LATINDEX · LiVre · Google Acadêmico ResearchBid · Crossref · ORCID Eurasian Scientific Journal Index"),
   ],
-  qualisA3: ({ blocos, valor }) => [
+  qualisA3: ({ blocos, valor, veiculo }) => [
     "🌐 VAGAS EM ARTIGO INDEXADO QUALIS A3", SEP_MSG,
-    "📄 Revista · REASE",
+    `📄 Revista · ${revistaDoVeiculo(veiculo, "REASE")}`,
     "📖 Qualis A3 CAPES",
     "✅ ISSN e DOI garantidos", SEP_MSG,
     ...cabTemas, blocos,
-    ...rodapeMsg(valor, 20),
+    ...rodapeMsg(valor, prazoDoVeiculo(veiculo, 20)),
   ],
-  psu: ({ blocos, valor }) => [
+  // o PSU vem por último: o certificado leva 30 dias e, perto do fim do edital, não é ele o gancho
+  psu: ({ blocos, valor, veiculo }) => [
     "🌐 VAGAS EM ARTIGO INDEXADO LILACS", SEP_MSG,
     "⭐ Qualis B2",
     "⭐ Indexado no LILACS",
-    "✅ Válido no PSU · HCPA · SES GO · UNESP · AMRIGS",
+    "✅ Válido no HCPA · SES GO · UNESP · AMRIGS · PSU",
     "✅ Válido em diversos outros editais do Brasil", SEP_MSG,
     ...cabTemas, blocos,
-    ...rodapeMsg(valor, 30),
+    ...rodapeMsg(valor, prazoDoVeiculo(veiculo, 30)),
   ],
-  capitulo: ({ blocos, valor }) => [
+  capitulo: ({ blocos, valor, veiculo }) => [
     "🌐 VAGAS EM CAPÍTULO DE LIVRO", SEP_MSG,
     "✅ Válido no HCPA · FELUMA",
     "✅ ISBN e DOI garantidos", SEP_MSG,
     ...cabTemas, blocos,
-    ...rodapeMsg(valor, 7),
+    ...rodapeMsg(valor, prazoDoVeiculo(veiculo, 7)),
   ],
-  apresentacao: ({ blocos, valor }) => [
+  apresentacao: ({ blocos, valor, veiculo }) => [
     "🎤 VAGAS EM APRESENTAÇÃO EM CONGRESSO", SEP_MSG,
     "📄 {{nome do congresso}}",
     "📑 Publicado nos Anais do Congresso",
     "✅ Pontua em diversos editais do Brasil como UFCSPA e FELUMA", SEP_MSG,
     ...cabTemas, blocos,
-    ...rodapeMsg(valor, 15),
+    ...rodapeMsg(valor, prazoDoVeiculo(veiculo, 15)),
   ],
-  // combo: 1º tema = capítulo, 2º tema = apresentação
-  combo: ({ temas, valor, vagas }) => {
-    const [cap, apr] = temas;
-    return [
-      "🔥 COMBO CAPÍTULO + APRESENTAÇÃO EM CONGRESSO",
-      "*2 TRABALHOS PELO PREÇO DE UM!*", SEP_MSG,
-      "📚 *Capítulo de Livro*",
-      cap ? cap.titulo : "{{título capítulo}}",
-      cap ? cap.areas : "{{áreas}}",
-      "",
-      "🎤 *Apresentação em Congresso*",
-      apr ? apr.titulo : "{{título apresentação}}",
-      apr ? apr.areas : "{{áreas}}", SEP_MSG,
-      `💰 *Os dois trabalhos juntos por apenas R$ ${valor}* ✅`,
-      linhaVagas(vagas), SEP_MSG,
-      "💳 Até 12x no cartão",
-      "🤝 Desconto comprando com amigos",
-      "📄 Certificado em até 7 dias", SEP_MSG,
-      "Me chama no privado agora e garanta a sua! 👇",
-    ];
-  },
+  naoIndexado: ({ blocos, valor, veiculo }) => [
+    "🌐 VAGAS EM ARTIGO CIENTÍFICO NÃO INDEXADO", SEP_MSG,
+    ...cabTemas, blocos,
+    ...rodapeMsg(valor, prazoDoVeiculo(veiculo, 7)),
+  ],
+  /* Combo: cada tema sai como capítulo E apresentação, com o mesmo título (é o combo
+   * do planejamento de outubro). O modelo anterior tomava o 1º tema como capítulo e o
+   * 2º como apresentação, e com quatro temas no dia deixava dois de fora. */
+  combo: ({ blocos, valor, veiculo }) => [
+    "🔥 COMBO CAPÍTULO + APRESENTAÇÃO EM CONGRESSO",
+    "*2 TRABALHOS PELO PREÇO DE UM!*", SEP_MSG,
+    "📚 Capítulo de livro com ISBN",
+    "🎤 Apresentação em congresso, publicada nos Anais",
+    "✅ Os dois com o mesmo tema", SEP_MSG,
+    ...cabTemas, blocos, SEP_MSG,
+    `💰 *Os dois trabalhos juntos por apenas R$ ${valor}* ✅`,
+    "💳 Até 12x no cartão",
+    "🤝 Desconto comprando com amigos",
+    `📄 Certificado em até ${prazoDoVeiculo(veiculo, 7)} dias`, SEP_MSG,
+    "Me chama no privado agora e garanta a sua! 👇",
+  ],
   // tipo sem modelo oficial (ex.: "Artigo" genérico): estrutura padrão com o que se sabe do lançamento
   generico: ({ blocos, valor, tipo, veiculo }) => [
     `🌐 VAGAS EM ${(tipo || "TRABALHO").toUpperCase()}`, SEP_MSG,
@@ -5054,6 +5060,7 @@ const modeloMsgDoTipo = (tipo) => {
   if (k.includes("capitulo")) return MODELOS_MSG.capitulo;
   if (k.includes("apresentacao") || k.includes("congresso")) return MODELOS_MSG.apresentacao;
   if (k.includes("combo")) return MODELOS_MSG.combo;
+  if (k.includes("naoindexado")) return MODELOS_MSG.naoIndexado;
   return MODELOS_MSG.generico;
 };
 /* Monta a mensagem de um grupo (trabalho) do dia. `dadosTema(t)` devolve título/áreas/vagas
