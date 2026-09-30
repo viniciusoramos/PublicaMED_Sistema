@@ -312,7 +312,9 @@ export const PLANEJAMENTOS = [
           { areas: "Neurocirurgia · Geriatria", titulo: "Hematoma Subdural Crônico no Idoso: Indicação de Drenagem e Fatores de Recidiva" },
           { areas: "Dermatologia · Clínica Médica", titulo: "Alopecia Areata Grave: Inibidores de JAK e Resposta ao Tratamento" },
           { areas: "Psiquiatria · Clínica Médica", titulo: "Transtorno de Ansiedade Generalizada: Rastreamento e Escolha do Tratamento Inicial" },
-          { areas: "Pediatria · Neonatologia · Infectologia", titulo: "Sepse Neonatal Precoce: Reconhecimento Clínico e Uso Racional de Antibióticos" },
+          // trocado em 30/09: o título do PDF era quase o do A3 de 28/09 ("Reconhecimento Clínico,
+          // Uso Racional de Antibióticos e Desfechos"); mantida a sepse neonatal precoce, com outro recorte
+          { areas: "Pediatria · Neonatologia · Obstetrícia", titulo: "Sepse Neonatal Precoce: Fatores de Risco Maternos e Prevenção Intraparto" },
         ],
       },
       {

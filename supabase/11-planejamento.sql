@@ -619,7 +619,7 @@ select l.id, 'Transtorno de Ansiedade Generalizada: Rastreamento e Escolha do Tr
  where l.planejamento_id = '2026-10' and l.dia = 1
 on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
 insert into public.planejamento_temas (lancamento_id, titulo, areas, taxa, exige_graduado, ordem)
-select l.id, 'Sepse Neonatal Precoce: Reconhecimento Clínico e Uso Racional de Antibióticos', 'Pediatria · Neonatologia · Infectologia', null, null, 4
+select l.id, 'Sepse Neonatal Precoce: Fatores de Risco Maternos e Prevenção Intraparto', 'Pediatria · Neonatologia · Obstetrícia', null, null, 4
   from public.planejamento_lancamentos l
  where l.planejamento_id = '2026-10' and l.dia = 1
 on conflict (lancamento_id, titulo, coalesce(tipo, '')) do nothing;
