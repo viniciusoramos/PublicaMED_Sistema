@@ -357,6 +357,9 @@ const FAC_EXTRAS = [
   ["Centro Universitário Campo Real", "PR"],                       // Guarapuava
   // a UNESA é a do Rio; as outras Estácio de medicina são IDOMED e já estão na lista
   ["Universidade Estácio de Sá (UNESA)", "RJ"],
+  // vendas sem estado conferidas em 30/09/2026
+  ["Faculdade de Medicina de Campos (FMC)", "RJ"],   // Campos dos Goytacazes; "Campos" sozinho não decide
+  ["Universidade Nilton Lins", "AM"],                // Manaus; "Lins" sozinho é a cidade de SP
 ];
 /* Instituição que trocou de nome. A chave é o nome que está na base importada; o
  * valor é como ela se chama hoje, e é o que aparece nos relatórios. O nome antigo
@@ -379,6 +382,8 @@ const FAC_APELIDOS = {
 const FAC_NOMES_EXATOS = {
   "UNIFESP - Escola Paulista de Medicina": ["Universidade Federal de São Paulo", "Universidade Federal de São Paulo (UNIFESP)"],
   "Universidade Cidade (UNICID)": ["Universidade Cidade de São Paulo", "Universidade Cidade de São Paulo (UNICID)"],
+  // sem a sigla, "Campos" é a única palavra do nome e não identifica nada sozinha
+  "Faculdade de Medicina de Campos (FMC)": ["Faculdade de Medicina de Campos"],
 };
 const FAC_BASE = (() => {
   const ufMap = {};
@@ -544,6 +549,8 @@ const FAC_PALAVRAS_FRACAS = new Set([
   "porto", "vila", "cidade", "estado", "brasil", "brasileira", "brasileiro",
   // "Real Hospital Português" (Recife) não pode cair na Campo Real nem no Heliópolis
   "real", "hospital",
+  // "Lins" é cidade de SP (e sobrenome): quem identifica a Nilton Lins é o "Nilton"
+  "lins",
 ].filter((w) => w.length >= 2));
 
 /* Acha a instituição da base correspondente ao nome digitado. Devolve null quando
