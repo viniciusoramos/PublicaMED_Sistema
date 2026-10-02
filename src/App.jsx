@@ -2085,6 +2085,30 @@ const corOrigem = (rot, dark) => {
 const chaveCliente = (v) => (v.email || "").trim().toLowerCase() || (v.nome || "").trim().toLowerCase();
 const brlInteiro = (n) => (n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const pctInteiro = (a, b) => (b ? Math.round((a / b) * 100) : 0) + "%";
+/* Semana de segunda a domingo, cortada na borda do período (mês ou ano) para as
+ * semanas somarem o mesmo que o mês: a de 28/09 a 04/10 vira "01 a 04/10" em
+ * outubro. Sem corte ("todos os anos" sem mês) a semana vem inteira. */
+const semanaDe = (iso, corte) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  const seg = isoSomaDias(iso, -((new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7)), dom = isoSomaDias(seg, 6);
+  const ultimo = String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0");
+  const [de, ate] = corte === "mes" ? [iso.slice(0, 8) + "01", iso.slice(0, 8) + ultimo]
+    : corte === "ano" ? [y + "-01-01", y + "-12-31"] : [seg, dom];
+  return { ini: seg < de ? de : seg, fim: dom > ate ? ate : dom };
+};
+const rotSemana = (s, comAno) => {
+  const [, mi, di] = s.ini.split("-"), [yf, mf, df] = s.fim.split("-");
+  const ate = `${df}/${mf}` + (comAno ? "/" + yf.slice(2) : "");
+  return s.ini === s.fim ? ate : mi === mf ? `${di} a ${ate}` : `${di}/${mi} a ${ate}`;
+};
+// soma uma venda na linha do comparativo (um mês ou uma semana): no grupo dela e no total
+const somaNaLinha = (e, v, cli, novo) => {
+  const r = rotuloOrigem(v.origem), c = e.por.get(r) || { n: 0, fat: 0, novos: new Set() };
+  c.n += 1; c.fat += v.valor || 0;
+  if (novo) { c.novos.add(cli); e.novos.add(cli); }
+  e.por.set(r, c);
+  e.n += 1; e.fat += v.valor || 0;
+};
 function Origem({ vendas, dark }) {
   // o ano de hoje entra na lista mesmo antes da primeira venda dele: é o filtro inicial
   const hoje = hojeIso();
@@ -2096,41 +2120,62 @@ function Origem({ vendas, dark }) {
    * então o filtro volta para o mês atual toda vez que ela é aberta. */
   const [anoSel, setAno] = useState(() => String(anoDeIso(hoje)));
   const [mes, setMes] = useState(() => String(mesDeIso(hoje)));
-  const [metrica, setMetrica] = useState("vendas"); // o que o comparativo mensal conta
-  /* Gráfico com uma barra por mês ou por grupo. Segue o filtro: com um mês
-   * escolhido (que é como a aba abre) vêm os grupos daquele mês; no ano inteiro,
-   * a evolução mês a mês. O botão continua trocando à mão. */
+  const [semana, setSemana] = useState(""); // "" = mês inteiro; senão, o primeiro dia da semana
+  const [metrica, setMetrica] = useState("vendas"); // o que o comparativo conta
+  /* Gráfico com uma barra por mês, por semana ou por grupo. Segue o filtro: com
+   * um mês escolhido (que é como a aba abre) vêm os grupos daquele mês; no ano
+   * inteiro, a evolução mês a mês. O botão continua trocando à mão, e quem está
+   * olhando semana a semana continua nela ao trocar de mês. */
   const [eixoGraf, setEixoGraf] = useState("grupos");
-  const trocarMes = (v) => { setMes(v); setEixoGraf(v === "" ? "meses" : "grupos"); };
-  // novo × recorrente só faz sentido num mês: no ano inteiro, quem voltou em
-  // agosto e chegou em março é as duas coisas ao mesmo tempo
+  const trocarAno = (v) => { setAno(v); setSemana(""); };
+  const trocarMes = (v) => {
+    setMes(v); setSemana("");
+    setEixoGraf((e) => (e === "semanas" ? e : v === "" ? "meses" : "grupos"));
+  };
+  // a semana só se escolhe dentro de um mês de um ano
   const umMes = mes !== "" && anoSel !== "todos";
+  const corte = mes !== "" ? "mes" : anoSel !== "todos" ? "ano" : "";
+  // as semanas do mês escolhido, para o filtro; a primeira e a última podem vir pela metade
+  const semanasDoMes = useMemo(() => {
+    if (!umMes) return [];
+    const lista = [], prefixo = `${anoSel}-${String(Number(mes) + 1).padStart(2, "0")}-`;
+    for (let d = prefixo + "01"; d.startsWith(prefixo);) {
+      const s = semanaDe(d, "mes");
+      lista.push(s);
+      d = isoSomaDias(s.fim, 1);
+    }
+    return lista;
+  }, [umMes, anoSel, mes]);
+  const semanaSel = semanasDoMes.find((s) => s.ini === semana) || null;
 
-  /* Tudo na tabela conta só o período escolhido. A única coisa que vem de fora
-   * dele é a data da primeira compra de cada cliente, que separa quem chegou
-   * agora de quem já era cliente e voltou. */
-  const primeiraCompra = useMemo(() => {
-    const p = new Map();
+  /* Tudo na tabela conta só o período escolhido, menos novo × recorrente, que é
+   * do cliente e não do período: novo é quem comprou uma vez só na PublicaMED,
+   * recorrente é quem já comprou mais de uma (a mesma conta da aba Clientes),
+   * contando todas as compras da história, antes ou depois do período. */
+  const compras = useMemo(() => {
+    const c = new Map();
     for (const v of vendas) {
       const k = chaveCliente(v);
-      if (k && v.data && (!p.has(k) || v.data < p.get(k))) p.set(k, v.data);
+      if (k) c.set(k, (c.get(k) || 0) + 1);
     }
-    return p;
+    return c;
   }, [vendas]);
+  const ehNovo = (k) => !!k && compras.get(k) === 1;
 
   const doAno = useMemo(
     () => vendas.filter((v) => anoSel === "todos" || anoDeIso(v.data) === Number(anoSel)), [vendas, anoSel]);
-  const doPeriodo = useMemo(
+  const doMes = useMemo(
     () => (mes === "" ? doAno : doAno.filter((v) => mesDeIso(v.data) === Number(mes))), [doAno, mes]);
+  const doPeriodo = useMemo(
+    () => (semanaSel ? doMes.filter((v) => v.data >= semanaSel.ini && v.data <= semanaSel.fim) : doMes),
+    [doMes, semanaSel]);
 
   const resumo = useMemo(() => {
-    // novo = a primeira compra da vida caiu dentro do mês escolhido
-    const noPeriodo = (iso) => anoDeIso(iso) === Number(anoSel) && mesDeIso(iso) === Number(mes);
     const resumir = (lista) => {
       const fat = lista.reduce((s, v) => s + (v.valor || 0), 0);
       const cli = new Set(lista.map(chaveCliente).filter(Boolean));
       let novos = 0;
-      for (const k of cli) if (noPeriodo(primeiraCompra.get(k))) novos++;
+      for (const k of cli) if (ehNovo(k)) novos++;
       return { n: lista.length, fat, ticket: lista.length ? fat / lista.length : 0, clientes: cli.size,
         novos, recorrentes: cli.size - novos, gastoCliente: cli.size ? fat / cli.size : 0 };
     };
@@ -2144,11 +2189,11 @@ function Origem({ vendas, dark }) {
     const grupos = [...por.keys()].filter((r) => r !== SEM_ORIGEM).sort(ordemOrigem)
       .map((r) => ({ rot: r, nomes: [...nomes.get(r)].join(" · "), ...resumir(por.get(r)) }));
     return { grupos, sem: por.has(SEM_ORIGEM) ? resumir(por.get(SEM_ORIGEM)) : null, total: resumir(doPeriodo) };
-  }, [doPeriodo, primeiraCompra, anoSel, mes]);
+  }, [doPeriodo, compras]);
 
   /* Comparativo mensal: o ano inteiro (o mês escolhido só fica destacado), mais
-   * recente primeiro. Cliente novo do mês é quem fez ali a primeira compra da
-   * vida; conta no grupo da venda, e no total uma vez só. */
+   * recente primeiro. Cliente novo (uma compra só na vida) cai num mês só, o da
+   * compra dele; conta no grupo da venda e no total. */
   const meses = useMemo(() => {
     const mapa = new Map();
     for (const v of doAno) {
@@ -2156,35 +2201,54 @@ function Origem({ vendas, dark }) {
       if (a == null || o == null) continue;
       const k = `${a}-${String(o + 1).padStart(2, "0")}`;
       if (!mapa.has(k)) mapa.set(k, { chave: k, ano: a, ordem: o, por: new Map(), n: 0, fat: 0, novos: new Set() });
-      const e = mapa.get(k), r = rotuloOrigem(v.origem);
-      const c = e.por.get(r) || { n: 0, fat: 0, novos: new Set() };
-      c.n += 1; c.fat += v.valor || 0;
       const cli = chaveCliente(v);
-      if (cli && (primeiraCompra.get(cli) || "").slice(0, 7) === k) { c.novos.add(cli); e.novos.add(cli); }
-      e.por.set(r, c);
-      e.n += 1; e.fat += v.valor || 0;
+      somaNaLinha(mapa.get(k), v, cli, ehNovo(cli));
     }
     return [...mapa.values()].sort((x, y) => (x.chave < y.chave ? 1 : -1));
-  }, [doAno, primeiraCompra]);
+  }, [doAno, compras]);
+  /* Comparativo semanal: as semanas do mês escolhido (ou do ano inteiro, sem
+   * mês), mais recente primeiro. Com um mês no filtro, toda semana que já
+   * começou aparece, mesmo sem venda — semana zerada também é resposta. */
+  const semanas = useMemo(() => {
+    const mapa = new Map();
+    const linhaDe = (s) => {
+      if (!mapa.has(s.ini)) mapa.set(s.ini, { chave: s.ini, ...s, por: new Map(), n: 0, fat: 0, novos: new Set() });
+      return mapa.get(s.ini);
+    };
+    for (const s of semanasDoMes) if (s.ini <= hoje) linhaDe(s);
+    for (const v of doMes) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(v.data || "")) continue;
+      const cli = chaveCliente(v);
+      somaNaLinha(linhaDe(semanaDe(v.data, corte)), v, cli, ehNovo(cli));
+    }
+    return [...mapa.values()].sort((x, y) => (x.chave < y.chave ? 1 : -1));
+  }, [doMes, semanasDoMes, corte, compras, hoje]);
   const gruposAno = useMemo(
     () => [...new Set(doAno.map((v) => rotuloOrigem(v.origem)))].filter((r) => r !== SEM_ORIGEM).sort(ordemOrigem), [doAno]);
   const series = [...gruposAno, SEM_ORIGEM];
   const valorDe = (c) => (c ? (metrica === "vendas" ? c.n : metrica === "novos" ? c.novos.size : c.fat) : 0);
   const fmtCel = (x) => (metrica === "faturamento" ? brlInteiro(x) : num(x));
   const rotMes = (e) => MESES[e.ordem].slice(0, 3).toLowerCase() + (anoSel === "todos" ? "/" + String(e.ano).slice(2) : "");
-  const grafico = [...meses].reverse().map((e) => ({
-    mes: rotMes(e), ...Object.fromEntries(series.map((r) => [r, valorDe(e.por.get(r))])),
+  // o quadro de baixo tem uma linha por mês ou, em "Por semana", uma por semana
+  const porSemana = eixoGraf === "semanas";
+  const linhas = porSemana ? semanas : meses;
+  const rotLinha = (e) => (porSemana ? rotSemana(e, anoSel === "todos") : rotMes(e));
+  const grafico = [...linhas].reverse().map((e) => ({
+    rot: rotLinha(e), ...Object.fromEntries(series.map((r) => [r, valorDe(e.por.get(r))])),
   }));
-  /* Uma barra por grupo, no período do filtro. Sai da soma dos meses, e não de
-   * uma conta à parte, para bater com a tabela: cliente novo aparece uma vez só,
-   * no mês da primeira compra. */
+  /* Uma barra por grupo, no período do filtro. Sai da soma dos meses (ou da
+   * semana escolhida), e não de uma conta à parte, para bater com a tabela. */
+  const linhasDoFiltro = semanaSel
+    ? semanas.filter((e) => e.chave === semanaSel.ini)
+    : meses.filter((e) => mes === "" || e.ordem === Number(mes));
   const graficoGrupos = series.map((r) => ({
     grupo: r.replace("Grupo ", ""), nome: r, cor: corOrigem(r, dark),
-    valor: meses.filter((e) => mes === "" || e.ordem === Number(mes)).reduce((s, e) => s + valorDe(e.por.get(r)), 0),
+    valor: linhasDoFiltro.reduce((s, e) => s + valorDe(e.por.get(r)), 0),
   }));
 
   const t = resumo.total, comOrigem = t.n - (resumo.sem?.n || 0);
-  const rotuloPeriodo = (anoSel === "todos" ? "todos os anos" : anoSel) + (mes !== "" ? " · " + MESES[Number(mes)] : "");
+  const rotuloMes = (anoSel === "todos" ? "todos os anos" : anoSel) + (mes !== "" ? " · " + MESES[Number(mes)] : "");
+  const rotuloPeriodo = rotuloMes + (semanaSel ? " · semana de " + rotSemana(semanaSel) : "");
   const eixo = dark ? "#8A8A8F" : "#5B6B73", grade = dark ? "#2E2E30" : "#EAEFF1";
 
   const linha = (rot, r, title, className = "") => (
@@ -2194,8 +2258,8 @@ function Origem({ vendas, dark }) {
       <td className="r">{brl(r.fat)}</td>
       <td className="r">{brl(r.ticket)}</td>
       <td className="r">{num(r.clientes)}</td>
-      {umMes && <td className="r">{num(r.novos)}<span className="org-pct">{pctInteiro(r.novos, r.clientes)}</span></td>}
-      {umMes && <td className="r">{num(r.recorrentes)}<span className="org-pct">{pctInteiro(r.recorrentes, r.clientes)}</span></td>}
+      <td className="r">{num(r.novos)}<span className="org-pct">{pctInteiro(r.novos, r.clientes)}</span></td>
+      <td className="r">{num(r.recorrentes)}<span className="org-pct">{pctInteiro(r.recorrentes, r.clientes)}</span></td>
       <td className="r">{brl(r.gastoCliente)}</td>
     </tr>
   );
@@ -2207,7 +2271,7 @@ function Origem({ vendas, dark }) {
 
       <div className="periodo-bar">
         <span className="periodo-lab">Período</span>
-        <select className="inp" value={anoSel} onChange={(e) => setAno(e.target.value)}>
+        <select className="inp" value={anoSel} onChange={(e) => trocarAno(e.target.value)}>
           <option value="todos">Todos os anos</option>
           {anos.map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
@@ -2215,6 +2279,12 @@ function Origem({ vendas, dark }) {
           <option value="">Ano inteiro</option>
           {MESES.map((nm, i) => <option key={i} value={i}>{nm}</option>)}
         </select>
+        {umMes && (
+          <select className="inp" value={semanaSel ? semana : ""} aria-label="Semana" onChange={(e) => setSemana(e.target.value)}>
+            <option value="">Mês inteiro</option>
+            {semanasDoMes.map((s) => <option key={s.ini} value={s.ini}>Semana de {rotSemana(s)}</option>)}
+          </select>
+        )}
       </div>
 
       <div className="card no-pad">
@@ -2231,8 +2301,8 @@ function Origem({ vendas, dark }) {
                 <th scope="col" className="r">Faturamento</th>
                 <th scope="col" className="r">Ticket médio</th>
                 <th scope="col" className="r">Clientes</th>
-                {umMes && <th scope="col" className="r" title="Clientes cuja primeira compra na PublicaMED foi neste mês">Novos</th>}
-                {umMes && <th scope="col" className="r" title="Clientes do mês que já tinham comprado antes dele">Recorrentes</th>}
+                <th scope="col" className="r" title="Clientes que compraram uma vez só na PublicaMED">Novos</th>
+                <th scope="col" className="r" title="Clientes que já compraram mais de uma vez na PublicaMED">Recorrentes</th>
                 <th scope="col" className="r" title="Faturamento do período dividido pelos clientes do período">Gasto por cliente</th>
               </tr>
             </thead>
@@ -2240,7 +2310,7 @@ function Origem({ vendas, dark }) {
               {resumo.grupos.map((g) => linha(g.rot, g, g.nomes))}
               {resumo.sem && linha(SEM_ORIGEM, resumo.sem,
                 "Venda sem telefone cadastrado, ou de alguém que não está em nenhum grupo", "org-sem")}
-              {!t.n && <tr><td colSpan={umMes ? 8 : 6} className="vazio">Nenhuma venda no período.</td></tr>}
+              {!t.n && <tr><td colSpan={8} className="vazio">Nenhuma venda no período.</td></tr>}
             </tbody>
             {t.n > 0 && (
               <tfoot>
@@ -2250,8 +2320,8 @@ function Origem({ vendas, dark }) {
                   <td className="r">{brl(t.fat)}</td>
                   <td className="r">{brl(t.ticket)}</td>
                   <td className="r">{num(t.clientes)}</td>
-                  {umMes && <td className="r">{num(t.novos)}<span className="org-pct">{pctInteiro(t.novos, t.clientes)}</span></td>}
-                  {umMes && <td className="r">{num(t.recorrentes)}<span className="org-pct">{pctInteiro(t.recorrentes, t.clientes)}</span></td>}
+                  <td className="r">{num(t.novos)}<span className="org-pct">{pctInteiro(t.novos, t.clientes)}</span></td>
+                  <td className="r">{num(t.recorrentes)}<span className="org-pct">{pctInteiro(t.recorrentes, t.clientes)}</span></td>
                   <td className="r">{brl(t.gastoCliente)}</td>
                 </tr>
               </tfoot>
@@ -2259,22 +2329,17 @@ function Origem({ vendas, dark }) {
           </table>
         </div>
         <p className="nota org-nota">
-          Tudo conta só o período escolhido.{" "}
-          {umMes ? (
-            <><b>Novo</b> é quem fez a primeira compra na PublicaMED neste mês; <b>recorrente</b> é quem já tinha
-            comprado antes e voltou. Compare os grupos entre si: <b>Sem origem</b> tem menos recorrentes porque quem
-            compra várias vezes tem mais chance de ter telefone cadastrado e ganhar grupo.</>
-          ) : (
-            <>Novos e recorrentes aparecem quando um mês é escolhido no filtro. Para ver os clientes novos de cada
-            mês do ano, use <b>Clientes novos</b> no quadro abaixo.</>
-          )}
+          Vendas, faturamento e clientes contam só o período escolhido. <b>Novo</b> e <b>recorrente</b> não dependem
+          do período: novo é quem comprou uma vez só na PublicaMED, recorrente é quem já comprou mais de uma vez — por
+          isso um novo de hoje vira recorrente quando volta. Compare os grupos entre si: <b>Sem origem</b> tem menos
+          recorrentes porque quem compra várias vezes tem mais chance de ter telefone cadastrado e ganhar grupo.
         </p>
       </div>
 
       <div className="card">
         <div className="card-head org-head">
-          <h3>{eixoGraf === "meses" ? "Mês a mês" : "Grupos"}
-            {eixoGraf === "grupos" && <span className="hint"> · {rotuloPeriodo}</span>}</h3>
+          <h3>{eixoGraf === "meses" ? "Mês a mês" : porSemana ? "Semana a semana" : "Grupos"}
+            {eixoGraf !== "meses" && <span className="hint"> · {porSemana ? rotuloMes : rotuloPeriodo}</span>}</h3>
           <div className="org-trocas">
             <div className="visao-troca" role="group" aria-label="O que comparar">
               {[["vendas", "Vendas"], ["faturamento", "Faturamento"], ["novos", "Clientes novos"]].map(([id, rot]) => (
@@ -2283,21 +2348,21 @@ function Origem({ vendas, dark }) {
               ))}
             </div>
             <div className="visao-troca" role="group" aria-label="Uma barra por">
-              {[["meses", "Por mês"], ["grupos", "Por grupo"]].map(([id, rot]) => (
+              {[["meses", "Por mês"], ["semanas", "Por semana"], ["grupos", "Por grupo"]].map(([id, rot]) => (
                 <button key={id} className={"visao-btn" + (eixoGraf === id ? " ativo" : "")}
                   aria-pressed={eixoGraf === id} onClick={() => setEixoGraf(id)}>{rot}</button>
               ))}
             </div>
           </div>
         </div>
-        {meses.length > 0 ? (
+        {linhas.length > 0 ? (
           <>
-            {eixoGraf === "meses" ? (
+            {eixoGraf !== "grupos" ? (
               <>
                 <ResponsiveContainer width="100%" height={250}>
                   <BarChart data={grafico} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={grade} />
-                    <XAxis dataKey="mes" tick={{ fontSize: 12, fill: eixo }} axisLine={false} tickLine={false} />
+                    <XAxis dataKey="rot" tick={{ fontSize: 12, fill: eixo }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: eixo }} axisLine={false} tickLine={false}
                       tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
                     <Tooltip formatter={(v, nome) => [fmtCel(v), nome]} cursor={{ fill: dark ? "#1F1F21" : "#F0F4F5" }} />
@@ -2328,27 +2393,27 @@ function Origem({ vendas, dark }) {
               <table className="tab">
                 <thead>
                   <tr>
-                    <th scope="col">Mês</th>
+                    <th scope="col">{porSemana ? "Semana" : "Mês"}</th>
                     {gruposAno.map((r) => <th key={r} scope="col" className="r">{r.replace("Grupo ", "")}</th>)}
                     <th scope="col" className="r">Sem origem</th>
                     <th scope="col" className="r">Total</th>
-                    <th scope="col" className="r" title="Parte das vendas do mês com grupo identificado">Com origem</th>
+                    <th scope="col" className="r" title={`Parte das vendas ${porSemana ? "da semana" : "do mês"} com grupo identificado`}>Com origem</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {meses.map((e) => {
+                  {linhas.map((e) => {
                     const sem = e.por.get(SEM_ORIGEM)?.n || 0;
-                    const sel = mes !== "" && e.ordem === Number(mes);
+                    const sel = porSemana ? e.chave === semanaSel?.ini : mes !== "" && e.ordem === Number(mes);
                     return (
                       <tr key={e.chave} className={sel ? "org-mes-sel" : ""}>
-                        <td>{MESES[e.ordem]}{anoSel === "todos" && <span className="muted"> {e.ano}</span>}</td>
+                        <td>{porSemana ? rotLinha(e) : <>{MESES[e.ordem]}{anoSel === "todos" && <span className="muted"> {e.ano}</span>}</>}</td>
                         {gruposAno.map((r) => {
                           const x = valorDe(e.por.get(r));
                           return <td key={r} className={"r" + (x ? "" : " muted")}>{x ? fmtCel(x) : "—"}</td>;
                         })}
                         <td className="r muted">{fmtCel(valorDe(e.por.get(SEM_ORIGEM)))}</td>
                         <td className="r"><b>{fmtCel(metrica === "vendas" ? e.n : metrica === "novos" ? e.novos.size : e.fat)}</b></td>
-                        <td className="r muted">{pctInteiro(e.n - sem, e.n)}</td>
+                        <td className="r muted">{e.n ? pctInteiro(e.n - sem, e.n) : "—"}</td>
                       </tr>
                     );
                   })}
@@ -2358,6 +2423,8 @@ function Origem({ vendas, dark }) {
           </>
         ) : <p className="vazio">Nenhuma venda no período.</p>}
         <p className="nota">
+          {porSemana && <>A semana vai de segunda a domingo; a que cruza a virada {mes !== "" ? "do mês" : "do ano"} conta
+          só os dias de dentro do período, para as semanas somarem o mesmo que {mes !== "" ? "o mês" : "o ano"}.{" "}</>}
           A origem vem da lista de membros dos grupos, cruzada pelo telefone de quem comprou (e pelo nome, quando falta
           o telefone). Venda antiga fica sem origem quando a pessoa já saiu do grupo ou não tem telefone cadastrado.
           Quem está em dois grupos também fica sem, porque não dá para saber de qual veio.
