@@ -116,20 +116,25 @@ Nunca sobrescreva origem já preenchida.
 
 Aba **Origem das vendas** (última do menu, `#origem`). Abre sempre no mês
 corrente, diferente das outras abas, porque a pergunta é como os grupos estão
-indo agora. Tudo conta só o período do filtro:
+indo agora. Com um mês escolhido, um terceiro filtro escolhe uma semana dele
+(segunda a domingo, cortada na virada do mês para as semanas somarem o mês).
 
 - **Por grupo:** vendas, faturamento, ticket médio, clientes e gasto por cliente
-  (faturamento do período ÷ clientes do período). Com um mês escolhido, também
-  **novos** (primeira compra da vida naquele mês) e **recorrentes** (já tinham
-  comprado antes). No ano inteiro essas duas somem, porque não fazem sentido.
+  (faturamento do período ÷ clientes do período), mais **novos** e
+  **recorrentes**, que aparecem em qualquer período.
 - **Gráfico:** vendas, faturamento ou clientes novos, com uma barra por grupo
-  (padrão quando há mês escolhido) ou por mês (padrão no ano inteiro).
-- **Tabela mês a mês**, com a coluna "com origem" para não comparar mês de
-  cobertura baixa com mês de cobertura alta.
+  (padrão quando há mês escolhido), por semana ou por mês (padrão no ano inteiro).
+- **Tabela mês a mês ou semana a semana**, com a coluna "com origem" para não
+  comparar período de cobertura baixa com período de cobertura alta.
 
-O Lucas rejeitou métricas de histórico inteiro, como gasto total do cliente ou
-recompra de toda a vida: com o filtro num mês elas ficavam infladas e
-confundiam. Mantenha tudo preso ao período.
+Vendas, faturamento, clientes e gasto por cliente ficam presos ao período: o
+Lucas rejeitou métricas de histórico inteiro como gasto total do cliente, que
+com o filtro num mês ficavam infladas e confundiam. A exceção, decidida por ele
+em 02/10/2026, é **novo × recorrente**, que é do cliente e não do período: novo
+é quem comprou uma vez só na PublicaMED, recorrente é quem já comprou mais de
+uma vez (mesma conta da aba Clientes, todas as compras da história). Não
+recorte isso por mês nem por semana. Um novo de hoje vira recorrente quando
+volta, então os números de meses passados mudam com o tempo.
 
 "Sem origem" sempre sai com menos recorrentes, porque quem compra várias vezes
 tem mais chance de ter telefone cadastrado e ganhar grupo. Compare os grupos
