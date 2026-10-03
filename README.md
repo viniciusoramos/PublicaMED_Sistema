@@ -68,20 +68,22 @@ npm run dev
 
 > A reescrita da camada de persistência (`store`) e a tela de login são as próximas etapas.
 
-## Deploy (Netlify)
+## Deploy (Cloudflare Pages)
 
-O build embute a URL + anon key (públicas). A `service_role` **não** vai no bundle.
+O sistema fica no **Cloudflare Pages** (projeto `publicamed-sistema`), ligado a este
+repositório: cada push na `main` dispara o build sozinho, e o resultado aparece no
+GitHub como o check "Cloudflare Pages" do commit. Commit que não foi para o GitHub
+não chega ao site — o que roda em `localhost` é só a cópia local.
 
-**Simples (arrastar e soltar):**
-1. `npm run build` (gera `dist/`).
-2. Acesse https://app.netlify.com/drop e arraste a pasta `dist` (ou `publicamed-site.zip`).
-3. O site sobe numa URL `*.netlify.app`; o login funciona sem configurar nada.
+- Build: `npm run build`, saída em `dist/`.
+- Rotas: [`public/_redirects`](public/_redirects) manda qualquer caminho para o
+  `index.html` (app de página única).
+- Variáveis: `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` em *Settings →
+  Environment variables* do projeto no Cloudflare. O build embute as duas
+  (são públicas); a `service_role` **não** vai no bundle. Ao rotacionar as chaves do
+  Supabase, troque lá e publique de novo.
 
-Ao rotacionar as chaves do Supabase, rode `npm run build` de novo e suba o novo `dist`.
-
-**Deploy contínuo (git):** conecte o repositório no Netlify. O `netlify.toml` já define
-build (`npm run build`) e publish (`dist`); defina no Netlify as variáveis
-`VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
+O sistema não usa Netlify: o `netlify.toml` era resto da migração e foi removido.
 
 ## Estrutura
 
@@ -89,5 +91,6 @@ build (`npm run build`) e publish (`dist`); defina no Netlify as variáveis
 supabase/schema.sql        DDL + RLS
 scripts/import-seed.mjs     importação única do SEED → Supabase
 src/lib/supabase.js         cliente Supabase do front (anon)
+public/_redirects           roteamento de página única no Cloudflare Pages
 .env.example                modelo de variáveis de ambiente
 ```
