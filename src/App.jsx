@@ -5155,8 +5155,9 @@ const montarMensagemVendas = (grupo, lanc, dadosTema) => {
 };
 
 /* Caixa da mensagem: texto já pronto, editável, com copiar. Dia com mais de um trabalho
- * (ex.: capítulo + apresentação) gera uma mensagem por trabalho, escolhida nas abas. */
-function GeradorMensagem({ lanc, grupos, dadosTema, onClose }) {
+ * (ex.: capítulo + apresentação) gera uma mensagem por trabalho, escolhida nas abas.
+ * A busca por área usa a mesma caixa para um tema só, o escolhido na lista. */
+function GeradorMensagem({ lanc, grupos, dadosTema, onClose, titulo, contexto = "os temas do dia" }) {
   const [chave, setChave] = useState(grupos[0]?.chave);
   const grupo = grupos.find((g) => g.chave === chave) || grupos[0];
   const gerado = useMemo(() => montarMensagemVendas(grupo, lanc, dadosTema), [grupo, lanc]);
@@ -5170,7 +5171,7 @@ function GeradorMensagem({ lanc, grupos, dadosTema, onClose }) {
   };
   const editado = texto !== gerado.texto;
   return (
-    <Modal titulo={`Mensagem de vendas · dia ${lanc.dia}`} onClose={onClose} wide>
+    <Modal titulo={titulo || `Mensagem de vendas · dia ${lanc.dia}`} onClose={onClose} wide>
       {grupos.length > 1 && (
         <div className="msg-grupos" role="tablist" aria-label="Trabalho do dia">
           {grupos.map((g) => (
@@ -5180,7 +5181,7 @@ function GeradorMensagem({ lanc, grupos, dadosTema, onClose }) {
         </div>
       )}
       <p className="hint msg-hint">
-        Modelo padrão de <b>{grupo.tipo}</b> com os temas do dia e as vagas que ainda restam. Pode editar à vontade antes de copiar.
+        Modelo padrão de <b>{grupo.tipo}</b> com {contexto} e as vagas que ainda restam. Pode editar à vontade antes de copiar.
       </p>
       {gerado.fora.length > 0 && (
         <p className="nota msg-nota">Sem vaga (ficaram de fora): {gerado.fora.map((x) => x.titulo).join(" · ")}</p>
@@ -5286,6 +5287,48 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
       s(n.fechada, "fechado", "fechados"),
       s(n.prevista, "não aberto", "não abertos"),
     ].filter(Boolean).join(" · ") || "sem temas";
+  };
+  /* Busca por área: responde "tem trabalho de cardiologia?" sem passar dia por
+   * dia. Procura nas áreas e no título de todos os temas do mês, sem acento e por
+   * pedaço de palavra ("cardio" acha Cardiologia); com mais de uma palavra, o
+   * tema precisa ter todas. Lotado e fechado ficam atrás de um botão: a pergunta
+   * é o que ainda dá para vender. */
+  const [busca, setBusca] = useState("");
+  const [verEsgotados, setVerEsgotados] = useState(false);
+  const detRef = useRef(null);
+  const achados = useMemo(() => {
+    const termos = semAcento(busca).split(/\s+/).filter(Boolean);
+    if (!termos.length || !plano) return null;
+    const vistos = new Set(), lista = [];
+    for (const l of [...plano.lancamentos].sort((a, b) => a.dia - b.dia)) {
+      for (const t of temasDe(l)) {
+        if (!termos.every((p) => semAcento(`${t.areas} ${t.titulo}`).includes(p))) continue;
+        const pub = pubDoTema(l, t), tipo = t.tipo || l.tipo;
+        // o mesmo trabalho pode constar em mais de um dia: vale o primeiro
+        const chave = pub ? pub.id : chaveTipo(tipo) + "|" + chaveTitulo(t.titulo);
+        if (vistos.has(chave)) continue;
+        vistos.add(chave);
+        lista.push({
+          l, t, pub, tipo, sit: situacaoTema(pub), preco: t.preco ?? l.preco,
+          livres: pub ? Math.max(0, pub.maxVagas - pub.participantes.length) : (t.vagas ?? l.vagas),
+        });
+      }
+    }
+    // vendendo primeiro, depois o que ainda vai abrir; dentro de cada um, pela data
+    const peso = { aberta: 0, prevista: 1, lotada: 2, fechada: 2 };
+    lista.sort((a, b) => peso[a.sit] - peso[b.sit] || a.l.dia - b.l.dia);
+    return {
+      disponiveis: lista.filter((x) => peso[x.sit] < 2 && x.livres > 0),
+      esgotados: lista.filter((x) => peso[x.sit] === 2),
+    };
+  }, [busca, plano, pubPorTitulo]);
+  /* Cada tema achado gera a própria mensagem, no modelo do tipo dele: quem
+   * pergunta por uma área quer saber daquele trabalho, e o preço, a revista e o
+   * prazo do certificado vêm do dia em que ele está no cronograma. */
+  const [msgTema, setMsgTema] = useState(null);
+  const verDia = (dia) => {
+    setDiaSel(dia);
+    detRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
   // índices de venda p/ apurar o que já foi pago sem varrer a lista inteira por participante
   // (porTemaNome guarda todas as vendas do nome, não só a última: a mesma pessoa pode ter duas vagas)
@@ -5442,6 +5485,70 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
         </div>
       </div>
 
+      <div className="card busca-tema">
+        <input className="inp" type="search" value={busca} onChange={(e) => setBusca(e.target.value)}
+          placeholder={`Buscar área ou tema em ${MESES[plano.mes].toLowerCase()} (ex.: cardio, pediatria, ortopedia)`}
+          aria-label="Buscar tema por área" />
+        {achados && (() => {
+          const lista = verEsgotados ? [...achados.disponiveis, ...achados.esgotados] : achados.disponiveis;
+          const vendendo = achados.disponiveis.filter((x) => x.sit === "aberta").length;
+          const n = achados.disponiveis.length, e = achados.esgotados.length;
+          const mm = String(plano.mes + 1).padStart(2, "0");
+          const rotSit = (x) => {
+            if (x.sit !== "prevista") return SIT_TEMA[x.sit];
+            const d = isoDoDia(x.l.dia);
+            return d > hoje ? `abre ${String(x.l.dia).padStart(2, "0")}/${mm}` : d === hoje ? "abre hoje" : "não aberta";
+          };
+          return (
+            <>
+              <div className="busca-tema-res">
+                <span>
+                  {n ? <><b>{num(n)}</b> {n === 1 ? "tema disponível" : "temas disponíveis"} em {MESES[plano.mes].toLowerCase()}</>
+                    : <>Nenhum tema disponível com “{busca.trim()}” em {MESES[plano.mes].toLowerCase()}</>}
+                  {n > 0 && <span className="hint"> · {num(vendendo)} vendendo agora · {num(n - vendendo)} ainda não {n - vendendo === 1 ? "aberto" : "abertos"}</span>}
+                </span>
+                {e > 0 && (
+                  <button className="mini" onClick={() => setVerEsgotados((v) => !v)}>
+                    {verEsgotados ? "esconder" : "mostrar"} {e === 1 ? "o lotado ou fechado" : `os ${num(e)} lotados ou fechados`}
+                  </button>
+                )}
+              </div>
+              {lista.length > 0 && (
+                <ul className="cal-temas busca-tema-lista">
+                  {lista.map((x) => (
+                    <li key={x.pub ? x.pub.id : `${x.l.dia}|${x.tipo}|${x.t.titulo}`} className={x.sit}>
+                      <button className="busca-tema-dia" onClick={() => verDia(x.l.dia)} title="Ver o dia no calendário">
+                        <b>{String(x.l.dia).padStart(2, "0")}/{mm}</b>
+                        <span>{DIAS_SEMANA[new Date(plano.ano, plano.mes, x.l.dia).getDay()]}</span>
+                      </button>
+                      <div>
+                        <div className="cal-tema-areas">{x.t.areas}</div>
+                        {x.pub ? (
+                          <a className="link-titulo" href={`#pub=${encodeURIComponent(x.pub.nome)}::${encodeURIComponent(x.pub.tipo || "")}`} title="Abrir em Publicações e vagas"
+                            onClick={(ev) => { if (abrirForaDoApp(ev)) return; ev.preventDefault(); onAbrirPublicacao(x.pub.nome, x.pub.tipo); }}>{x.t.titulo}</a>
+                        ) : <span className="cal-tema-tit">{x.t.titulo}</span>}
+                        <span className="cal-tema-st">
+                          <span className={"cal-sit " + x.sit}>{rotSit(x)}</span>
+                          <span className="tipo-pill" style={{ "--tc": corTipo(x.tipo) }}>{x.tipo}</span>
+                          {" · "}{x.sit === "aberta" || x.sit === "prevista"
+                            ? `${num(x.livres)} ${x.livres === 1 ? "vaga livre" : "vagas livres"}`
+                            : `${x.pub.participantes.length}/${x.pub.maxVagas} vagas`}
+                          {x.preco > 0 && ` · ${brl(x.preco)} por vaga`}
+                        </span>
+                      </div>
+                      {(x.sit === "aberta" || x.sit === "prevista") && (
+                        <button className="btn sm msg-btn" onClick={() => setMsgTema(x)}
+                          title="Monta a mensagem padrão de vendas só com este tema">💬 Gerar mensagem</button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          );
+        })()}
+      </div>
+
       <div className="cal-split">
         <div className="card cal-card">
           <div className="card-head"><h3>{MESES[plano.mes]} · {plano.ano}</h3>
@@ -5478,7 +5585,7 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
           </div>
         </div>
 
-        <div className="card cal-detalhe">
+        <div className="card cal-detalhe" ref={detRef}>
           {!lanc && diaSel != null && editavel ? (
             // dia sem nada planejado: dá para pendurar um trabalho avulso nele
             <div className="pub-vazio-det">
@@ -5642,6 +5749,19 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
               fechada: !!(pub && pub.fechadaEm),
             };
           }} />
+      )}
+
+      {msgTema && (
+        <GeradorMensagem lanc={msgTema.l} onClose={() => setMsgTema(null)}
+          grupos={[{ chave: "tema", tipo: msgTema.tipo, preco: msgTema.preco, vagas: msgTema.t.vagas ?? msgTema.l.vagas, temas: [msgTema] }]}
+          titulo={`Mensagem de vendas · ${msgTema.tipo} · ${String(msgTema.l.dia).padStart(2, "0")}/${String(plano.mes + 1).padStart(2, "0")}`}
+          contexto="este tema"
+          dadosTema={(x) => ({
+            titulo: x.pub ? x.pub.nome : x.t.titulo,
+            areas: x.t.areas || (x.pub && x.pub.area) || "",
+            vagas: x.livres,
+            fechada: !!(x.pub && x.pub.fechadaEm),
+          })} />
       )}
 
       {plano.nota && <p className="nota cal-nota"><b>Regras do mês:</b> {plano.nota}</p>}
@@ -6592,6 +6712,26 @@ select.inp.sel-grupo.com-grupo{ background-image:radial-gradient(circle, var(--t
 .cal-tema-st{ display:block; font-size:11px; color:var(--muted2); margin-top:4px; }
 .cal-tema-st.cadastro{ color:var(--muted2); font-style:italic; margin-top:2px; }
 .cal-nota{ border-top:none; margin-top:4px; }
+/* busca de tema por área, acima do calendário */
+.busca-tema .inp{ width:100%; }
+.busca-tema-res{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+  margin:12px 0 6px; font-size:13px; color:var(--ink); }
+.busca-tema-lista{ max-height:420px; overflow-y:auto; border:1px solid var(--divider); border-radius:var(--r-md); }
+.busca-tema-lista li{ display:grid; grid-template-columns:52px minmax(0,1fr) auto; gap:12px; align-items:center; }
+.busca-tema-lista .busca-tema-dia{ align-self:start; }
+.busca-tema-lista .msg-btn{ white-space:nowrap; margin-right:6px; }
+@media (max-width:640px){
+  .busca-tema-lista li{ grid-template-columns:52px minmax(0,1fr); }
+  .busca-tema-lista .msg-btn{ grid-column:2; justify-self:start; }
+}
+.busca-tema-dia{ display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:2px 0; background:none; border:0;
+  font:inherit; cursor:pointer; border-radius:var(--r-sm); text-align:left; }
+.busca-tema-dia b{ font-size:13px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; }
+.busca-tema-dia span{ font-size:11px; color:var(--muted2); }
+.busca-tema-dia:hover b{ color:var(--brand); }
+.busca-tema-dia:focus-visible{ box-shadow:var(--ring); outline:none; }
+.busca-tema-lista .tipo-pill{ margin-right:2px; vertical-align:1px; }
+.cal-sit.prevista{ color:var(--muted); background:var(--soft); border-color:var(--border); }
 /* gerador de mensagem de vendas */
 .msg-ta{ width:100%; resize:vertical; line-height:1.5; font-family:inherit; font-size:13px; white-space:pre-wrap; margin-top:10px; }
 .msg-grupos{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
