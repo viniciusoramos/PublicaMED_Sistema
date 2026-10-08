@@ -567,7 +567,9 @@ export async function garantirDiaNoPlano(dataIso, modelo = {}) {
     vagas: modelo.vagas || 6,
     preco: modelo.preco || 0,
     custo: 0,
-    veiculo: '',
+    // tema arrastado para um dia vazio leva o veículo do dia de onde saiu: é dele
+    // que a mensagem de vendas tira a revista e o prazo do certificado
+    veiculo: modelo.veiculo || '',
     avulso: true,
   }).select('*, planejamento_temas(*)').single();
   if (novoLanc.error) throw novoLanc.error;
@@ -592,6 +594,54 @@ export async function marcarTemaPlanoRemovido(id, removido) {
 // só para temas acrescentados pela tela: não faziam parte do plano, somem de vez
 export async function removerTemaPlano(id) {
   const { error } = await supabase.from('planejamento_temas').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/* ---------- arrastar no calendário ----------
+ * Mexem só no cronograma. A publicação não é tocada, mas a data de abertura dela
+ * sai do dia em que o tema está, então muda junto. */
+const mudarDiaLanc = async (id, dia) => {
+  const { error } = await supabase.from('planejamento_lancamentos').update({ dia }).eq('id', id);
+  if (error) throw error;
+};
+// o lançamento inteiro (todos os temas, preço, veículo) vai para um dia vazio
+export async function moverLancamentoPlano(id, dia) {
+  await mudarDiaLanc(id, dia);
+}
+/* Troca dois dias de lugar. O par (mês, dia) é único, então um deles passa por
+ * um dia livre antes. Procurando do dia 1 em diante, o livre sai de dentro do
+ * mês sempre que houver um: se a troca parar no meio, o lançamento fica visível
+ * no calendário, e não num dia 31 de um mês de 30 dias, onde ninguém o veria. */
+export async function trocarDiasPlano(plano, a, b) {
+  const usados = new Set(plano.lancamentos.map((l) => l.dia));
+  const livre = Array.from({ length: 31 }, (_, i) => i + 1).find((d) => !usados.has(d));
+  if (!livre) throw new Error('o mês não tem nenhum dia livre para fazer a troca');
+  await mudarDiaLanc(a.id, livre);
+  try {
+    await mudarDiaLanc(b.id, a.dia);
+  } catch (e) {
+    await mudarDiaLanc(a.id, a.dia).catch(() => {}); // desfaz a primeira metade
+    throw e;
+  }
+  await mudarDiaLanc(a.id, b.dia);
+}
+/* Leva um tema para outro dia. O que ele herdava do dia de origem (tipo, vagas,
+ * preço, taxa, exige graduado) vai fixado nele, para não virar outro trabalho nem
+ * mudar de preço ao cair num dia de outro tipo. */
+export async function moverTemaPlano(id, lancamentoId, t) {
+  const { error } = await supabase.from('planejamento_temas').update({
+    lancamento_id: lancamentoId,
+    tipo: t.tipo,
+    vagas: t.vagas,
+    preco: t.preco,
+    taxa: t.taxa ?? null,
+    exige_graduado: t.exigeGraduado ?? null,
+  }).eq('id', id);
+  if (error) throw error;
+}
+// dia avulso que ficou sem tema nenhum depois de um arraste: existia só para segurar ele
+export async function removerLancamentoPlano(id) {
+  const { error } = await supabase.from('planejamento_lancamentos').delete().eq('id', id);
   if (error) throw error;
 }
 

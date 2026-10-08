@@ -1031,6 +1031,45 @@ export default function App() {
     try { await db.marcarTemaPlanoRemovido(tema.id, false); }
     catch (e) { aviso("Erro ao salvar: " + e.message); setPlanejamentos(antes); }
   };
+  /* Arrastar no calendário. O dia muda na tela antes de o banco responder, para o
+   * arraste não parecer travado; no fim o cronograma é relido do banco, e é ele
+   * que vale — inclusive para desfazer, se a gravação falhar. */
+  const recarregarPlano = async () => {
+    try { const rec = await db.carregarPlanejamentos(); if (rec) setPlanejamentos(rec); }
+    catch (e) { aviso("Erro ao reler o calendário: " + e.message); }
+  };
+  const moverDiaPlano = async (plano, origem, dia) => {
+    const destino = plano.lancamentos.find((l) => l.dia === dia);
+    setPlanejamentos((ps) => ps.map((p) => (p.id !== plano.id ? p : {
+      ...p,
+      lancamentos: p.lancamentos
+        .map((l) => (l.id === origem.id ? { ...l, dia } : destino && l.id === destino.id ? { ...l, dia: origem.dia } : l))
+        .sort((a, b) => a.dia - b.dia),
+    })));
+    try {
+      if (destino) await db.trocarDiasPlano(plano, origem, destino);
+      else await db.moverLancamentoPlano(origem.id, dia);
+      aviso(destino ? `Dias ${origem.dia} e ${dia} trocados de lugar` : `${origem.produto} passou para o dia ${dia}`);
+    } catch (e) { aviso("Erro ao mover: " + e.message); }
+    await recarregarPlano();
+  };
+  // o tema leva o que herdava do dia de origem; dia vazio ganha um lançamento avulso
+  const moverTemaPlano = async (plano, origem, tema, dia) => {
+    const tipo = tema.tipo || origem.tipo, vagas = tema.vagas ?? origem.vagas, preco = tema.preco ?? origem.preco;
+    const dataIso = `${plano.ano}-${String(plano.mes + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+    try {
+      const { lancamento } = await db.garantirDiaNoPlano(dataIso, {
+        tipo, produto: tipo, vagas, preco,
+        veiculo: chaveTipo(tipo) === chaveTipo(origem.tipo) ? origem.veiculo : "",
+      });
+      await db.moverTemaPlano(tema.id, lancamento.id, {
+        tipo, vagas, preco, taxa: tema.taxa ?? origem.taxaPorTema, exigeGraduado: tema.exigeGraduado ?? origem.exigeGraduado,
+      });
+      if (origem.avulso && origem.temas.every((x) => x.id === tema.id)) await db.removerLancamentoPlano(origem.id);
+      aviso(`Tema passou para o dia ${dia}`);
+    } catch (e) { aviso("Erro ao mover o tema: " + e.message); }
+    await recarregarPlano();
+  };
   // estorna uma taxa lançada: tira do mês do lançamento; se não achar, procura o mês mais recente com taxa suficiente
   const estornarTaxaFinanceiro = async (valor, dataIso) => {
     let alvo = null;
@@ -1605,7 +1644,8 @@ export default function App() {
         {tab === "planejamento" && (
           <Planejamento temas={temas} vendas={vendas} planejamentos={planejamentos} financeiro={financeiro} editavel={planoNoBanco}
             onAbrirPublicacao={abrirPublicacao} onCriarPublicacao={criarPublicacaoDoPlano}
-            onCriarNoDia={criarPublicacaoNoDia} onTirarTema={tirarTemaPlano} onRestaurarTema={restaurarTemaPlano} />
+            onCriarNoDia={criarPublicacaoNoDia} onTirarTema={tirarTemaPlano} onRestaurarTema={restaurarTemaPlano}
+            onMoverDia={moverDiaPlano} onMoverTema={moverTemaPlano} />
         )}
       </main>
 
@@ -5199,7 +5239,7 @@ function GeradorMensagem({ lanc, grupos, dadosTema, onClose, titulo, contexto = 
 }
 
 function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [], editavel = false,
-                        onAbrirPublicacao, onCriarPublicacao, onCriarNoDia, onTirarTema, onRestaurarTema }) {
+                        onAbrirPublicacao, onCriarPublicacao, onCriarNoDia, onTirarTema, onRestaurarTema, onMoverDia, onMoverTema }) {
   /* Abre no mes corrente quando ele esta planejado. O cronograma so chega do
    * banco depois da primeira renderizacao, entao a escolha e derivada a cada
    * render em vez de fixada no estado inicial - que rodaria com a lista vazia. */
@@ -5211,6 +5251,9 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
   const [diaSel, setDiaSel] = useState(plano?.lancamentos[0]?.dia ?? null);
   const [criando, setCriando] = useState(null); // { dados, taxa, dia, novo } — abre o form já preenchido
   const [msgVendas, setMsgVendas] = useState(false); // caixa "Gerar mensagem de vendas" do dia selecionado
+  // o que está sendo arrastado ({ tipo: "dia", l } ou { tipo: "tema", l, t }) e o dia sob o cursor
+  const [arrasto, setArrasto] = useState(null);
+  const [alvoDia, setAlvoDia] = useState(null);
   // temas em cartaz no dia e temas que foram tirados dele (guardados, dá para restaurar)
   const temasDe = (l) => l.temas.filter((t) => !t.removido);
   const tiradosDe = (l) => l.temas.filter((t) => t.removido);
@@ -5448,6 +5491,57 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
   const hoje = hojeIso();
   const diaHoje = anoDeIso(hoje) === plano.ano && mesDeIso(hoje) === plano.mes ? Number(hoje.slice(8, 10)) : null;
 
+  /* Arrastar um dia leva o lançamento inteiro; se o destino já tem trabalho, os
+   * dois trocam de lugar. Arrastar um tema (na lista do dia) leva só ele. Sempre
+   * com confirmação: um arraste sem querer mudaria a data de abertura de
+   * publicação já anunciada. */
+  const dd = (d) => `${String(d).padStart(2, "0")}/${String(plano.mes + 1).padStart(2, "0")}`;
+  // publicação que já vende e passaria a abrir depois de hoje sai de "Em venda" até a data nova
+  const atrasaVenda = (l, ts, dia) => {
+    if (!(isoDoDia(l.dia) <= hoje && isoDoDia(dia) > hoje)) return "";
+    const n = ts.filter((t) => situacaoTema(pubDoTema(l, t)) === "aberta").length;
+    if (!n) return "";
+    return `\n\nAtenção: ${n === 1 ? "1 publicação do dia " + dd(l.dia) + " já está em venda e passa" : `${n} publicações do dia ${dd(l.dia)} já estão em venda e passam`}`
+      + ` para "Programadas" até ${dd(dia)}.`;
+  };
+  const soltar = (dia) => {
+    const a = arrasto;
+    setArrasto(null); setAlvoDia(null);
+    if (!a || dia === a.l.dia) return;
+    const destino = porDia.get(dia);
+    if (a.tipo === "dia") {
+      const n = temasDe(a.l).length;
+      const msg = `Mover ${a.l.produto} do dia ${dd(a.l.dia)} para o dia ${dd(dia)}?\n\n`
+        + `${n === 1 ? "O tema vai junto" : `Os ${n} temas vão junto`}, com preço, vagas e veículo do dia.`
+        + (destino ? `\n\nO dia ${dd(dia)} já tem ${destino.produto}: os dois dias trocam de lugar.` : "")
+        + atrasaVenda(a.l, temasDe(a.l), dia) + (destino ? atrasaVenda(destino, temasDe(destino), a.l.dia) : "");
+      if (!confirm(msg)) return;
+      setDiaSel(dia);
+      onMoverDia(plano, a.l, dia);
+    } else {
+      const tipo = a.t.tipo || a.l.tipo;
+      const msg = `Mover este tema do dia ${dd(a.l.dia)} para o dia ${dd(dia)}?\n\n${a.t.titulo}`
+        + (destino && chaveTipo(destino.tipo) !== chaveTipo(tipo)
+          ? `\n\nO dia ${dd(dia)} é de ${destino.produto}: o tema continua como ${tipo}, com o preço e as vagas que já tinha.` : "")
+        + atrasaVenda(a.l, [a.t], dia);
+      if (!confirm(msg)) return;
+      onMoverTema(plano, a.l, a.t, dia);
+    }
+  };
+  // todo dia do mês recebe o que for solto nele, inclusive o vazio
+  const alvo = (dia) => (!editavel ? {} : {
+    onDragOver: (e) => { if (!arrasto) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (alvoDia !== dia) setAlvoDia(dia); },
+    onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setAlvoDia((d) => (d === dia ? null : d)); },
+    onDrop: (e) => { e.preventDefault(); soltar(dia); },
+  });
+  const arrastar = (item) => (!editavel ? {} : {
+    draggable: true,
+    onDragStart: (e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", item.tipo); setArrasto(item); },
+    onDragEnd: () => { setArrasto(null); setAlvoDia(null); },
+  });
+  const classeArrasto = (dia) => (alvoDia === dia && arrasto && arrasto.l.dia !== dia ? " alvo" : "")
+    + (arrasto?.tipo === "dia" && arrasto.l.dia === dia ? " arrastando" : "");
+
   return (
     <>
       <Header titulo="Planejamento editorial"
@@ -5552,7 +5646,7 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
       <div className="cal-split">
         <div className="card cal-card">
           <div className="card-head"><h3>{MESES[plano.mes]} · {plano.ano}</h3>
-            <span className="hint">{editavel ? "clique em qualquer dia — inclusive vazio — para ver ou adicionar trabalho" : "clique num dia com lançamento"}</span></div>
+            <span className="hint">{editavel ? "clique em qualquer dia — inclusive vazio — para ver ou adicionar trabalho · arraste um dia ou um tema para mudar a data" : "clique num dia com lançamento"}</span></div>
           <div className="cal-grid">
             {DIAS_SEMANA.map((d) => <div key={d} className="cal-dow">{d}</div>)}
             {celulas.map((dia, i) => {
@@ -5560,8 +5654,9 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
               const l = porDia.get(dia);
               // dia sem lançamento continua selecionável: é por onde se cria um trabalho avulso
               if (!l) return (
-                <button key={dia} className={"cal-cel livre" + (diaSel === dia ? " sel" : "") + (dia === diaHoje ? " hoje" : "")}
-                  onClick={() => setDiaSel(dia)} title={editavel ? `Adicionar trabalho em ${dia}/${String(plano.mes + 1).padStart(2, "0")}` : undefined}>
+                <button key={dia} className={"cal-cel livre" + (diaSel === dia ? " sel" : "") + (dia === diaHoje ? " hoje" : "") + classeArrasto(dia)}
+                  onClick={() => setDiaSel(dia)} title={editavel ? `Adicionar trabalho em ${dia}/${String(plano.mes + 1).padStart(2, "0")}` : undefined}
+                  {...alvo(dia)}>
                   <span className="cal-num">{dia}</span>
                   {editavel && <span className="cal-mais" aria-hidden="true">+</span>}
                 </button>
@@ -5570,8 +5665,9 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
               // o dia só ganha a cor do tipo quando pelo menos um tema dele foi aberto no sistema
               const ativo = r.criadas > 0;
               return (
-                <button key={dia} className={"cal-cel tem" + (ativo ? " aberto" : " neutro") + (diaSel === dia ? " sel" : "") + (dia === diaHoje ? " hoje" : "")} style={{ "--tc": corTipo(l.tipo) }}
+                <button key={dia} className={"cal-cel tem" + (ativo ? " aberto" : " neutro") + (diaSel === dia ? " sel" : "") + (dia === diaHoje ? " hoje" : "") + classeArrasto(dia)} style={{ "--tc": corTipo(l.tipo) }}
                   onClick={() => setDiaSel(dia)} aria-pressed={diaSel === dia}
+                  {...alvo(dia)} {...arrastar({ tipo: "dia", l })}
                   aria-label={`Dia ${dia}: ${l.produto}, ${r.criadas} de ${l.temas.length} publicações abertas, ${r.ocupadas} de ${c.vagas} vagas vendidas`}
                   title={`${l.produto} · ${r.criadas}/${l.temas.length} abertas`}>
                   <span className="cal-num">{dia}</span>
@@ -5664,7 +5760,9 @@ function Planejamento({ temas, vendas = [], planejamentos = [], financeiro = [],
                         const vagasPrev = t.vagas ?? lanc.vagas;
                         const sit = situacaoTema(pub);
                         return (
-                          <li key={t.id || t.titulo} className={sit}>
+                          <li key={t.id || t.titulo} className={sit + (arrasto?.tipo === "tema" && arrasto.t.id === t.id ? " arrastando" : "")}
+                            {...(t.id ? arrastar({ tipo: "tema", l: lanc, t }) : {})}
+                            title={editavel && t.id ? "Arraste para um dia do calendário para mudar a data deste tema" : undefined}>
                             <div className="cal-tema-topo">
                               <div className="cal-tema-areas">{t.areas}</div>
                               {editavel && (
@@ -6712,6 +6810,16 @@ select.inp.sel-grupo.com-grupo{ background-image:radial-gradient(circle, var(--t
 .cal-tema-st{ display:block; font-size:11px; color:var(--muted2); margin-top:4px; }
 .cal-tema-st.cadastro{ color:var(--muted2); font-style:italic; margin-top:2px; }
 .cal-nota{ border-top:none; margin-top:4px; }
+/* arrastar no calendário: o dia sob o cursor ganha borda tracejada; o que está
+   sendo levado fica apagado no lugar de onde saiu */
+.cal-cel.tem[draggable="true"]{ cursor:grab; }
+.cal-cel.tem[draggable="true"]:active{ cursor:grabbing; }
+/* o destino precisa vencer qualquer estado do dia (aberto, neutro, selecionado, hover) */
+.cal-cel.alvo{ border:1px dashed var(--brand) !important; box-shadow:inset 0 0 0 1px var(--brand) !important;
+  background:color-mix(in srgb, var(--brand) 10%, var(--surface)) !important; }
+.cal-cel.arrastando{ opacity:.45; }
+.cal-temas li[draggable="true"]{ cursor:grab; }
+.cal-temas li.arrastando{ opacity:.45; }
 /* busca de tema por área, acima do calendário */
 .busca-tema .inp{ width:100%; }
 .busca-tema-res{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
