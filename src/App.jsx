@@ -3110,6 +3110,23 @@ function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
   const [arrastando, setArrastando] = useState(null);
   const [colSobre, setColSobre] = useState(null);
 
+  /* Pessoas e vagas da publicação de cada trabalho. Casa por tipo + título, como o
+   * calendário: um capítulo e uma apresentação de mesmo nome são trabalhos
+   * diferentes, cada um com as suas vagas. Trabalho sem publicação fica sem número. */
+  const pubDoTrab = useMemo(() => {
+    const ix = new Map((temas || []).map((p) => [chaveTipo(p.tipo) + "|" + chaveTitulo(p.nome), p]));
+    return (t) => ix.get(chaveTipo(t.tipo) + "|" + chaveTitulo(t.titulo)) || null;
+  }, [temas]);
+  const vagasDe = (t) => {
+    const p = pubDoTrab(t);
+    if (!p) return null;
+    const n = p.participantes.length, max = p.maxVagas || 0;
+    return (
+      <span className={"kb-vagas" + (max && n >= max ? " cheia" : n ? "" : " vazia")}
+        title={max && n >= max ? `Lotada · ${n} de ${max} vagas` : `${n} de ${max} vagas preenchidas`}>{n}/{max}</span>
+    );
+  };
+
   const contagem = statusDisp.map((s) => ({ s, n: trabalhos.filter((t) => t.status === s).length }));
 
   /* Ritmo de produção: quantos trabalhos por mês, pela data de criação do registro,
@@ -3313,18 +3330,21 @@ function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
                           <span className="tipo-pill" style={{ "--tc": corTipo(t.tipo) }}>{t.tipo}</span>
                           <span className="kb-data">{t.criadoEm ? fmtData(diaDe(t.criadoEm)) : "—"}</span>
                         </div>
-                        {editLocalId === t.id ? (
-                          <input className="onde-inp kb-onde" autoFocus defaultValue={t.localPublicacao || ""} placeholder="Revista / evento…"
-                            onBlur={(e) => { mudarLocal(t.id, e.target.value.trim()); setEditLocalId(null); }}
-                            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); else if (e.key === "Escape") setEditLocalId(null); }} />
-                        ) : t.localPublicacao ? (
-                          <button className="onde-chip kb-onde" onClick={() => setEditLocalId(t.id)} title="Editar local de publicação">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                            {t.localPublicacao}
-                          </button>
-                        ) : (
-                          <button className="onde-add kb-onde" onClick={() => setEditLocalId(t.id)}>+ onde publicar</button>
-                        )}
+                        <div className="kb-rodape">
+                          {editLocalId === t.id ? (
+                            <input className="onde-inp kb-onde" autoFocus defaultValue={t.localPublicacao || ""} placeholder="Revista / evento…"
+                              onBlur={(e) => { mudarLocal(t.id, e.target.value.trim()); setEditLocalId(null); }}
+                              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); else if (e.key === "Escape") setEditLocalId(null); }} />
+                          ) : t.localPublicacao ? (
+                            <button className="onde-chip kb-onde" onClick={() => setEditLocalId(t.id)} title="Editar local de publicação">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                              {t.localPublicacao}
+                            </button>
+                          ) : (
+                            <button className="onde-add kb-onde" onClick={() => setEditLocalId(t.id)}>+ onde publicar</button>
+                          )}
+                          {editLocalId !== t.id && vagasDe(t)}
+                        </div>
                         <button className="kb-del" onClick={() => remover(t.id)}
                           aria-label={`Remover trabalho ${t.titulo}`} title="Remover trabalho">×</button>
                       </article>
@@ -3342,7 +3362,8 @@ function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
       <div className="card no-pad">
         <table className="tab tab-trab">
           <thead><tr>
-            <th scope="col">Título</th><th scope="col">Adicionado</th><th scope="col">Status</th>
+            <th scope="col">Título</th><th scope="col">Adicionado</th>
+            <th scope="col" className="r" title="Pessoas na publicação / vagas">Vagas</th><th scope="col">Status</th>
             <th scope="col"><span className="sr-only">Ações</span></th>
           </tr></thead>
           <tbody>
@@ -3368,6 +3389,7 @@ function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
                   </div>
                 </td>
                 <td className="nowrap cel-data">{t.criadoEm ? fmtData(diaDe(t.criadoEm)) : "—"}</td>
+                <td className="r nowrap">{vagasDe(t) || <span className="muted">—</span>}</td>
                 <td>
                   <select className="status-sel" style={{ "--tc": corStatus(t.status) }} aria-label={`Status do trabalho ${t.titulo}`}
                     value={t.status} onChange={(e) => { if (e.target.value === "__novo") { const s = prompt("Nome do novo status:"); if (s && s.trim()) mudarStatus(t.id, s.trim()); } else mudarStatus(t.id, e.target.value); }}>
@@ -6093,8 +6115,8 @@ select.inp{ cursor:pointer; }
 .tab tbody tr:last-child td{ border-bottom:none; }
 .tab tbody tr:hover{ background:var(--hover); }
 /* Trabalhos: grid de colunas estável + hierarquia por linha */
-.tab-trab th:nth-child(2){ width:116px; } .tab-trab th:nth-child(3){ width:228px; }
-.tab-trab th:nth-child(4){ width:48px; }
+.tab-trab th:nth-child(2){ width:116px; } .tab-trab th:nth-child(3){ width:72px; }
+.tab-trab th:nth-child(4){ width:228px; } .tab-trab th:nth-child(5){ width:48px; }
 .tab-trab td.cel-data{ font-size:12px; color:var(--muted2); }
 .tab-trab .status-sel{ width:100%; }
 
@@ -6158,6 +6180,13 @@ select.inp{ cursor:pointer; }
 .kb-grip:focus-visible{ outline:2px solid var(--brand); outline-offset:2px; border-radius:var(--r-sm); }
 .kb-data{ font-size:11px; color:var(--muted2); margin-left:auto; }
 .kb-onde{ margin-top:6px; max-width:100%; }
+/* rodapé do cartão: onde publicar à esquerda, pessoas/vagas da publicação à direita */
+.kb-rodape{ display:flex; align-items:center; gap:8px; margin-top:6px; }
+.kb-rodape .kb-onde{ margin-top:0; min-width:0; }
+.kb-rodape .onde-inp{ flex:1; }
+.kb-vagas{ margin-left:auto; flex-shrink:0; font-size:11px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; }
+.kb-vagas.vazia{ color:var(--muted2); }
+.kb-vagas.cheia{ color:var(--ok); }
 .kb-del{ position:absolute; top:5px; right:5px; width:18px; height:18px; display:grid; place-items:center;
   padding:0; font-size:14px; line-height:1; color:var(--muted2); background:none; border:0;
   border-radius:var(--r-sm); cursor:pointer; opacity:0; transition:opacity .14s ease; }
