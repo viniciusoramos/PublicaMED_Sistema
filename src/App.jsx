@@ -3117,13 +3117,22 @@ function Trabalhos({ trabalhos, temas, salvar, aviso, onAbrirPublicacao }) {
     const ix = new Map((temas || []).map((p) => [chaveTipo(p.tipo) + "|" + chaveTitulo(p.nome), p]));
     return (t) => ix.get(chaveTipo(t.tipo) + "|" + chaveTitulo(t.titulo)) || null;
   }, [temas]);
+  /* A etiqueta diz por que a publicação parou de vender: lotou, ou foi fechada
+   * antes de lotar (publicada com vaga sobrando). Lotada vence fechada aqui — ao
+   * contrário do calendário —, porque a pergunta é se ela encheu. */
   const vagasDe = (t) => {
     const p = pubDoTrab(t);
     if (!p) return null;
     const n = p.participantes.length, max = p.maxVagas || 0;
+    const sit = max && n >= max ? "lotada" : p.fechadaEm ? "fechada" : "";
     return (
-      <span className={"kb-vagas" + (max && n >= max ? " cheia" : n ? "" : " vazia")}
-        title={max && n >= max ? `Lotada · ${n} de ${max} vagas` : `${n} de ${max} vagas preenchidas`}>{n}/{max}</span>
+      <span className={"kb-vagas" + (!sit && !n ? " vazia" : "")}
+        title={sit === "lotada" ? `Lotada · ${n} de ${max} vagas`
+          : sit === "fechada" ? `Fechada antes de lotar · ${n} de ${max} vagas, ${max - n} sobraram`
+          : `${n} de ${max} vagas preenchidas`}>
+        {sit && <span className={"cal-sit " + sit}>{sit === "lotada" ? "Lotada" : "Fechada"}</span>}
+        {n}/{max}
+      </span>
     );
   };
 
@@ -6115,7 +6124,7 @@ select.inp{ cursor:pointer; }
 .tab tbody tr:last-child td{ border-bottom:none; }
 .tab tbody tr:hover{ background:var(--hover); }
 /* Trabalhos: grid de colunas estável + hierarquia por linha */
-.tab-trab th:nth-child(2){ width:116px; } .tab-trab th:nth-child(3){ width:72px; }
+.tab-trab th:nth-child(2){ width:116px; } .tab-trab th:nth-child(3){ width:136px; }
 .tab-trab th:nth-child(4){ width:228px; } .tab-trab th:nth-child(5){ width:48px; }
 .tab-trab td.cel-data{ font-size:12px; color:var(--muted2); }
 .tab-trab .status-sel{ width:100%; }
@@ -6184,9 +6193,10 @@ select.inp{ cursor:pointer; }
 .kb-rodape{ display:flex; align-items:center; gap:8px; margin-top:6px; }
 .kb-rodape .kb-onde{ margin-top:0; min-width:0; }
 .kb-rodape .onde-inp{ flex:1; }
-.kb-vagas{ margin-left:auto; flex-shrink:0; font-size:11px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; }
+.kb-vagas{ display:inline-flex; align-items:center; gap:6px; margin-left:auto; flex-shrink:0;
+  font-size:11px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; }
 .kb-vagas.vazia{ color:var(--muted2); }
-.kb-vagas.cheia{ color:var(--ok); }
+.kb-vagas .cal-sit{ margin-right:0; }
 .kb-del{ position:absolute; top:5px; right:5px; width:18px; height:18px; display:grid; place-items:center;
   padding:0; font-size:14px; line-height:1; color:var(--muted2); background:none; border:0;
   border-radius:var(--r-sm); cursor:pointer; opacity:0; transition:opacity .14s ease; }
