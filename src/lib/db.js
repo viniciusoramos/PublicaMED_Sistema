@@ -306,8 +306,16 @@ export async function criarAnoFinanceiro(ano) {
   if (error) throw error;
   return data.map(finDe).sort((a, b) => a.ordem - b.ordem);
 }
-export async function atualizarFinanceiro(id, d) {
-  const { data, error } = await supabase.from('financeiro').update({
+// campo da tela -> coluna do banco
+const COL_FIN = {
+  faturamento: 'faturamento', taxaPublicacao: 'taxa_publicacao', custoAds: 'custo_ads', custoFixo: 'custo_fixo',
+  custoExtra: 'custo_extra', custoExtraDesc: 'custo_extra_desc', faturamentoAjuste: 'faturamento_ajuste', imposto: 'imposto',
+};
+/* `so` limita a gravação aos campos que a pessoa mudou. Gravar o mês inteiro
+ * levava junto o que a aba tinha na memória para os outros campos — e, numa aba
+ * aberta havia dias, isso desfazia o que outra aba tinha lançado. */
+export async function atualizarFinanceiro(id, d, so = null) {
+  const row = {
     faturamento: d.faturamento || 0,
     taxa_publicacao: d.taxaPublicacao || 0,
     custo_ads: d.custoAds || 0,
@@ -318,7 +326,25 @@ export async function atualizarFinanceiro(id, d) {
     // sem `|| 0`: aqui o nulo quer dizer "calcula pela alíquota", e zero quer
     // dizer "não pagou imposto neste mês" — são coisas diferentes
     imposto: d.imposto == null ? null : d.imposto,
-  }).eq('id', id).select().single();
+  };
+  const cols = so ? new Set(so.map((k) => COL_FIN[k])) : null;
+  const { data, error } = await supabase.from('financeiro')
+    .update(cols ? Object.fromEntries(Object.entries(row).filter(([c]) => cols.has(c))) : row)
+    .eq('id', id).select().single();
+  if (error) throw error;
+  return finDe(data);
+}
+/* Soma (ou desconta, com valor negativo) num custo do mês, lendo o total do banco
+ * na hora e gravando só aquela coluna. Antes a conta saía do total que a aba tinha
+ * na memória: uma aba aberta havia dias somava em cima de um número velho e
+ * apagava o que outra tinha lançado — foi assim que outubro/2026 perdeu R$ 1.500
+ * de custo extra. Devolve o mês como está no banco, para a tela se atualizar. */
+export async function somarNoCustoDoMes(id, campo, delta) {
+  const col = COL_FIN[campo];
+  const atual = await supabase.from('financeiro').select(col).eq('id', id).single();
+  if (atual.error) throw atual.error;
+  const novo = Math.max(0, Math.round(((Number(atual.data[col]) || 0) + delta) * 100) / 100);
+  const { data, error } = await supabase.from('financeiro').update({ [col]: novo }).eq('id', id).select().single();
   if (error) throw error;
   return finDe(data);
 }

@@ -767,13 +767,11 @@ const baixarTexto = (nome, conteudo) => {
   document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 const trabalhoMudou = (a, b) => a.titulo !== b.titulo || a.tipo !== b.tipo || a.status !== b.status;
-const finMudou = (a, b) =>
-  (a.faturamento || 0) !== (b.faturamento || 0) || (a.taxaPublicacao || 0) !== (b.taxaPublicacao || 0) ||
-  (a.custoAds || 0) !== (b.custoAds || 0) || (a.custoFixo || 0) !== (b.custoFixo || 0) ||
-  (a.custoExtra || 0) !== (b.custoExtra || 0) || (a.custoExtraDesc || "") !== (b.custoExtraDesc || "") ||
-  (a.faturamentoAjuste || 0) !== (b.faturamentoAjuste || 0) ||
-  // compara com ?? e não com ||: aqui nulo ("calcula") e zero ("não pagou") são diferentes
-  (a.imposto ?? null) !== (b.imposto ?? null);
+// os campos do mês que a tela edita, e quais deles mudaram — só esses vão para o banco
+const CAMPOS_FIN = ["faturamento", "taxaPublicacao", "custoAds", "custoFixo", "custoExtra", "custoExtraDesc", "faturamentoAjuste", "imposto"];
+// imposto com ?? e não com ||: aqui nulo ("calcula") e zero ("não pagou") são diferentes
+const valorFin = (f, k) => (k === "imposto" ? f.imposto ?? null : k === "custoExtraDesc" ? f.custoExtraDesc || "" : f[k] || 0);
+const camposFinMudados = (a, b) => CAMPOS_FIN.filter((k) => valorFin(a, k) !== valorFin(b, k));
 // (CRUD de publicações é incremental via db.*; ver os handlers granulares no App)
 
 /* Qual banco o painel está usando. Existe porque o `npm run dev` aponta para o Supabase de
@@ -849,11 +847,20 @@ export default function App() {
   };
   const salvarFinanceiro = async (nf) => {
     const antes = financeiro; setFinanceiro(nf);
-    try { for (const f of nf) { const old = antes.find((x) => x.id === f.id); if (old && finMudou(old, f)) await db.atualizarFinanceiro(f.id, f); } }
+    try {
+      for (const f of nf) {
+        const old = antes.find((x) => x.id === f.id);
+        const mudou = old ? camposFinMudados(old, f) : [];
+        if (mudou.length) await db.atualizarFinanceiro(f.id, f, mudou);
+      }
+    }
     catch (e) { aviso("Erro ao salvar: " + e.message); setFinanceiro(antes); }
   };
   /* Itens de custo: o item entra somando no total do mês e sai descontando,
-     para o número da planilha e o detalhamento nunca se contradizerem. */
+     para o número da planilha e o detalhamento nunca se contradizerem. A soma é
+     feita sobre o total que está no banco, não sobre o desta aba (ver
+     db.somarNoCustoDoMes), e a tela fica com o mês que o banco devolve. */
+  const trocarMeses = (frescos) => setFinanceiro((fs) => fs.map((f) => frescos.find((x) => x.id === f.id) || f));
   // deste mês em diante (o custo fixo vale para os próximos, não para o passado)
   const mesesDaquiEmDiante = (linha) => financeiro.filter((f) =>
     f.ano > linha.ano || (f.ano === linha.ano && f.ordem >= linha.ordem));
@@ -868,7 +875,9 @@ export default function App() {
     try {
       const novos = await db.criarItensFinanceiro(alvos.map((f) => ({ mesId: f.id, campo, valor, descricao, recorrente: repetir })));
       setFinItens((is) => [...is, ...novos]);
-      for (const f of atualizadas.filter((x) => ids.has(x.id))) await db.atualizarFinanceiro(f.id, f);
+      const frescos = [];
+      for (const f of alvos) frescos.push(await db.somarNoCustoDoMes(f.id, campo, valor));
+      trocarMeses(frescos);
       aviso(`${brl(valor)} somado${descricao ? " · " + descricao : ""}` + (repetir ? ` · em ${alvos.length} meses` : ""));
     } catch (e) { aviso("Erro: " + e.message); setFinanceiro(antes); setFinItens(antesI); }
   };
@@ -893,7 +902,9 @@ export default function App() {
     setFinItens((is) => is.filter((x) => !idsItens.includes(x.id)));
     try {
       await db.removerItensFinanceiro(idsItens);
-      for (const f of atualizadas.filter((x) => porMes.has(x.id))) await db.atualizarFinanceiro(f.id, f);
+      const frescos = [];
+      for (const [mesId, v] of porMes) frescos.push(await db.somarNoCustoDoMes(mesId, item.campo, -v));
+      trocarMeses(frescos);
       aviso(`Removido de ${alvos.length} ${alvos.length === 1 ? "mês" : "meses"}`);
     } catch (e) { aviso("Erro: " + e.message); setFinanceiro(antes); setFinItens(antesI); }
   };
@@ -1082,9 +1093,8 @@ export default function App() {
         .find((f) => (f.taxaPublicacao || 0) >= valor - 0.005);
     }
     if (!alvo) return false;
-    const atualizado = { ...alvo, taxaPublicacao: Math.max(0, (alvo.taxaPublicacao || 0) - valor) };
-    await db.atualizarFinanceiro(alvo.id, atualizado);
-    setFinanceiro((fs) => fs.map((f) => (f.id === alvo.id ? atualizado : f)));
+    const salva = await db.somarNoCustoDoMes(alvo.id, "taxaPublicacao", -valor);
+    setFinanceiro((fs) => fs.map((f) => (f.id === salva.id ? salva : f)));
     return true;
   };
   // excluir publicação -> remove também o trabalho vinculado (mesmo título) e estorna a taxa do Financeiro
@@ -1208,7 +1218,7 @@ export default function App() {
       linha = novas.find((f) => f.ordem === mesIdx);
     }
     if (!linha) return;
-    const salva = await db.atualizarFinanceiro(linha.id, { ...linha, taxaPublicacao: (linha.taxaPublicacao || 0) + taxa });
+    const salva = await db.somarNoCustoDoMes(linha.id, "taxaPublicacao", taxa);
     setFinanceiro((fs) => fs.map((f) => (f.id === salva.id ? salva : f)));
   };
   // CPF informado numa participação passa a valer para as outras da mesma pessoa
