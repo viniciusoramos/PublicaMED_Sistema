@@ -133,7 +133,7 @@ for (const x of [...res.tel, ...res.nome]) {
   e.pessoas.add(chaveTel(x.telefone) || tokens(x.nome).join(" "));
 }
 console.log(`\npor grupo            vendas   (tel + nome)   clientes`);
-for (const g of ["#1", "#2", "#3", "#4", "#5"]) {
+for (const g of ["#1", "#2", "#3", "#4", "#5", "#6"]) {
   const e = porG.get(g) || { tel: 0, nome: 0, pessoas: new Set() };
   console.log(`   ${g}              ${String(e.tel + e.nome).padStart(5)}    (${e.tel} + ${e.nome})${" ".repeat(Math.max(1, 10 - String(e.tel).length - String(e.nome).length))}${String(e.pessoas.size).padStart(5)}`);
 }

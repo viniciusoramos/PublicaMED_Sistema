@@ -1521,11 +1521,12 @@ export default function App() {
     }
     return out;
   }, [trabalhos]);
-  /* Grupos que o cadastro oferece: os que já aparecem como origem de alguma venda.
-   * O nome gravado varia (o #5 tem acento), então cada grupo entra uma vez só,
-   * com a grafia mais usada — é ela que vai para a venda nova. */
+  /* Grupos que o cadastro oferece: os de GRUPOS_WPP e os que já aparecem como
+   * origem de alguma venda. O nome gravado varia (o #5 tem acento), então cada
+   * grupo entra uma vez só, com a grafia mais usada — é ela que vai para a venda
+   * nova; grupo sem venda ainda vai com o nome da lista. */
   const gruposOrigem = useMemo(() => {
-    const cont = new Map();
+    const cont = new Map(GRUPOS_WPP.map((g) => [g, 0]));
     for (const v of vendas) {
       const o = (v.origem || "").trim();
       if (o) cont.set(o, (cont.get(o) || 0) + 1);
@@ -2109,9 +2110,9 @@ function Destaque({ rotulo, principal, detalhe }) {
    ============================================================ */
 /* A origem (vendas.origem) é o nome exato do grupo de WhatsApp de onde veio a
  * venda, gravado pelo cruzamento da lista de membros com as vendas (skill
- * origem-vendas). Os cinco grupos têm o mesmo nome e só muda o número — e o #5
+ * origem-vendas). Os seis grupos têm o mesmo nome e só muda o número — e o #5
  * foi criado com acento em "Científicos" —, então na tela viram "Grupo #1" a
- * "Grupo #5". Outra origem que venha a existir aparece com o próprio nome. */
+ * "Grupo #6". Outra origem que venha a existir aparece com o próprio nome. */
 const SEM_ORIGEM = "Sem origem";
 const rotuloOrigem = (o) => {
   const t = String(o || "").trim();
@@ -2122,10 +2123,18 @@ const rotuloOrigem = (o) => {
 const numGrupo = (rot) => Number((rot.match(/^Grupo #(\d+)$/) || [])[1]) || 0;
 const ordemOrigem = (a, b) => (numGrupo(a) || 99) - (numGrupo(b) || 99) || a.localeCompare(b, "pt-BR");
 // Recharts não lê var(): cor fixa por grupo, calibrada para cada tema
+// o #6 é verde-oliva: longe do verde do #3 e do laranja do #2 nos dois temas
 const COR_GRUPO = {
-  claro: ["#256E93", "#DD6B20", "#0F7A4D", "#6D5DD3", "#B03063"],
-  escuro: ["#5AA7CC", "#E8A33D", "#57CF9A", "#A99CF0", "#E4837E"],
+  claro: ["#256E93", "#DD6B20", "#0F7A4D", "#6D5DD3", "#B03063", "#7A8A12"],
+  escuro: ["#5AA7CC", "#E8A33D", "#57CF9A", "#A99CF0", "#E4837E", "#C5D45C"],
 };
+/* Os grupos que existem, com o nome como está no WhatsApp. O cadastro oferece
+ * também os que ainda não têm venda nenhuma — sem isso, a primeira venda de um
+ * grupo novo não teria como ser marcada nele. */
+const GRUPOS_WPP = [
+  "PublicaMed (Artigos Cientificos)", "PublicaMed (Artigos Cientificos) #2", "PublicaMed (Artigos Cientificos) #3",
+  "PublicaMed (Artigos Cientificos) #4", "PublicaMed (Artigos Científicos) #5", "PublicaMed (Artigos Científicos) #6",
+];
 const corOrigem = (rot, dark) => {
   if (rot === SEM_ORIGEM) return dark ? "#3A3A3D" : "#C9D3DD";
   const n = numGrupo(rot), pal = COR_GRUPO[dark ? "escuro" : "claro"];
@@ -5951,7 +5960,7 @@ function Estilos() {
      encostam no fundo da página e as etapas viram um borrão só. */
   --kb-painel:#E4EAF1; --kb-cartao:#FFFFFF;
   /* grupos de WhatsApp: mesmas cores de COR_GRUPO (o gráfico precisa delas em hex) */
-  --grupo-1:#256E93; --grupo-2:#DD6B20; --grupo-3:#0F7A4D; --grupo-4:#6D5DD3; --grupo-5:#B03063;
+  --grupo-1:#256E93; --grupo-2:#DD6B20; --grupo-3:#0F7A4D; --grupo-4:#6D5DD3; --grupo-5:#B03063; --grupo-6:#7A8A12;
   --sel-chevron:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%235D6D7D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
 }
 .root.dark{
@@ -5965,7 +5974,7 @@ function Estilos() {
   /* no escuro a página é preta, então a coluna sobe um degrau e o cartão sobe
      mais um — é o que separa visualmente as etapas */
   --kb-painel:#121214; --kb-cartao:#26262A;
-  --grupo-1:#5AA7CC; --grupo-2:#E8A33D; --grupo-3:#57CF9A; --grupo-4:#A99CF0; --grupo-5:#E4837E;
+  --grupo-1:#5AA7CC; --grupo-2:#E8A33D; --grupo-3:#57CF9A; --grupo-4:#A99CF0; --grupo-5:#E4837E; --grupo-6:#C5D45C;
   /* bordas sempre translúcidas, nunca cinza sólido */
   --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.12); --divider:rgba(255,255,255,.06);
   --brand-soft:rgba(59,158,222,.14); --ring:0 0 0 3px rgba(59,158,222,.35);

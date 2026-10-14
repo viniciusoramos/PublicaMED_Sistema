@@ -106,8 +106,14 @@ Nunca sobrescreva origem já preenchida.
   ficaram sem, e nunca mexe no que foi escolhido à mão.
 - **Quem está em dois grupos fica sem origem**, por decisão do Lucas. Na leitura
   de 23/09/2026 foram seis clientes.
-- **O #5 foi criado com acento** ("Científicos"); os outros quatro, sem. A
-  origem guarda o nome exato, e o painel normaliza para "Grupo #1".."#5".
+- **O #5 foi criado com acento** ("Científicos"); os outros, sem. A origem
+  guarda o nome exato, e o painel normaliza para "Grupo #1".."#6".
+- **O #6 surgiu em 14/10/2026.** O cadastro já o oferece antes da primeira
+  venda, pela lista `GRUPOS_WPP` em `src/App.jsx`, gravado como
+  "PublicaMed (Artigos Científicos) #6". O acento foi chute pelo #5: se o nome
+  no WhatsApp for outro, corrija a lista. O painel junta as duas grafias no
+  mesmo "Grupo #6" de qualquer jeito. Grupo novo entra nessa lista, no
+  `cruza.mjs` e no `PROMPT-COWORK.md`.
 - **Cobertura:** cerca de 35% das vendas de 2025 têm origem, contra 80–89% de
   julho a setembro de 2026. Venda antiga fica sem origem porque a pessoa saiu do
   grupo ou não tem telefone.

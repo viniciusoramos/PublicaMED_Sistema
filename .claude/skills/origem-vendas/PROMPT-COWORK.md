@@ -12,16 +12,17 @@ navegador. **Não é o meu WhatsApp pessoal.** Antes de começar, confirme que a
 conta aberta é a do PublicaMED — se houver mais de uma janela ou perfil de
 WhatsApp aberto, me pergunte qual usar em vez de escolher sozinho.
 
-Preciso da lista de membros destes cinco grupos:
+Preciso da lista de membros destes seis grupos:
 
 1. `PublicaMed (Artigos Cientificos)`
 2. `PublicaMed (Artigos Cientificos) #2`
 3. `PublicaMed (Artigos Cientificos) #3`
 4. `PublicaMed (Artigos Cientificos) #4`
 5. `PublicaMed (Artigos Cientificos) #5`
+6. `PublicaMed (Artigos Cientificos) #6`
 
-**Cuidado com o primeiro.** O nome dele é prefixo dos outros quatro: buscar
-"PublicaMed (Artigos Cientificos)" faz aparecer os cinco. O grupo 1 é o que
+**Cuidado com o primeiro.** O nome dele é prefixo dos outros cinco: buscar
+"PublicaMed (Artigos Cientificos)" faz aparecer os seis. O grupo 1 é o que
 **não tem `#` nenhum** no fim. Confira o nome no cabeçalho depois de abrir, e
 não se guie pela ordem da lista de conversas.
 
@@ -53,7 +54,7 @@ No campo `grupo`, escreva o nome exato do grupo, com o `#` quando houver.
 Telefone vazio quando não aparecer, nome vazio quando só houver número. **Não
 invente número nem nome.**
 
-E me diga, para cada um dos cinco grupos, quantos membros o WhatsApp informava
+E me diga, para cada um dos seis grupos, quantos membros o WhatsApp informava
 e quantas linhas você conseguiu ler. Se algum par não bater, me avise — quero
 saber que a leitura ficou incompleta antes de usar os dados.
 
