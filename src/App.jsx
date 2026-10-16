@@ -5175,9 +5175,10 @@ const MODELOS_MSG = {
     ...cabTemas, blocos,
     ...rodapeMsg(valor, prazoDoVeiculo(veiculo, 7)),
   ],
+  // o congresso é o CIAPS, da própria PublicaMED; o veículo do dia não traz o nome
   apresentacao: ({ blocos, valor, veiculo }) => [
     "🎤 VAGAS EM APRESENTAÇÃO EM CONGRESSO", SEP_MSG,
-    "📄 {{nome do congresso}}",
+    "📄 I Congresso Internacional de Avanços e Pesquisa em Saúde",
     "📑 Publicado nos Anais do Congresso",
     "✅ Pontua em diversos editais do Brasil como UFCSPA e FELUMA", SEP_MSG,
     ...cabTemas, blocos,
