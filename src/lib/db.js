@@ -596,6 +596,8 @@ export async function garantirDiaNoPlano(dataIso, modelo = {}) {
     // tema arrastado para um dia vazio leva o veículo do dia de onde saiu: é dele
     // que a mensagem de vendas tira a revista e o prazo do certificado
     veiculo: modelo.veiculo || '',
+    taxa_por_tema: modelo.taxaPorTema ?? null,
+    exige_graduado: !!modelo.exigeGraduado,
     avulso: true,
   }).select('*, planejamento_temas(*)').single();
   if (novoLanc.error) throw novoLanc.error;

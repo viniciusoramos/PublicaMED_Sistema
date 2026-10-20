@@ -983,14 +983,28 @@ export default function App() {
   /* Cria a publicação E a põe no calendário no dia informado — criando o mês e o dia se ainda
    * não existirem. É o que faz um trabalho avulso ter data de abertura de verdade (e portanto
    * cair em "Em venda"/"Programadas" em vez de "Anteriores"). */
+  /* Dia criado à mão para um trabalho fora do plano nascia com preço zero e sem
+   * veículo, e a mensagem de vendas saía com "R$ 0" e a revista padrão (o A3 do
+   * dia 24/10 foi assim). Agora ele copia preço, veículo e taxa de um dia
+   * planejado do mesmo tipo: no mesmo mês ou, se não houver, no mais recente. */
+  const modeloDoTipo = (tipo, dataIso) => {
+    const k = chaveTipo(tipo), mesId = dataIso.slice(0, 7);
+    const ordem = [...planejamentos].sort((a, b) => (a.id === mesId ? -1 : b.id === mesId ? 1 : b.id.localeCompare(a.id)));
+    const l = ordem.flatMap((p) => p.lancamentos).find((x) => !x.avulso && chaveTipo(x.tipo) === k && x.preco > 0);
+    return l ? { preco: l.preco, veiculo: l.veiculo, taxaPorTema: l.taxaPorTema, exigeGraduado: l.exigeGraduado } : {};
+  };
+  // num dia que já é de outro trabalho, o tema leva o próprio preço: senão herdaria o do dia
+  const precoSeOutroTipo = (lancamento, tipo, modelo) => (chaveTipo(lancamento.tipo) !== chaveTipo(tipo) ? modelo.preco : undefined);
   const criarPublicacaoNoDia = async (dataIso, dados) => {
     const nova = await criarPublicacaoDoPlano({ ...dados, taxaData: dataIso });
     if (!nova) return null;
     if (!planoNoBanco) { aviso("Publicação criada. O calendário está em modo leitura, então ela não entrou no cronograma."); return nova; }
     try {
-      const { lancamento } = await db.garantirDiaNoPlano(dataIso, { tipo: dados.tipo, produto: dados.tipo, vagas: dados.maxVagas });
+      const modelo = modeloDoTipo(dados.tipo, dataIso);
+      const { lancamento } = await db.garantirDiaNoPlano(dataIso, { ...modelo, tipo: dados.tipo, produto: dados.tipo, vagas: dados.maxVagas });
       await db.adicionarTemaPlano(lancamento.id, {
         titulo: dados.nome, areas: dados.area, tipo: dados.tipo, vagas: dados.maxVagas,
+        preco: precoSeOutroTipo(lancamento, dados.tipo, modelo),
       });
       const rec = await db.carregarPlanejamentos();
       if (rec) setPlanejamentos(rec);
@@ -1012,10 +1026,11 @@ export default function App() {
   const porPublicacaoNoCalendario = async (pub, dataIso) => {
     if (!dataIso) return;
     try {
-      const modelo = { tipo: pub.tipo, produto: pub.tipo, vagas: pub.maxVagas };
-      const { lancamento } = await db.garantirDiaNoPlano(dataIso, modelo);
+      const modelo = modeloDoTipo(pub.tipo, dataIso);
+      const { lancamento } = await db.garantirDiaNoPlano(dataIso, { ...modelo, tipo: pub.tipo, produto: pub.tipo, vagas: pub.maxVagas });
       await db.adicionarTemaPlano(lancamento.id, {
         titulo: pub.nome, areas: pub.area, tipo: pub.tipo, vagas: pub.maxVagas,
+        preco: precoSeOutroTipo(lancamento, pub.tipo, modelo),
       });
       const rec = await db.carregarPlanejamentos();
       if (rec) setPlanejamentos(rec);
@@ -1069,9 +1084,11 @@ export default function App() {
     const tipo = tema.tipo || origem.tipo, vagas = tema.vagas ?? origem.vagas, preco = tema.preco ?? origem.preco;
     const dataIso = `${plano.ano}-${String(plano.mes + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
     try {
+      // veículo do dia de origem quando é o mesmo trabalho; senão, o de um dia planejado do tipo
+      const modelo = modeloDoTipo(tipo, dataIso);
       const { lancamento } = await db.garantirDiaNoPlano(dataIso, {
-        tipo, produto: tipo, vagas, preco,
-        veiculo: chaveTipo(tipo) === chaveTipo(origem.tipo) ? origem.veiculo : "",
+        ...modelo, tipo, produto: tipo, vagas, preco,
+        veiculo: chaveTipo(tipo) === chaveTipo(origem.tipo) ? origem.veiculo : modelo.veiculo || "",
       });
       await db.moverTemaPlano(tema.id, lancamento.id, {
         tipo, vagas, preco, taxa: tema.taxa ?? origem.taxaPorTema, exigeGraduado: tema.exigeGraduado ?? origem.exigeGraduado,
@@ -5139,7 +5156,8 @@ const rodapeMsg = (valor, certDias, extra) => [
 const cabTemas = ["📌 TEMAS DISPONÍVEIS", SEP_MSG];
 /* Prazo do certificado e revista saem do veículo do lançamento ("Revista Artefactum ·
  * certificado em 7 dias"), com o valor de sempre quando o veículo não diz. Fixos no
- * texto, o A3 de outubro sairia anunciado como REASE com certificado em 20 dias. */
+ * texto, o A3 de outubro sairia anunciado como REASE com certificado em 20 dias.
+ * O padrão do A3 passou a ser a Artefactum em 20/10/2026: a REASE não é mais usada. */
 const prazoDoVeiculo = (veiculo, padrao) => Number((String(veiculo || "").match(/certificado em (\d+) dias/i) || [])[1]) || padrao;
 const revistaDoVeiculo = (veiculo, padrao) => ((String(veiculo || "").match(/revista\s+([^·|]+)/i) || [])[1] || padrao).trim();
 const MODELOS_MSG = {
@@ -5152,11 +5170,11 @@ const MODELOS_MSG = {
   ],
   qualisA3: ({ blocos, valor, veiculo }) => [
     "🌐 VAGAS EM ARTIGO INDEXADO QUALIS A3", SEP_MSG,
-    `📄 Revista · ${revistaDoVeiculo(veiculo, "REASE")}`,
+    `📄 Revista · ${revistaDoVeiculo(veiculo, "Artefactum")}`,
     "📖 Qualis A3 CAPES",
     "✅ ISSN e DOI garantidos", SEP_MSG,
     ...cabTemas, blocos,
-    ...rodapeMsg(valor, prazoDoVeiculo(veiculo, 20)),
+    ...rodapeMsg(valor, prazoDoVeiculo(veiculo, 7)),
   ],
   // o PSU vem por último: o certificado leva 30 dias e, perto do fim do edital, não é ele o gancho
   psu: ({ blocos, valor, veiculo }) => [
