@@ -3,6 +3,7 @@ import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, LineChart, Line, LabelList,
 } from "recharts";
+import { toBlob } from "html-to-image";
 import { PLANEJAMENTOS } from "./planejamento";
 import * as db from "./lib/db.js";
 import Login from "./components/Login.jsx";
@@ -4170,6 +4171,93 @@ function Temas({ temas, vendas, trabalhos, abertura = new Map(), onCriarNoDia, o
   );
 }
 
+/* Ficha para o cliente conferir os próprios dados. Substitui o print que se tirava
+ * do Docs: na tela da publicação o print levaria junto o faturamento e o valor
+ * pago, então aqui só entram o tema e o autor. As cores são fixas de papel, sem
+ * acompanhar o tema escuro, porque a imagem vai para o cliente. */
+function FichaConferencia({ t, inicial, onFechar }) {
+  const [i, setI] = useState(() => Math.max(0, t.participantes.findIndex((p) => p.id === inicial)));
+  const [estado, setEstado] = useState(""); // "", "gerando", "copiado" ou "erro"
+  const ref = useRef(null);
+  const p = t.participantes[i];
+  if (!p) return null;
+  const n = t.participantes.length;
+  const ir = (d) => { setI((x) => (x + d + n) % n); setEstado(""); };
+  const gerar = async () => {
+    const opts = { pixelRatio: 2, backgroundColor: "#FFFFFF" };
+    // a fonte vem do Google Fonts; se não der para embutir, sai com a do sistema
+    try { return await toBlob(ref.current, opts); }
+    catch { return toBlob(ref.current, { ...opts, skipFonts: true }); }
+  };
+  const copiar = async () => {
+    setEstado("gerando");
+    try {
+      // a imagem entra como promessa: o Safari só aceita gravar dentro do clique
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": gerar() })]);
+      setEstado("copiado");
+      setTimeout(() => setEstado((e) => (e === "copiado" ? "" : e)), 2200);
+    } catch { setEstado("erro"); }
+  };
+  const baixar = async () => {
+    const blob = await gerar();
+    if (!blob) { setEstado("erro"); return; }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `conferencia - ${p.nome.replace(/[\\/:*?"<>|]/g, "")}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  return (
+    <Modal titulo="Print para o cliente conferir" onClose={onFechar} wide>
+      {n > 1 && (
+        <div className="fc-nav">
+          <button className="mini" onClick={() => ir(-1)} aria-label="Autor anterior">‹ anterior</button>
+          <span>Autor {i + 1} de {n}</span>
+          <button className="mini" onClick={() => ir(1)} aria-label="Próximo autor">próximo ›</button>
+        </div>
+      )}
+      <div className="fc-moldura">
+        <div className="ficha-conf" ref={ref}>
+          <div className="fc-topo">
+            <Logo className="fc-logo" />
+            <span className="fc-lab">Conferência de dados</span>
+          </div>
+          <div className="fc-pub">
+            <span className="fc-tipo"><i style={{ background: corTipo(t.tipo) }} />{t.tipo || "Artigo"}</span>
+            <div className="fc-titulo">{t.nome}</div>
+            {t.area && <div className="fc-area">{t.area}</div>}
+          </div>
+          <div className="fc-autor">
+            <span className="fc-lab">Autor</span>
+            <div className="fc-nome">{p.nome}</div>
+            {(p.autorPrincipal || p.graduado) && (
+              <div className="fc-tags">
+                {p.autorPrincipal && <span className="fc-tag autor">Autor principal</span>}
+                {p.graduado && <span className="fc-tag grad">Graduado</span>}
+              </div>
+            )}
+            <dl className="fc-dados">
+              <dt>Faculdade</dt><dd>{p.faculdade || "—"}</dd>
+              <dt>E-mail</dt><dd>{p.email || "—"}</dd>
+              <dt>CPF</dt><dd>{p.cpf ? fmtCPF(p.cpf) : "—"}</dd>
+              {p.telefone && <><dt>Telefone</dt><dd>{p.telefone}</dd></>}
+              {p.orcid && <><dt>ORCID</dt><dd>{soOrcid(p.orcid)}</dd></>}
+            </dl>
+          </div>
+          <p className="fc-rodape">Confira se está tudo certo. Se algo precisar de ajuste, é só responder com a correção.</p>
+        </div>
+      </div>
+      <div className="fc-acoes">
+        {estado === "erro" && <span className="fc-erro">Não deu para gerar a imagem aqui. Tire o print da ficha acima.</span>}
+        <button className="btn-ghost" onClick={baixar}>Baixar</button>
+        <button className="btn" onClick={copiar} disabled={estado === "gerando"}>
+          {estado === "gerando" ? "Gerando…" : estado === "copiado" ? "✓ Copiada! Cole no WhatsApp" : "Copiar imagem"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, statusTrab = null, onSetStatus, onEdit, onEditNome, onAddPart, onEditPart, onRemPart, onReordenarPart, onLancarTaxa, onCorrigirTaxa, onFechar, onReabrir, dataAbertura = "", onPorNoCalendario, onExcluir,
                       clienteDoParticipante, contatoDe = () => ({}), salvarCliente, onAbrirPublicacao, aviso = () => {} }) {
   const { tipos, status: statusDisp } = useContext(ListasCtx);
@@ -4179,6 +4267,7 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
   const [nomeTmp, setNomeTmp] = useState("");
   const [editP, setEditP] = useState(null);
   const [fichaCli, setFichaCli] = useState(null);   // ficha do cliente aberta por cima da publicação
+  const [printP, setPrintP] = useState(null);       // id do autor na ficha de conferência
   // se a publicação já tem taxa cadastrada mas ainda não lançada (ex.: veio do cronograma antes
   // do lançamento automático), o valor aparece preenchido — não faz sentido redigitar
   const [taxaVal, setTaxaVal] = useState("");
@@ -4508,6 +4597,8 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
                         </td>
                         <td className="r p-valor" title="Valor pago na vaga">{vd ? brl(vd.valor) : "—"}</td>
                         <td className="r nowrap dp-acoes">
+                          <button className="mini" onClick={() => setPrintP(p.id)}
+                            title="Ficha com o tema e os dados deste autor, sem valores, para o cliente conferir">print</button>
                           <button className="mini" onClick={() => setEditP(p)}>editar</button>
                           <button className="mini del" onClick={() => onRemPart(t.id, p.id)}>×</button>
                         </td>
@@ -4710,6 +4801,8 @@ function DetalhePub({ t, vendas = [], pessoas = [], localPub = "", onSetLocal, s
             temVenda={!!vendaDoPart(editP)} onSalvar={(d) => { onEditPart(t, editP, d); setEditP(null); }} onCancelar={() => setEditP(null)} />
         </Modal>
       )}
+
+      {printP && <FichaConferencia t={t} inicial={printP} onFechar={() => setPrintP(null)} />}
 
       {fichaCli && (
         <FichaCliente cliente={fichaCli} contato={contatoDe(fichaCli)} onSalvar={salvarCliente}
@@ -6531,6 +6624,32 @@ select.inp{ cursor:pointer; }
 .root.dark .tag-grad{ color:#8CC9EE; }
 .tag-grad{ font-size:11px; font-weight:500; background:rgba(59,158,222,.14); color:#1E5F82;
   border:1px solid rgba(59,158,222,.45); padding:2px 9px; border-radius:999px; white-space:nowrap; }
+/* FICHA DE CONFERÊNCIA — a ficha tem cores fixas de papel nos dois temas, porque vira
+   imagem para o cliente; só a moldura em volta segue o tema */
+.fc-nav{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; font-size:12px; color:var(--muted); }
+.fc-moldura{ background:var(--soft); border-radius:var(--r-md); padding:16px; display:flex; justify-content:center; }
+.ficha-conf{ width:440px; max-width:100%; background:#FFFFFF; color:#17222E; border:1px solid #E3E8EE; border-radius:12px;
+  padding:22px 24px; line-height:1.45; }
+.fc-topo{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:14px; border-bottom:1px solid #EDF1F5; }
+.fc-logo{ height:22px; width:auto; color:#173A56; }
+.fc-lab{ font-size:11px; font-weight:600; color:#5D6D7D; text-transform:uppercase; letter-spacing:.06em; }
+.fc-pub{ padding:16px 0; border-bottom:1px solid #EDF1F5; }
+.fc-tipo{ display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:#4D5D6D; }
+.fc-tipo i{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.fc-titulo{ font-size:17px; font-weight:700; letter-spacing:-.01em; line-height:1.3; margin-top:8px; }
+.fc-area{ font-size:13px; color:#4D5D6D; margin-top:6px; }
+.fc-autor{ padding-top:16px; }
+.fc-nome{ font-size:16px; font-weight:600; margin-top:4px; }
+.fc-tags{ display:flex; gap:6px; margin-top:8px; }
+.fc-tag{ font-size:11px; font-weight:500; padding:2px 9px; border-radius:999px; white-space:nowrap; }
+.fc-tag.autor{ background:rgba(232,163,61,.14); color:#B4610F; border:1px solid rgba(232,163,61,.45); }
+.fc-tag.grad{ background:rgba(59,158,222,.14); color:#1E5F82; border:1px solid rgba(59,158,222,.45); }
+.fc-dados{ display:grid; grid-template-columns:auto 1fr; gap:7px 16px; margin-top:14px; font-size:13px; }
+.fc-dados dt{ color:#5D6D7D; }
+.fc-dados dd{ font-weight:500; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.fc-rodape{ margin-top:18px; padding-top:12px; border-top:1px solid #EDF1F5; font-size:12px; color:#5D6D7D; }
+.fc-acoes{ display:flex; gap:8px; justify-content:flex-end; align-items:center; flex-wrap:wrap; margin-top:16px; }
+.fc-erro{ font-size:12px; color:var(--danger); margin-right:auto; }
 /* ORIGEM DAS VENDAS */
 .org-rot{ display:inline-flex; align-items:center; gap:8px; font-weight:600; white-space:nowrap; }
 .org-sem td, .org-sem .org-rot{ color:var(--muted); font-weight:400; }
