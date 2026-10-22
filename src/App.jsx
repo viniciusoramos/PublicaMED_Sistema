@@ -670,7 +670,7 @@ function KPI({ label, valor, sub, cor }) {
   );
 }
 
-function Donut({ data }) {
+function Donut({ data, fmt = brl }) {
   const total = data.reduce((s, d) => s + d.value, 0);
   return (
     <div className="donut-wrap">
@@ -680,7 +680,7 @@ function Donut({ data }) {
             innerRadius={58} outerRadius={88} paddingAngle={2} stroke="none">
             {data.map((d, i) => <Cell key={i} fill={d.cor} />)}
           </Pie>
-          <Tooltip formatter={(v) => brl(v)} />
+          <Tooltip formatter={(v) => fmt(v)} />
         </PieChart>
       </ResponsiveContainer>
       <div className="donut-legend">
@@ -1812,6 +1812,11 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
   const [todosUF, setTodosUF] = useState(false);    // estados: top 8 ou lista completa
   const [verPaises, setVerPaises] = useState(false); // troca o gráfico para as vendas do exterior
   const [revisarUF, setRevisarUF] = useState(false);
+  // olho de app de banco: esconde os valores em reais para abrir a tela perto de alguém
+  const [ocultar, setOcultar] = useState(() => { try { return localStorage.getItem("ocultar-valores") === "1"; } catch { return false; } });
+  const trocarOcultar = () => setOcultar((o) => { const n = !o; try { localStorage.setItem("ocultar-valores", n ? "1" : "0"); } catch { /* navegador sem storage */ } return n; });
+  const din = (v) => (ocultar ? "R$ •••••" : brl(v));
+  const qtd = (v) => (ocultar ? "•••" : num(v)); // contagens dos cartões do topo
   const anoSel = ano || (anos[0] != null ? String(anos[0]) : "todos");
 
   const vendasFiltradas = useMemo(() => vendas.filter((v) => {
@@ -1884,7 +1889,16 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
 
   return (
     <>
-      <Header titulo="Visão geral" sub={`Período: ${rotuloPeriodo}`} />
+      <Header titulo="Visão geral" sub={`Período: ${rotuloPeriodo}`}
+        acao={
+          <button className="btn-ghost btn-olho" onClick={trocarOcultar} aria-pressed={ocultar}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />
+              {ocultar && <path d="m3 3 18 18" />}
+            </svg>
+            {ocultar ? "Mostrar valores" : "Ocultar valores"}
+          </button>
+        } />
 
       <div className="periodo-bar">
         <span className="periodo-lab">Período</span>
@@ -1899,11 +1913,11 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
       </div>
 
       <div className="kpis">
-        <KPI label="Faturamento" valor={brl(fatTotal)} sub={`${num(m.nVendas)} vendas no período` + (ajusteTotal ? ` · inclui ajustes ${brl(ajusteTotal)}` : "")} cor="var(--brand)" />
-        <KPI label="Lucro líquido" valor={brl(lucroTotal)}
-          sub={`Custos: ${brl(custoTotal)}` + (impostoTotal ? ` (imposto ${brl(impostoTotal)})` : "") + (fatTotal ? ` · Margem ${Math.round((lucroTotal / fatTotal) * 100)}%` : "")} cor="var(--ok)" />
-        <KPI label="Clientes únicos" valor={num(m.clientes.length)} sub={`Ticket médio ${brl(m.ticket)}`} cor="#6D5DD3" />
-        <KPI label="Certificados emitidos" valor={num(certEmitido)} sub={`${num(pendentes)} pendentes`} cor="var(--accent)" />
+        <KPI label="Faturamento" valor={din(fatTotal)} sub={`${qtd(m.nVendas)} vendas no período` + (ajusteTotal ? ` · inclui ajustes ${din(ajusteTotal)}` : "")} cor="var(--brand)" />
+        <KPI label="Lucro líquido" valor={din(lucroTotal)}
+          sub={`Custos: ${din(custoTotal)}` + (impostoTotal ? ` (imposto ${din(impostoTotal)})` : "") + (fatTotal ? ` · Margem ${Math.round((lucroTotal / fatTotal) * 100)}%` : "")} cor="var(--ok)" />
+        <KPI label="Clientes únicos" valor={qtd(m.clientes.length)} sub={`Ticket médio ${din(m.ticket)}`} cor="#6D5DD3" />
+        <KPI label="Certificados emitidos" valor={qtd(certEmitido)} sub={`${qtd(pendentes)} pendentes`} cor="var(--accent)" />
       </div>
 
       <div className="grid-2">
@@ -1914,8 +1928,8 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EAEFF1" />
               <XAxis dataKey="mesAbrev" tick={{ fontSize: 12, fill: "#5B6B73" }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: "#5B6B73" }} axisLine={false} tickLine={false}
-                tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
-              <Tooltip formatter={(v) => brl(v)} cursor={{ fill: "#F0F4F5" }} />
+                tickFormatter={(v) => (ocultar ? "•••" : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
+              <Tooltip formatter={(v) => din(v)} cursor={{ fill: "#F0F4F5" }} />
               <Bar dataKey="total" fill={corSerie} radius={[5, 5, 0, 0]} maxBarSize={46} />
             </BarChart>
           </ResponsiveContainer>
@@ -1926,7 +1940,7 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
             <h3>Faturamento por tipo de trabalho</h3>
             <span className="hint">qual produto dá mais retorno</span>
           </div>
-          <Donut data={donut} />
+          <Donut data={donut} fmt={din} />
         </div>
       </div>
 
@@ -1970,13 +1984,13 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
           <div className="card-head"><h3>Destaques</h3></div>
           <div className="destaques">
             <Destaque rotulo="Produto campeão" principal={tipoTop?.tipo || "—"}
-              detalhe={tipoTop ? `${brl(tipoTop.total)} · ${tipoTop.qtd} vendas` : ""} />
+              detalhe={tipoTop ? `${din(tipoTop.total)} · ${tipoTop.qtd} vendas` : ""} />
             <Destaque rotulo="Estado líder" principal={ufTop ? UF_NOME[ufTop.uf] : "—"}
-              detalhe={ufTop ? `${ufTop.qtd} compras · ${brl(ufTop.total)}` : ""} />
+              detalhe={ufTop ? `${ufTop.qtd} compras · ${din(ufTop.total)}` : ""} />
             <Destaque rotulo="Faculdade líder" principal={facTop?.faculdade || "—"}
               detalhe={facTop ? `${facTop.qtd} compras` : ""} />
             <Destaque rotulo="Melhor cliente" principal={cliTop?.nome || "—"}
-              detalhe={cliTop ? `${brl(cliTop.total)} · ${cliTop.qtd} trabalhos` : ""} />
+              detalhe={cliTop ? `${din(cliTop.total)} · ${cliTop.qtd} trabalhos` : ""} />
           </div>
         </div>
       </div>
@@ -2031,7 +2045,7 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
                   )}
                 </td>
                 <td className="r"><b>{f.qtd}</b></td>
-                <td className="r">{brl(f.total)}</td>
+                <td className="r">{din(f.total)}</td>
               </tr>
             ))}
           </tbody>
@@ -6336,6 +6350,7 @@ select.inp{ cursor:pointer; }
 .btn-ghost:hover{ background:var(--hover); border-color:var(--border-strong); color:var(--ink); }
 .btn-ghost:focus-visible{ box-shadow:var(--ring); outline:none; }
 .btn-ghost:disabled{ opacity:.55; cursor:not-allowed; }
+.btn-olho{ display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
 /* select de status: controle de verdade — dot de estado + chevron, hover e foco visíveis */
 .status-sel{ appearance:none; border:1px solid color-mix(in srgb, var(--tc,#5D6D7D) 45%, transparent); background-color:var(--surface);
   background-image:radial-gradient(circle, var(--tc,var(--muted2)) 0 3px, transparent 3.5px), var(--sel-chevron);
