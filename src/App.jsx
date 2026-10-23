@@ -1864,6 +1864,40 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
     }).filter((x) => x.qtd > 0 || x.total !== 0);
   }, [m, finFiltrado]);
 
+  /* Quando as vendas saem. O dia da semana vem da data da venda; a hora, do
+   * instante em que ela foi lançada no sistema — e só vale para venda lançada no
+   * mesmo dia dela (a mesma regra da lista de Vendas): a lançada depois, ou
+   * importada das planilhas, tem a hora do lançamento e não a da compra. */
+  const quando = useMemo(() => {
+    const dias = DIAS_SEMANA_LONGO.map((longo, i) => ({ dia: DIAS_SEMANA[i], longo, qtd: 0, total: 0 }));
+    const horas = Array.from({ length: 24 }, (_, h) => ({ hora: `${h}h`, h, qtd: 0, total: 0 }));
+    let comHora = 0;
+    vendasFiltradas.forEach((v) => {
+      if (!v.data) return;
+      const [y, mo, d] = v.data.split("-").map(Number);
+      const dw = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
+      if (isNaN(dw)) return;
+      dias[dw].qtd++; dias[dw].total += v.valor || 0;
+      if (v.criadoEm && diaDe(v.criadoEm) === v.data) {
+        const h = parseInt(horaDe(v.criadoEm), 10);
+        if (h >= 0 && h < 24) { horas[h].qtd++; horas[h].total += v.valor || 0; comHora++; }
+      }
+    });
+    const comVenda = horas.filter((x) => x.qtd > 0);
+    return {
+      semana: [...dias.slice(1), dias[0]], // começa na segunda, como se fala no dia a dia
+      // só a faixa que teve venda: 24 colunas espremiam as barras na metade da tela
+      horas: comVenda.length ? horas.slice(comVenda[0].h, comVenda[comVenda.length - 1].h + 1) : [],
+      comHora,
+    };
+  }, [vendasFiltradas]);
+  const maxDia = Math.max(...quando.semana.map((d) => d.qtd), 0);
+  const melhorDia = quando.semana.find((d) => d.qtd === maxDia && maxDia > 0);
+  const vendasComData = quando.semana.reduce((s, d) => s + d.qtd, 0);
+  const maxHora = Math.max(...quando.horas.map((x) => x.qtd), 0);
+  const melhorHora = quando.horas.find((x) => x.qtd === maxHora && maxHora > 0);
+  const dicaQuando = (v, _n, p) => [`${num(v)} · ${din(p.payload.total)}`, "Vendas"];
+
   const tipoTop = m.porTipo[0];
   const ufTop = m.porUF.filter((u) => u.uf !== "N/I")[0];
   const facTop = m.porFaculdade[0];
@@ -1993,6 +2027,51 @@ function Overview({ vendas, financeiro, trabalhos, dark, propostasUF = [], onApl
             <Destaque rotulo="Melhor cliente" principal={cliTop?.nome || "—"}
               detalhe={cliTop ? `${din(cliTop.total)} · ${cliTop.qtd} trabalhos` : ""} />
           </div>
+        </div>
+      </div>
+
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-head">
+            <h3>Vendas por dia da semana</h3>
+            {melhorDia && <span className="hint">mais vendas: {melhorDia.longo.toLowerCase()} · {Math.round((melhorDia.qtd / vendasComData) * 100)}%</span>}
+          </div>
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={quando.semana} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EAEFF1" />
+              <XAxis dataKey="dia" tick={{ fontSize: 12, fill: "#5B6B73" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: "#5B6B73" }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip formatter={dicaQuando} labelFormatter={(_l, pl) => pl?.[0]?.payload.longo || _l} cursor={{ fill: "#F0F4F5" }} />
+              <Bar dataKey="qtd" radius={[5, 5, 0, 0]} maxBarSize={46}>
+                {/* o dia campeão na cor cheia; os outros mais claros, para ele saltar */}
+                {quando.semana.map((d) => <Cell key={d.dia} fill={corSerie} fillOpacity={d.qtd === maxDia ? 1 : 0.45} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="nota">Pela data da venda. O dia em que as vagas abrem também puxa as vendas para ele.</p>
+        </div>
+
+        <div className="card">
+          <div className="card-head">
+            <h3>Vendas por horário</h3>
+            {melhorHora && <span className="hint">pico: {melhorHora.h}h às {melhorHora.h + 1}h</span>}
+          </div>
+          {quando.comHora ? (
+            <ResponsiveContainer width="100%" height={230}>
+              <BarChart data={quando.horas} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EAEFF1" />
+                <XAxis dataKey="hora" tick={{ fontSize: 11, fill: "#5B6B73" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 11, fill: "#5B6B73" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip formatter={dicaQuando} labelFormatter={(l) => `${l} às ${parseInt(l, 10) + 1}h`} cursor={{ fill: "#F0F4F5" }} />
+                <Bar dataKey="qtd" radius={[4, 4, 0, 0]} maxBarSize={30}>
+                  {quando.horas.map((x) => <Cell key={x.h} fill={corSerie} fillOpacity={x.qtd === maxHora ? 1 : 0.45} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="vazio">Nenhuma venda do período com hora registrada.</p>
+          )}
+          <p className="nota">Hora em que a venda foi lançada no sistema, contando só as lançadas no mesmo dia da venda: {num(quando.comHora)} de {num(m.nVendas)} no período.</p>
         </div>
       </div>
 
