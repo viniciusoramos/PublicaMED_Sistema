@@ -29,7 +29,7 @@ export const PLANEJAMENTOS = [
     nota: "Artigos PSU sempre em Clínica Médica e Cirurgia Geral (eixo reabilitação, Fisioterapia Brasil) · apresentação em congresso com 10 autores · formatos alternados sem dois artigos em sequência · PSU no início de cada quinzena (01 e 17) · temas do banco oficial, sem repetir julho.",
     lancamentos: [
       {
-        dia: 1, produto: "Artigo PSU", tipo: "Artigo PSU", vagas: 4, preco: 600, custo: 1650,
+        dia: 1, produto: "Artigo PSU", tipo: "Artigo Lilacs", vagas: 4, preco: 600, custo: 1650,
         veiculo: "Fisioterapia Brasil · Qualis B1 · LILACS",
         temas: [
           // trocado na abertura das vagas (o tema previsto de pré-habilitação não foi usado)
@@ -87,7 +87,7 @@ export const PLANEJAMENTOS = [
         ],
       },
       {
-        dia: 17, produto: "Artigo PSU", tipo: "Artigo PSU", vagas: 4, preco: 600, custo: 1650,
+        dia: 17, produto: "Artigo PSU", tipo: "Artigo Lilacs", vagas: 4, preco: 600, custo: 1650,
         veiculo: "Fisioterapia Brasil · Qualis B1 · LILACS",
         temas: [
           // "Fisioterapia no Paciente Vítima de Trauma Grave" saiu daqui: foi antecipado e vendido no dia 01/08.
@@ -154,7 +154,7 @@ export const PLANEJAMENTOS = [
     nota: "Um tipo de publicação por lançamento, sem repetir tipo em lançamentos vizinhos · PSU nos dias 01, 10 e 19, de nove em nove dias, o último dentro do limite do dia 20 para o certificado de 30 dias chegar em outubro · PSU sempre em Clínica Médica ou Cirurgia Geral com eixo de fisioterapia (exigência da Fisioterapia Brasil) e sem repetir área entre os dois blocos grandes · ticket alto nos primeiros 20 dias e prazo curto no fim do mês, como janela de urgência para quem entrega currículo em outubro · 07/09 é feriado e não recebe lançamento · nenhum tema repete o banco de 261 títulos já publicados.",
     lancamentos: [
       {
-        dia: 1, produto: "Artigo PSU", tipo: "Artigo PSU", vagas: 4, preco: 600, custo: 2200,
+        dia: 1, produto: "Artigo PSU", tipo: "Artigo Lilacs", vagas: 4, preco: 600, custo: 2200,
         veiculo: "Fisioterapia Brasil · Qualis B2 · LILACS · certificado em 30 dias",
         temas: [
           { areas: "Cirurgia Geral · Cirurgia Bariátrica · Fisioterapia", titulo: "Reabilitação Funcional Após Cirurgia Bariátrica: Preservação de Massa Magra e Recuperação da Capacidade Física no Pós-Operatório" },
@@ -193,7 +193,7 @@ export const PLANEJAMENTOS = [
         ],
       },
       {
-        dia: 10, produto: "Artigo PSU", tipo: "Artigo PSU", vagas: 4, preco: 600, custo: 2200,
+        dia: 10, produto: "Artigo PSU", tipo: "Artigo Lilacs", vagas: 4, preco: 600, custo: 2200,
         veiculo: "Fisioterapia Brasil · Qualis B2 · LILACS · certificado em 30 dias",
         temas: [
           { areas: "Cirurgia Geral · Queimados · Fisioterapia", titulo: "Reabilitação do Paciente Grande Queimado: Prevenção de Contraturas Cicatriciais e Retorno à Funcionalidade" },
@@ -233,7 +233,7 @@ export const PLANEJAMENTOS = [
       },
       {
         // última chamada do PSU: fecha no dia 19 para o certificado de 30 dias sair ainda em outubro
-        dia: 19, produto: "Artigo PSU · última chamada", tipo: "Artigo PSU", vagas: 4, preco: 600, custo: 550,
+        dia: 19, produto: "Artigo PSU · última chamada", tipo: "Artigo Lilacs", vagas: 4, preco: 600, custo: 550,
         veiculo: "Fisioterapia Brasil · Qualis B2 · LILACS · certificado em 30 dias",
         temas: [
           { areas: "Cirurgia Cardiovascular · Clínica Médica · Fisioterapia", titulo: "Reabilitação Após Cirurgia Cardíaca: Mobilização Precoce, Função Pulmonar e Tempo de Internação" },
@@ -349,7 +349,7 @@ export const PLANEJAMENTOS = [
         ],
       },
       {
-        dia: 9, produto: "Artigo PSU / LILACS", tipo: "Artigo PSU", vagas: 4, preco: 600, custo: 2000, taxaPorTema: 500,
+        dia: 9, produto: "Artigo PSU / LILACS", tipo: "Artigo Lilacs", vagas: 4, preco: 600, custo: 2000, taxaPorTema: 500,
         veiculo: "Fisioterapia Brasil · Qualis B2 · LILACS · certificado em 30 dias",
         temas: [
           { areas: "Cirurgia Geral · Nefrologia · Fisioterapia", titulo: "Transplante Renal: Reabilitação Física no Pós-Operatório e Retorno às Atividades" },
@@ -413,7 +413,7 @@ export const PLANEJAMENTOS = [
         ],
       },
       {
-        dia: 21, produto: "Artigo PSU / LILACS", tipo: "Artigo PSU", vagas: 4, preco: 600, custo: 2000, taxaPorTema: 500,
+        dia: 21, produto: "Artigo PSU / LILACS", tipo: "Artigo Lilacs", vagas: 4, preco: 600, custo: 2000, taxaPorTema: 500,
         veiculo: "Fisioterapia Brasil · Qualis B2 · LILACS · certificado em 30 dias",
         temas: [
           { areas: "Cirurgia Geral · Hepatologia · Fisioterapia", titulo: "Transplante Hepático: Recuperação da Capacidade Funcional e Força Muscular" },
@@ -474,7 +474,7 @@ export const PLANEJAMENTOS = [
         ],
       },
       {
-        dia: 31, produto: "Artigo PSU / LILACS", tipo: "Artigo PSU", vagas: 4, preco: 600, custo: 2000, taxaPorTema: 500,
+        dia: 31, produto: "Artigo PSU / LILACS", tipo: "Artigo Lilacs", vagas: 4, preco: 600, custo: 2000, taxaPorTema: 500,
         veiculo: "Fisioterapia Brasil · Qualis B2 · LILACS · certificado em 30 dias",
         temas: [
           { areas: "Cirurgia Geral · Oncologia · Fisioterapia", titulo: "Duodenopancreatectomia: Fisioterapia no Pós-Operatório e Complicações Pulmonares" },

@@ -66,11 +66,11 @@ const impostoCalculado = (ano, ordem, faturamento) =>
 const impostoDoMes = (ano, ordem, faturamento, manual) =>
   manual == null ? impostoCalculado(ano, ordem, faturamento) : Math.max(0, manual);
 
-const TIPOS = ["Artigo","Capítulo","Apresentação","Combo","Artigo PSU","Outro"];
+const TIPOS = ["Artigo","Capítulo","Apresentação","Combo","Artigo Lilacs","Outro"];
 // Paleta categórica validada (CVD ΔE 16.2 claro / 14.7 escuro, croma e contraste ≥3:1 nas duas superfícies)
 // mantendo as matizes que os usuários já associam a cada tipo
 const TIPO_COR = {
-  "Artigo":"#4C9AE0","Artigo PSU":"#34B58A","Capítulo":"#8B7BE8",
+  "Artigo":"#4C9AE0","Artigo Lilacs":"#34B58A","Capítulo":"#8B7BE8",
   "Apresentação":"#E0913C","Artigo Internacional":"#46B8CE","Artigo Qualis A3":"#D9647E",
   "Combo":"#C57BD6","Personalizado":"#7E8E9C","Outro":"#7E8E9C",
 };
@@ -1148,7 +1148,7 @@ export default function App() {
   const editPublicacao = async (id, campos) => {
     /* O tipo mora também na venda e no trabalho, gravados na hora da venda. Trocar
      * só na publicação deixava a aba Vendas e o quadro de Trabalhos com o tipo
-     * antigo (publicação criada como Artigo e passada para Artigo PSU). */
+     * antigo (publicação criada como Artigo e passada para Artigo Lilacs). */
     const pub = temas.find((t) => t.id === id);
     let idsV = [], trab = null;
     if ("tipo" in campos && pub && campos.tipo !== pub.tipo) {
